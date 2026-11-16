@@ -10,6 +10,11 @@ No Steam account. No game launch. One-click setup.
 
 `Windows 10/11` · `Windows PowerShell 5.1` · `MIT` · [latest release](../../releases/latest)
 
+![Platform: Windows 10 and 11](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4)
+![Requires Windows PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-5391FE)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Latest release](https://img.shields.io/github/v/release/goranbalsic/arma-reforger-mod-downloader)
+
 ## Contents
 
 - [What it does](#what-it-does)
@@ -206,6 +211,12 @@ the finished folders into the game's addons folder with `robocopy /MIR`.
 Search and sizes come from the public [reforgermods.net](https://reforgermods.net)
 API. Downloads come from the official Workshop through Steam. Nothing is
 re-hosted, and the tool has no server or telemetry of its own.
+
+## Related
+
+- Development source and history: [arma-reforger-ai-toolkit](https://github.com/goranbalsic/arma-reforger-ai-toolkit) — the same downloader plus the tooling used to work on Reforger mods (publish, deploy, previews).
+- Workshop search and sizes come from [reforgermods.net](https://reforgermods.net).
+- The engine is the free [Arma Reforger dedicated server](https://developer.valvesoftware.com/wiki/Arma_Reforger:_Dedicated_Server).
 
 ## License
 
