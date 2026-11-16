@@ -1,0 +1,39 @@
+# Mirrors completed mods into the client addons folder. robocopy /MIR = exact
+# replica, safe to re-run. The dashboard's /status completed list is the SINGLE
+# completion rule (assembled + quiet + size match) - this script never guesses.
+param([switch]$Loop)
+
+$Root = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
+$src = "$Root\serverprofile\addons"
+$dst = "$env:USERPROFILE\Documents\My Games\ArmaReforger\addons"
+$Url = 'http://localhost:8123/status'
+
+function Sync-Completed {
+  try { $s = Invoke-RestMethod $Url -TimeoutSec 10 } catch { return $false }   # dashboard down -> caller decides
+  Get-ChildItem $src -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '_([0-9A-F]{16})$' -and $s.recent.id -contains $Matches[1] } |
+    ForEach-Object {
+      robocopy $_.FullName "$dst\$($_.Name)" /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS | Out-Null
+      if ($LASTEXITCODE -ge 8) { Write-Host "copy failed: $($_.Name)" -ForegroundColor Red }
+    }
+  $true
+}
+
+# one writer at a time, including the one-shot form: robocopy /MIR deletes in the
+# destination, so a manual run during the loop's copy can delete files it is
+# still writing. The mutex kills that race.
+$mutex = [System.Threading.Mutex]::new($false, 'ReforgerSyncLoop')
+if (-not $mutex.WaitOne(0)) { Write-Host 'another sync is already running' -ForegroundColor Yellow; exit 0 }
+
+if (-not $Loop) { if (Sync-Completed) { exit 0 } else { Write-Host 'dashboard not reachable' -ForegroundColor Red; exit 1 } }
+
+$miss = 0
+while ($true) {
+  if (Sync-Completed) { $miss = 0 }
+  else {
+    # a single failed /status fetch must not silently stop the mirror forever
+    $miss++
+    if ($miss -ge 3) { exit 0 }   # dashboard gone -> loop dies with it
+  }
+  Start-Sleep 60
+}

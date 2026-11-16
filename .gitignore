@@ -1,0 +1,7 @@
+# runtime folders - never committed
+data/
+serverprofile/
+armar-server/
+steamcmd/
+*.log
+*.zip
