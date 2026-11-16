@@ -134,6 +134,7 @@ Close the game first: it rewrites its settings file on exit.
 | Download engine | `armar-server\` in the tool's folder |
 | Working copy of downloads | `serverprofile\` in the tool's folder |
 | Saved lists and sizes | `data\` in the tool's folder |
+| What you clicked, and when | `data\actions.log` - one line per button press |
 
 Deleting the tool's folder does not touch your installed mods.
 
