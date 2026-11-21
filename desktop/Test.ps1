@@ -41,10 +41,14 @@ function Send-Request([string]$Path, [string]$Method = 'GET') {
   $line.Substring(5) | ConvertFrom-Json
 }
 
+# Exercise a UTF-8 writer that emits a byte-order mark on its first write.
+$inputEncoding = [Console]::InputEncoding
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($true)
 $backend = [Diagnostics.Process]::Start($info)
 try {
   $page = Send-Request '/'
-  if ($page.status -ne 200 -or $page.body -notmatch 'Remove') { throw 'The dashboard did not load.' }
+  if ($page.status -ne 200) { throw "The dashboard returned $($page.status): $($page.body)" }
+  if ($page.body -notmatch 'Remove') { throw 'The dashboard did not return the expected page.' }
   $before = (Send-Request '/status').body | ConvertFrom-Json
   if ($before.queue.Count -ne 1 -or $before.totalB -ne 1048576 -or $before.running) { throw 'Unexpected initial queue.' }
   if ((Send-Request '/clear-queue').status -ne 405) { throw 'Queue controls should require POST.' }
@@ -75,4 +79,5 @@ try {
   $backend.StandardInput.Close()
   if (!$backend.WaitForExit(5000)) { $backend.Kill() }
   $backend.Dispose()
+  [Console]::InputEncoding = $inputEncoding
 }

@@ -318,7 +318,7 @@ if ($Desktop) {
   [Console]::OutputEncoding = $utf8
   while ($null -ne ($line = [Console]::ReadLine())) {
     try {
-      $request = ConvertFrom-Json $line
+      $request = ConvertFrom-Json ($line.TrimStart([char]0xFEFF))
       $url = [uri]::new([uri]'https://reforger.local/', [string]$request.path)
       if ($url.Scheme -ne 'https' -or $url.Authority -ne 'reforger.local') { throw 'Invalid dashboard path.' }
       $stream = [IO.MemoryStream]::new()
