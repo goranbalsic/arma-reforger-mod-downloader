@@ -130,6 +130,9 @@ continues. **Clear queue** empties the queue and never deletes files.
 Press **Make preset** on a server row. The tool writes a launcher preset with
 that server's mods that you have installed, and verifies the result.
 
+Press it again for the same server after the server changes its modlist: the same
+preset is updated in place with the new list instead of failing as a duplicate.
+
 Close the game first: it rewrites its settings file on exit.
 
 ## Where your files go
@@ -164,7 +167,9 @@ No. A mod is skipped when its own file list already matches what is on disk.
 
 **Can I queue several servers?**
 Yes. *Add server* appends each server's missing mods. *Refresh all* re-reads every
-tracked server and queues what is new.
+tracked server and queues what is new. When a server's modlist changed since the
+last refresh, the refresh says so and the server row is marked; **Make preset**
+then rebuilds that server's preset from the new list.
 
 **Does it work on Linux or macOS?**
 No. It is a Windows PowerShell tool and writes to the Windows game folder.

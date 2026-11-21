@@ -74,6 +74,27 @@ Check 'repair adds name and scenario'         (([bool]$repaired.game.name) -and 
 Check 'repair keeps the queue'                (@($repaired.game.mods).Count -eq 1)
 Check 'repair turns null mods into an array'  (@((Repair-Cfg ([pscustomobject]@{ game = [pscustomobject]@{ mods = $null } })).game.mods).Count -eq 0)
 
+Write-Host 'preset writer (empty preset storage block, update in place)'
+$pd = Join-Path $tmp 'preset'
+New-Item -ItemType Directory -Force (Join-Path $pd 'data'), (Join-Path $pd 'addons\TestMod_0123456789ABCDEF') | Out-Null
+'x' | Set-Content (Join-Path $pd 'addons\TestMod_0123456789ABCDEF\meta')
+@{ servers = @(@{ id = 'aaaaaaaa-0000-0000-0000-000000000000'; name = 'Test Server'
+                  mods = @(@{ id = '0123456789ABCDEF'; name = 'Test Mod' }) }) } |
+  ConvertTo-Json -Depth 5 | Set-Content (Join-Path $pd 'data\batch1-servers.json')
+$conf = Join-Path $pd 'ReforgerGameSettings.conf'
+"GameUserSettings {`r`n  SCR_WorkshopAddonManagerPresetStorage SCR_WorkshopAddonManagerPresetStorage `"{6AEA4081FE80EE32}`" {`r`n  }`r`n}" |
+  Set-Content $conf
+$oldData = $env:RFMM_DATA
+$env:RFMM_DATA = Join-Path $pd 'data'
+$out1 = try { (& "$PSScriptRoot\make-preset.ps1" -ServerId 'aaaaaaaa-0000-0000-0000-000000000000' -ConfPath $conf -AddonsDir (Join-Path $pd 'addons') 2>&1) -join ' ' } catch { "ERROR: $_" }
+$out2 = try { (& "$PSScriptRoot\make-preset.ps1" -ServerId 'aaaaaaaa-0000-0000-0000-000000000000' -ConfPath $conf -AddonsDir (Join-Path $pd 'addons') 2>&1) -join ' ' } catch { "ERROR: $_" }
+$env:RFMM_DATA = $oldData
+$presetText = Get-Content $conf -Raw
+Check 'creates a preset in an empty storage block' ($out1 -match 'created')
+Check 're-running updates instead of failing'     ($out2 -match 'updated')
+Check 'exactly one preset after both runs'        (([regex]::Matches($presetText, 'SCR_WorkshopAddonPreset "\{')).Count -eq 1)
+Check 'preset sits inside m_aPresets'             ($presetText.IndexOf('m_aPresets') -lt $presetText.IndexOf('SCR_WorkshopAddonPreset "'))
+
 Write-Host 'engine ownership (only the engine we started)'
 $none = Get-OwnEngine (Join-Path $tmp 'no-such-config.json')
 Check 'no match is an empty array, not $null' (($null -ne $none) -and (@($none).Count -eq 0))

@@ -180,8 +180,11 @@ function Get-DirMap {
         $dir = $rel.Substring(0, $cut)
         $m = [regex]::Match($dir, '_([0-9A-F]{16})$')
         if (-not $m.Success) { continue }
-        if ($dir -match '^RHS-ContentPack0[12]_') { continue }   # old pre-batch installs, not batch mods
         $g = $m.Groups[1].Value
+        # old pre-batch RHS packs sit in some folders under the same name but a
+        # different id. Skip only those: a blanket name filter hid the two RHS
+        # packs the queue actually downloads, so they had no progress and no speed.
+        if ($dir -match '^RHS-ContentPack0[12]_' -and -not $sizeMap.ContainsKey($g)) { continue }
         $e = $map[$g]
         if (-not $e) {
           $e = $map[$g] = @{ name = $dir -replace '_[0-9A-F]{16}$', ''; bytes = [double]0
@@ -319,7 +322,11 @@ function Get-Status {
   }
 
   $queueList = @()
+  # only what is still missing: the config keeps every mod of the batch until the
+  # engine restarts, so the page listed mods that were already assembled and the
+  # count never went down while 100 of 102 were on disk
   try { $queueList = @((Get-Cfg).game.mods |
+        Where-Object { -not $completed.ContainsKey($_.modId) -and -not $clSet.ContainsKey($_.modId) } |
         ForEach-Object { @{ id = $_.modId; name = $_.name } }) } catch { }
 
   @{ running = $runningNow; speedB = $sp.b; speedAge = $sp.age
@@ -500,6 +507,12 @@ function Invoke-StartQueue {
 
 function Invoke-MakePreset([string]$Id) {
   $out = & "$PSScriptRoot\make-preset.ps1" -ServerId $Id
+  # the preset now matches the fresh list: the "modlist changed" marker is done
+  $sv = @($serverList | Where-Object { $_.id -eq $Id })[0]
+  if ($sv -and $sv.PSObject.Properties['changed'] -and $sv.changed) {
+    $sv | Add-Member -NotePropertyName changed -NotePropertyValue $null -Force
+    try { Save-Json @{ servers = $serverList } $ServersPath 6 } catch { }
+  }
   ($out | Out-String).Trim()
 }
 
@@ -667,11 +680,13 @@ function Invoke-RefreshServers {
   $sz = Read-Json $Sizes $j
   foreach ($p in $sz.mods.PSObject.Properties) { $sizeMap[$p.Name] = $p.Value }
   $ok = 0; $fail = 0
+  $changed = @()
   $needSize = [ordered]@{}
   foreach ($sv in $serverList) {
     try {
       $d = Invoke-RestMethod -Uri "$ApiBase/servers/$($sv.id)" -Headers $ApiH -TimeoutSec 30
       if (-not $d.server -or -not @($d.server.mods).Count) { $fail++; continue }
+      $oldIds = @($sv.mods | ForEach-Object { $_.id })
       $sv.mods = @($d.server.mods | ForEach-Object {
         $m = $_
         if (-not $sizeMap.ContainsKey($m.id)) {
@@ -683,6 +698,17 @@ function Invoke-RefreshServers {
         $e = if ($sizeMap[$m.id]) { [double]$sizeMap[$m.id].bytes } else { [double]0 }
         [PSCustomObject]@{ id = $m.id; name = $m.name; e = $e }
       })
+      # did the server change its modlist since the last refresh? The page shows it,
+      # and Make preset then rebuilds the preset from the new list
+      $newIds = @($sv.mods | ForEach-Object { $_.id })
+      $addN = @($newIds | Where-Object { $oldIds -notcontains $_ }).Count
+      $remN = @($oldIds | Where-Object { $newIds -notcontains $_ }).Count
+      if ($oldIds.Count -and ($addN + $remN)) {
+        $changed += "$($sv.name): +$addN -$remN"
+        $sv | Add-Member -NotePropertyName changed -NotePropertyValue ([PSCustomObject]@{ added = $addN; removed = $remN; at = (Get-Date -f 'yyyy-MM-dd HH:mm') }) -Force
+      } elseif ($oldIds.Count) {
+        $sv | Add-Member -NotePropertyName changed -NotePropertyValue $null -Force
+      }
       $ok++
     } catch { $fail++ }
     # pacing for the free tier (60 requests/minute); a short list needs no pause
@@ -730,7 +756,7 @@ function Invoke-RefreshServers {
   }
   $onDisk = 0
   foreach ($sv in $serverList) { $onDisk += @($sv.mods | Where-Object { $have.ContainsKey($_.id) }).Count }
-  "refreshed $ok/$(@($serverList).Count) servers$(if ($fail) { " ($fail unreachable)" }): $($sizeMap.Count) mods tracked, $onDisk server mod slots installed, $($new.Count) new mods queued"
+  "refreshed $ok/$(@($serverList).Count) servers$(if ($fail) { " ($fail unreachable)" }): $($sizeMap.Count) mods tracked, $onDisk server mod slots installed, $($new.Count) new mods queued$(if (@($changed).Count) { " - modlist changed: $($changed -join '; ')" })"
 }
 
 function Invoke-ClearQueue {
@@ -791,8 +817,6 @@ $html = @'
  details.card>summary h2{display:inline;margin:0}
  details.card>summary::before{content:'\25B8';display:inline-block;width:14px;color:#8a8e98}
  details.card[open]>summary::before{content:'\25BE'}
- .cols{display:flex;gap:14px;max-width:920px;margin:0 auto 14px;align-items:flex-start}
- .cols>.card{flex:1;margin:0;min-width:0}
  #queue{max-height:300px;overflow:auto}
  .f{background:#26282e;border:1px solid #3a3d45;color:#d6d8de;border-radius:6px;padding:5px 9px;font-size:12px;width:100%;box-sizing:border-box;margin:6px 0}
  #queue ol{margin:0;padding-left:22px;font-size:13px;line-height:1.6}
@@ -825,14 +849,12 @@ $html = @'
  <div id="say" class="dim" style="margin-top:10px;font-size:13px;min-height:18px"></div>
  <div id="failed" class="bad" style="font-size:13px;margin-top:4px"></div>
 </div>
-<div class="cols">
- <details class="card" open><summary><h2 style="font-size:15px;color:#fff">Queue <span id="qcount" class="dim"></span> <span id="qpreview" class="dim" style="font-size:13px"></span></h2></summary>
+<details class="card" open><summary><h2 style="font-size:15px;color:#fff">Queue <span id="qcount" class="dim"></span> <span id="qpreview" class="dim" style="font-size:13px"></span></h2></summary>
   <input class="f" id="fq" placeholder="filter queue by name..." oninput="FILTER.queue=this.value;renderAll()">
   <div id="queue" class="dim">-</div></details>
  <details class="card" open><summary><h2 style="font-size:15px;color:#fff">Downloading now <span id="actcount" class="dim"></span></h2></summary>
   <input class="f" id="fa" placeholder="filter downloads by name..." oninput="FILTER.act=this.value;renderAll()">
   <div id="act">-</div></details>
-</div>
 <details class="card" open><summary><h2 style="font-size:15px;color:#fff">Server browser <span class="dim">live</span></h2></summary>
  <div style="margin-top:8px"><input id="bq" placeholder="search servers (e.g. PVE, Cold Front, Vietnam)..." oninput="browseCleared()" onkeydown="if(event.key==='Enter')browse()"><button onclick="browse()">Search</button></div>
  <div id="bs" class="dim" style="margin-top:8px">type a server name and press Enter</div>
@@ -904,6 +926,7 @@ function renderSrv(D,A,B){
  document.getElementById('srv').innerHTML=SRV.servers.map(v=>{
   const done=v.haveCount!=null?v.haveCount:v.mods.filter(m=>D[m.id]).length;
   return '<details><summary>'+esc(v.name)+' <span class="dim">'+done+' / '+v.mods.length+' downloaded</span>'+
+  (v.changed?('<span class="warn" style="font-size:12px"> modlist changed +'+v.changed.added+' -'+v.changed.removed+' - Make preset updates it</span>'):'')+
    '<button class="mini" onclick="queueSrv(\''+escAttr(v.id)+'\',event)">Queue first</button>'+
    '<button class="mini amber" onclick="presetSrv(\''+escAttr(v.id)+'\',event)">Make preset</button></summary><ul>'+
    v.mods.map(m=>{
@@ -1168,7 +1191,8 @@ while ($l.IsListening) {
           }
           [PSCustomObject]@{ id = $_.id; name = $_.name; players = $_.players; maxPlayers = $_.maxPlayers
                              region = $_.region; online = $_.online; modCount = $_.modCount
-                             scenarioName = $_.scenarioName; haveCount = $haveCount; totalMods = $total } })
+                             scenarioName = $_.scenarioName; haveCount = $haveCount; totalMods = $total
+                             changed = $(if ($tracked.ContainsKey($_.id) -and $tracked[$_.id].PSObject.Properties['changed']) { $tracked[$_.id].changed } else { $null }) } })
         $b = [Text.Encoding]::UTF8.GetBytes((@{ servers = $rows } | ConvertTo-Json -Depth 4 -Compress))
         $ctx.Response.ContentType = 'application/json'
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)

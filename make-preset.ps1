@@ -50,9 +50,10 @@ if ($mp -ge 0) {
   $ins = $text.IndexOf('{', $mp) + 1
   $wrapBefore = ''; $wrapAfter = ''
 } else {
-  $i = $text.IndexOf('m_iVersion 1', $sIdx)
-  if ($i -lt 0) { throw 'preset storage m_iVersion not found in conf' }
-  $ins = $i + 'm_iVersion 1'.Length
+  # an empty storage block has neither m_aPresets nor m_iVersion (the conf on this
+  # machine ships "{ }"), so anchor on the storage block's own brace. Every Make
+  # preset click used to fail here with "preset storage m_iVersion not found".
+  $ins = $text.IndexOf('{', $sIdx) + 1
   $wrapBefore = "`r`n  m_aPresets {"
   $wrapAfter = "`r`n  }"
 }
@@ -64,7 +65,6 @@ $presetName = if ($Name) { $Name }
               else { ([string]$srv.name -split '\|')[0].Trim() }
 if ($presetName.Length -gt 60) { $presetName = $presetName.Substring(0, 60).Trim() }
 $presetName = $presetName -replace '"', "'"
-if ($storage -match ('m_sName "' + [regex]::Escape($presetName) + '"')) { throw "preset '$presetName' already exists - delete it in the launcher first" }
 
 # a folder alone is not an installed addon: UTF-Hesco_6A23267521A13350 exists in
 # this machine's client folder with 0 files, and a preset referencing an id the
@@ -110,7 +110,28 @@ $body = $indent + 'SCR_WorkshopAddonPreset "{' + $presetGuid + '}" {' + "`r`n" +
         $indent + ' }' + "`r`n" +
         $indent + '}'
 
-[IO.File]::WriteAllText($conf, $text.Insert($ins, $wrapBefore + "`r`n" + $body + $wrapAfter), [Text.UTF8Encoding]::new($false))
+# same server and same name = same preset guid, so an existing preset is updated
+# in place with the current modlist instead of refusing: a server changes its mods
+# and the preset has to follow
+$mark = 'SCR_WorkshopAddonPreset "{' + $presetGuid + '}"'
+$at = $text.IndexOf($mark)
+if ($at -ge 0) {
+  $ob = $text.IndexOf('{', $at + $mark.Length)
+  $depth = 0; $cb = -1
+  for ($i = $ob; $i -lt $text.Length; $i++) {
+    if ($text[$i] -eq '{') { $depth++ }
+    elseif ($text[$i] -eq '}') { $depth--; if ($depth -eq 0) { $cb = $i; break } }
+  }
+  if ($cb -lt 0) { throw 'the existing preset in the conf has no closing brace - restore a .bak next to the conf' }
+  $newText = $text.Remove($at, $cb - $at + 1).Insert($at, $body.Substring($indent.Length))
+  $action = 'updated'
+  $expected = $presetsBefore
+} else {
+  $newText = $text.Insert($ins, $wrapBefore + "`r`n" + $body + $wrapAfter)
+  $action = 'created'
+  $expected = $presetsBefore + 1
+}
+[IO.File]::WriteAllText($conf, $newText, [Text.UTF8Encoding]::new($false))
 
 $check = [IO.File]::ReadAllText($conf)
 $open = ([regex]::Matches($check, '\{')).Count
@@ -120,10 +141,10 @@ $presets = ([regex]::Matches($check.Substring($check.IndexOf('SCR_WorkshopAddonM
 $mpAfter = $check.IndexOf('m_aPresets', $check.IndexOf('SCR_WorkshopAddonManagerPresetStorage'))
 $newAt = $check.IndexOf('SCR_WorkshopAddonPreset "{' + $presetGuid + '}"')
 $inside = $mpAfter -ge 0 -and $newAt -gt $mpAfter
-"verification: presets=$presets (expected $($presetsBefore + 1)) inside m_aPresets=$inside meta=$($mods.Count) braces=$open/$close"
-if ($presets -ne $presetsBefore + 1 -or $open -ne $close -or -not $inside) { throw 'verification failed - restore from the .bak next to the conf' }
+"verification: presets=$presets (expected $expected) inside m_aPresets=$inside meta=$($mods.Count) braces=$open/$close"
+if ($presets -ne $expected -or $open -ne $close -or -not $inside) { throw 'verification failed - restore from the .bak next to the conf' }
 # keep the newest 5 backups only: 17 had accumulated next to a single conf
 Get-ChildItem (Split-Path $conf -Parent) -Filter "$([IO.Path]::GetFileName($conf)).bak-*" -ErrorAction SilentlyContinue |
   Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 |
   Remove-Item -Force -ErrorAction SilentlyContinue
-"OK - preset '$presetName' with $($mods.Count) installed mods"
+"OK - preset '$presetName' $action with $($mods.Count) installed mods"
