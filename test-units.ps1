@@ -465,15 +465,26 @@ $script:serverList = @([pscustomobject]@{ id = '66666666-6666-6666-6666-66666666
   [pscustomobject]@{ id = '0000000000000011'; name = 'm2'; e = 1 }) })
 $script:sizeMap = @{ '0000000000000010' = @{ name = 'm1'; bytes = 1 }; '0000000000000011' = @{ name = 'm2'; bytes = 1 }; '0000000000000012' = @{ name = 'm3'; bytes = 1 } }
 function Get-HaveIds { @{ '0000000000000011' = $true } }
+Update-Cfg { param($cfg) $cfg.game.mods = @([pscustomobject]@{ modId = '0000000000000012'; name = 'm3'; version = '1.2.3' }) } $Cfg | Out-Null
+$sizeMap['0000000000000013'] = @{ name = 'removed'; bytes = 1 }
 $null = Invoke-QueueServer '66666666-6666-6666-6666-666666666666'
 $qmods = @((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods)
-Check 'queue first puts the missing server mods first, then the rest' ($qmods.Count -eq 2 -and $qmods[0].modId -eq '0000000000000010' -and $qmods[1].modId -eq '0000000000000012')
+Check 'queue first puts the missing server mods first, then the rest' ($qmods.Count -eq 2 -and $qmods[0].modId -eq '0000000000000010' -and $qmods[1].modId -eq '0000000000000012' -and $qmods[1].version -eq '1.2.3')
 
 Reset-State
 function Get-HaveIds { @{} }
 $null = Invoke-AddMod 'ABCDEF0123456789'
 $cmsg = Invoke-ClearQueue
 Check 'clear queue empties it' (@((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods).Count -eq 0 -and $cmsg -match 'queue cleared')
+
+Reset-State
+$null = Invoke-AddMod 'ABCDEF0123456789'
+Update-Cfg { param($cfg) $cfg.game.mods += [pscustomobject]@{ modId = '0000000000000020'; name = 'Other' } } $Cfg | Out-Null
+$null = Invoke-RemoveQueuedMod 'abcdef0123456789'
+$remaining = @((Get-Cfg).game.mods)
+Check 'remove one mod preserves the other download' ($remaining.Count -eq 1 -and $remaining[0].modId -eq '0000000000000020')
+$null = Invoke-ResumeAll
+Check 'bulk queue does not restore a removed standalone mod from size history' (@((Get-Cfg).game.mods).Count -eq 1)
 
 Reset-State
 $script:sizeMap = @{}
@@ -490,6 +501,34 @@ $null = Invoke-AddMod 'ABCDEF0123456789'
 $depthMods = @((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods | ForEach-Object { $_.modId })
 Check 'the dependency depth cap stops at three levels' ($depthMods.Count -eq 4 -and $depthMods -notcontains '0000000000000004')
 . "$PSScriptRoot\dashboard-core.ps1"
+. "$PSScriptRoot\state.ps1"
+
+Write-Host 'download progress uses the current batch'
+Reset-State
+. "$PSScriptRoot\dashboard-core.ps1"
+function Get-DS { param([switch]$Fresh) ,@() }
+function Get-GlobalSpeed { @{ b = 0; age = 0 } }
+function Get-Log { }
+function Get-ClientIds { @() }
+function Get-AddonsBytes { 9999 }
+function Get-SkippedNames { @() }
+function Get-DirMap { $script:fixtureDirs }
+function Test-AddonComplete { param($Directory, $Modified) $script:fixtureComplete }
+$script:fixtureComplete = $false
+$script:fixtureDirs = @{ 'ABCDEF0123456789' = @{ bytes = 5; mtime = Get-Date; path = 'fixture' } }
+$script:rateSamples = @()
+$script:activeMax = @{}
+$script:sizeMap = @{ 'ABCDEF0123456789' = @{ bytes = 10 }; '0000000000000020' = @{ bytes = 9999 } }
+Update-Cfg { param($cfg) $cfg.game.mods = @([pscustomobject]@{ modId = 'ABCDEF0123456789'; name = 'Active' }) } $Cfg | Out-Null
+$status = Get-Status
+Check 'progress excludes the historical library' ($status.totalB -eq 10 -and $status.doneB -eq 5 -and $status.pct -eq 50)
+$script:fixtureComplete = $true
+$status = Get-Status
+Check 'progress resets when the last queued mod completes' ($status.totalB -eq 0 -and $status.doneB -eq 0 -and $status.pct -eq 0 -and !$status.queue.Count)
+$script:fixtureComplete = $false
+$null = Invoke-ClearQueue
+$start = Invoke-StartQueue
+Check 'Start leaves a cleared queue empty even when the partial still exists' ($start -match 'queue is empty' -and !@((Get-Cfg).game.mods).Count)
 . "$PSScriptRoot\state.ps1"
 
 Write-Host 'item 13: braces in a mod name do not block the preset'

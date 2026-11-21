@@ -40,6 +40,7 @@ try {
     if (-not $mid) { "skipping a queued entry with an invalid mod id: $($m.modId)"; continue }
     if ($done.ContainsKey($mid)) { continue }
     $d = Get-ChildItem $addons -Directory -Filter "*_$mid" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($m.version -and $d -and (Get-InstalledVersion $d.FullName) -ne $m.version) { continue }
     if ($d -and (Test-AddonComplete $d.FullName $d.LastWriteTime)) { $done[$mid] = $true }
   }
   "assembled on disk: $($done.Count)"
@@ -61,7 +62,7 @@ try {
     $mid = Test-ModId $m.modId
     if (-not $mid) { "skipping a queued entry with an invalid mod id: $($m.modId)"; continue }
     $d = Get-ChildItem $addons -Directory -Filter "*_$mid" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $d) { continue }
+    if (-not $d -or $m.version) { continue }  # the engine updates pinned revisions in place
     if (-not (Test-Path -LiteralPath (Join-Path $d.FullName 'addon.gproj'))) { continue }
     # one attempt per 30 min: a mod the DS can never finish would otherwise be
     # deleted and downloaded again on every restart, forever

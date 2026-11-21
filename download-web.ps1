@@ -1,4 +1,4 @@
-param([switch]$Check)
+param([switch]$Check, [switch]$Desktop)
 # Arma Reforger mod manager - local web dashboard: batch downloader, live server
 # browser, per-server queue-first, launcher presets, client addon sync.
 # double-click the .cmd: serves http://localhost:8123 and opens your browser.
@@ -50,7 +50,7 @@ foreach ($sv in $serverList) { foreach ($m in $sv.mods) {
 } }
 
 $verify = $null   # last verify result shown on the page
-$script:maxDone = [double]0; $script:maxDoneTotal = [double]0   # high-water progress: the DS deletes temp files, so raw bytes dip
+$script:maxDone = [double]0; $script:progressBatch = ''   # high-water progress: the DS deletes temp files, so raw bytes dip
 $script:skipped = @(); $script:skippedAt = (Get-Date).AddMinutes(-10)
 $script:rateSamples = @()                                      # rolling byte-rate for a live speed
 $script:activeMax = @{}                                        # per-mod high-water progress
@@ -87,66 +87,23 @@ if ($Check) {
   exit 0
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # per-run token: the 13 state-changing endpoints only answer requests that carry
 # it, so another website open in the browser cannot drive this server (CSRF)
 $token = [guid]::NewGuid().ToString('N')
-$mutating = '/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
+$mutating = '/update-mods','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/remove-queued-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
+$script:modUpdateJob = $null
 
-
-
-$l = [System.Net.HttpListener]::new(); $l.Prefixes.Add($Url)
-try { $l.Start() }
-catch {
-  # port busy: a just-killed dashboard's keep-alive sockets linger for a while.
-  # retry once before concluding another instance is actually serving.
-  Start-Sleep 5
-  try { $l = [System.Net.HttpListener]::new(); $l.Prefixes.Add($Url); $l.Start() }
-  catch {
-    Write-Host 'dashboard already running - opening browser' -ForegroundColor Cyan
-    Start-Process $Url
-    exit 0
+function Start-DownloadHelpers {
+  if ($Desktop) { $env:RFMM_DESKTOP_OWNER_PID = [string]$PID }
+  $shell = Join-Path $PSHOME 'powershell.exe'
+  if (!(Test-Path $shell)) { $shell = Join-Path $PSHOME 'pwsh.exe' }
+  $addonsItem = Get-Item $Addons -Force -ErrorAction SilentlyContinue
+  if (!($addonsItem -and $addonsItem.LinkType)) {
+    Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}\sync-addons.ps1" -Loop' -f $PSScriptRoot)
   }
+  Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}\watchdog.ps1"' -f $PSScriptRoot)
 }
-Write-Host '=== Arma Reforger Mods - web dashboard ===' -ForegroundColor White
-Write-Host "open: $Url   (keep this window open; closing it only stops the UI, not the download)" -ForegroundColor Cyan
-# -Command + quoted path: -File breaks on a repo path containing a space,
-# which silently disabled the client-addon mirror.
-# Not started at all when the engine folder is already linked into the game folder:
-# the mirror exits immediately in that case, so the process would only be noise.
-$addonsItem = Get-Item $Addons -Force -ErrorAction SilentlyContinue
-if (-not ($addonsItem -and $addonsItem.LinkType)) {
-  Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass',`
-    '-Command',"& '$PSScriptRoot\sync-addons.ps1' -Loop"   # auto-mirror completed mods into client addons
-}
-Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass',`
- '-Command',"& '$PSScriptRoot\watchdog.ps1'"            # restarts the downloader when it exits or stalls
-Start-Process $Url
-
-while ($l.IsListening) {
-  $ctx = $l.GetContext()
+function Invoke-DashboardRequest($ctx) {
   try {
     $msg = $null   # must reset per request or it leaks into the next response body
     $jobId = $null
@@ -163,14 +120,14 @@ while ($l.IsListening) {
       $b = [Text.Encoding]::UTF8.GetBytes('{"error":"use POST"}')
       $ctx.Response.ContentType = 'application/json'
       $ctx.Response.OutputStream.Write($b, 0, $b.Length)
-      continue
+      return
     }
     if ($path -in $mutating -and $ctx.Request.QueryString['t'] -ne $token) {
       $ctx.Response.StatusCode = 403
       $b = [Text.Encoding]::UTF8.GetBytes('{"error":"bad or missing token"}')
       $ctx.Response.ContentType = 'application/json'
       $ctx.Response.OutputStream.Write($b, 0, $b.Length)
-      continue
+      return
     }
     switch ($path) {
       '/' {
@@ -181,7 +138,14 @@ while ($l.IsListening) {
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/status' {
-        $b = [Text.Encoding]::UTF8.GetBytes((Get-Status | ConvertTo-Json -Depth 5 -Compress))
+        $status = Get-Status
+        if ($modUpdateJob) {
+          $child = $modUpdateJob.ChildJobs[0]
+          $status.modUpdateRunning = $modUpdateJob.State -in 'Running','NotStarted'
+          $status.modUpdate = if ($modUpdateJob.State -eq 'Failed') { "Update failed: $($child.JobStateInfo.Reason.Message)" }
+            elseif ($child.Output.Count) { [string]$child.Output[$child.Output.Count-1] } else { 'Checking installed mods...' }
+        }
+        $b = [Text.Encoding]::UTF8.GetBytes(($status | ConvertTo-Json -Depth 5 -Compress))
         $ctx.Response.ContentType = 'application/json'
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
@@ -231,11 +195,12 @@ while ($l.IsListening) {
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/start'  { $msg = Invoke-StartQueue;  Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
-      '/pause'  { $msg = Stop-DS;         Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
+      '/pause'  { $msg = Invoke-PauseQueue; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
       '/verify' { $msg = Invoke-Verify;   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan }
       '/queue-server' { $msg = Invoke-QueueServer $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/resume-all'   { $msg = Invoke-ResumeAll;   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/clear-queue'  { $msg = Invoke-ClearQueue;  Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
+      '/remove-queued-mod' { $msg = Invoke-RemoveQueuedMod $ctx.Request.QueryString['id'] }
       '/make-preset'  { $msg = Invoke-MakePreset $ctx.Request.QueryString['id'];  Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan }
       '/search-mods' {
         $r = Search-Mods ([string]$ctx.Request.QueryString['q']) ([int]$ctx.Request.QueryString['page'])
@@ -249,6 +214,29 @@ while ($l.IsListening) {
       }
       '/add-mod' { $msg = Invoke-AddMod $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/add-server'   { $msg = Invoke-AddServer $ctx.Request.QueryString['id'];   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
+      '/update-mods' {
+        $scope = [string]$ctx.Request.QueryString['scope']
+        $id = [string]$ctx.Request.QueryString['id']
+        $ids = @()
+        switch ($scope) {
+          'all' {}
+          'tracked' { $ids = @($serverList | ForEach-Object { $_.mods.id } | Sort-Object -Unique) }
+          'mod' { if (!(Test-ModId $id)) { throw 'Invalid mod ID.' }; $ids = @($id) }
+          'server' {
+            $server = $serverList | Where-Object id -eq $id | Select-Object -First 1
+            if (!$server) { throw 'Unknown server.' }
+            $ids = @($server.mods.id)
+          }
+          default { throw 'Unknown update scope.' }
+        }
+        if ($modUpdateJob -and $modUpdateJob.State -in 'Running','NotStarted') { throw 'An update check is already running.' }
+        if ($modUpdateJob) { Remove-Job $modUpdateJob }
+        $script:modUpdateJob = Start-Job -ScriptBlock {
+          param($scriptPath,$scope,$ids,$root,$data,$api,$agent,$queueRevision)
+          & $scriptPath -Scope $scope -Ids $ids -Root $root -Data $data -ApiBase $api -UserAgent $agent -QueueRevision $queueRevision
+        } -ArgumentList "$PSScriptRoot\update-mods.ps1",$scope,$ids,$Root,$Data,$ApiBase,$UserAgent,([string](Get-QueueRevision))
+        $msg = 'Checking installed mod versions...'
+      }
       '/refresh-servers' {
         $r = Start-RefreshJob @($serverList | ForEach-Object { $_.id })
         $msg = $r.msg; $jobId = $r.job
@@ -281,7 +269,7 @@ while ($l.IsListening) {
       # console scrolls away, and the user's own clicks arrive in this same
       # process. "api" is a script, "browser" is a person at the page.
       try {
-        $src = if ($ctx.Request.UserAgent -match 'PowerShell') { 'api' } else { 'browser' }
+        $src = if ($Desktop) { 'desktop' } elseif ($ctx.Request.UserAgent -match 'PowerShell') { 'api' } else { 'browser' }
         # never write the request token: it is the CSRF guard for these routes
         $what = $ctx.Request.Url.AbsolutePath
         if ($ctx.Request.QueryString['id']) { $what += '?id=' + $ctx.Request.QueryString['id'] }
@@ -307,3 +295,67 @@ while ($l.IsListening) {
   finally { $ctx.Response.OutputStream.Close() }
 }
 
+if ($Desktop) {
+  Add-Type -AssemblyName System.Web
+  Start-DownloadHelpers
+  # One request and one reply per line. Other output is diagnostic text.
+  $utf8 = [Text.UTF8Encoding]::new($false)
+  [Console]::InputEncoding = $utf8
+  [Console]::OutputEncoding = $utf8
+  while ($null -ne ($line = [Console]::ReadLine())) {
+    try {
+      $request = ConvertFrom-Json $line
+      $url = [uri]::new([uri]'https://reforger.local/', [string]$request.path)
+      if ($url.Scheme -ne 'https' -or $url.Authority -ne 'reforger.local') { throw 'Invalid dashboard path.' }
+      $stream = [IO.MemoryStream]::new()
+      $reply = [pscustomobject]@{
+        Headers = [Net.WebHeaderCollection]::new()
+        StatusCode = 200
+        ContentType = 'application/json'
+        ContentLength64 = 0
+        OutputStream = $stream
+      }
+      $ctx = [pscustomobject]@{
+        Request = [pscustomobject]@{
+          Url = $url
+          QueryString = [Web.HttpUtility]::ParseQueryString($url.Query)
+          HttpMethod = [string]$request.method
+          UserAgent = 'Reforger Desktop'
+          RemoteEndPoint = 'desktop'
+        }
+        Response = $reply
+      }
+      Invoke-DashboardRequest $ctx
+      $result = @{
+        status = $reply.StatusCode
+        type = $reply.ContentType
+        body = $utf8.GetString($stream.ToArray())
+      }
+    } catch {
+      $result = @{ status = 500; type = 'application/json'; body = (@{ error = $_.Exception.Message } | ConvertTo-Json -Compress) }
+    }
+    [Console]::WriteLine('RFMM ' + ($result | ConvertTo-Json -Compress))
+  }
+  exit 0
+}
+
+$l = [System.Net.HttpListener]::new(); $l.Prefixes.Add($Url)
+try { $l.Start() }
+catch {
+  # port busy: a just-killed dashboard's keep-alive sockets linger for a while.
+  # retry once before concluding another instance is actually serving.
+  Start-Sleep 5
+  try { $l = [System.Net.HttpListener]::new(); $l.Prefixes.Add($Url); $l.Start() }
+  catch {
+    Write-Host 'dashboard already running - opening browser' -ForegroundColor Cyan
+    Start-Process $Url
+    exit 0
+  }
+}
+Write-Host '=== Arma Reforger Mods - web dashboard ===' -ForegroundColor White
+Write-Host "open: $Url   (keep this window open; closing it only stops the UI, not the download)" -ForegroundColor Cyan
+Start-DownloadHelpers
+Start-Process $Url
+while ($l.IsListening) {
+  Invoke-DashboardRequest ($l.GetContext())
+}

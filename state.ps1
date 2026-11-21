@@ -183,7 +183,8 @@ function Test-AddonComplete([string]$Path, $Mtime) {
       $j = Get-Content $metaPath -Raw -ErrorAction Stop | ConvertFrom-Json
       $versions = @($j.meta.versions)
       $files = @()
-      if ($versions.Count -and $versions[0].package) { $files = @($versions[0].package.files) }
+      $selected = [int]$j.meta.selectedRev
+      if ($selected -ge 0 -and $selected -lt $versions.Count) { $files = @($versions[$selected].package.files) }
       # @($null).Count is 1: a meta with no file list used to enter the success
       # branch, skip every nameless entry and report the addon as complete
       if ($files.Count -gt 0 -and $files[0] -and $files[0].name -and $null -ne $files[0].size) {
@@ -231,7 +232,7 @@ function Initialize-AddonsLink([string]$Addons, [string]$ClientAddons, [string]$
     foreach ($d in @(Get-ChildItem $Addons -Force -ErrorAction SilentlyContinue)) {
       $target = Join-Path $ClientAddons $d.Name
       if (-not $had[$d.Name]) {
-        Move-Item $d.FullName $target -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $d.FullName -Destination $target -Force -ErrorAction SilentlyContinue
         if (Test-Path $d.FullName) {
           if (-not @(Get-ChildItem $target -Force -ErrorAction SilentlyContinue).Count) {
             Remove-Item $target -Force -ErrorAction SilentlyContinue
@@ -244,7 +245,11 @@ function Initialize-AddonsLink([string]$Addons, [string]$ClientAddons, [string]$
       Write-Host "could not move $($failed.Count) item(s) into the game addons folder - nothing was deleted: $($failed -join ', ')" -ForegroundColor Yellow
       return $false
     }
-    Remove-Item $Addons -Recurse -Force -ErrorAction SilentlyContinue
+    if (@(Get-ChildItem -LiteralPath $Addons -Force -ErrorAction Stop).Count) {
+      Write-Host 'Existing addon copies were kept. Completed downloads will be synced separately.' -ForegroundColor Yellow
+      return $false
+    }
+    Remove-Item -LiteralPath $Addons -Force -ErrorAction SilentlyContinue
     if (Test-Path $Addons) {
       Write-Host 'the old engine addons folder could not be removed - not linking' -ForegroundColor Yellow
       return $false
@@ -252,4 +257,12 @@ function Initialize-AddonsLink([string]$Addons, [string]$ClientAddons, [string]$
   }
   New-Item -ItemType Junction -Path $Addons -Target $ClientAddons -ErrorAction SilentlyContinue | Out-Null
   [bool](Get-Item $Addons -Force -ErrorAction SilentlyContinue).LinkType
+}
+
+function Get-InstalledVersion([string]$Directory) {
+  try {
+    $meta = ([IO.File]::ReadAllText((Join-Path $Directory 'meta')) | ConvertFrom-Json).meta
+    $index = [int]$meta.selectedRev
+    if ($index -ge 0 -and $index -lt $meta.versions.Count) { return [string]$meta.versions[$index].version }
+  } catch { return $null }
 }

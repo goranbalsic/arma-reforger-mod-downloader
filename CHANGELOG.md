@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- Add a standalone Windows desktop executable with built-in engine setup.
+- Check installed Workshop revisions for one mod, one tracked server, all tracked servers, or the full library and download newer versions in place.
+- Remove individual queued mods, keep cleared downloads from returning on Start / Resume, and reset download progress when the queue finishes.
+- Leave queued downloads paused until Start / Resume. Refreshes queue only newly added server mods.
+- Show a dismissible completion notice and clarify that server search queues full modlists.
+- License this and future releases under PolyForm Noncommercial 1.0.0.
+
 ## 1.0.22
 
 - Make preset checks local mission resources and restores missing scenario metadata from the matching published revision. Repeated clicks reuse preset IDs saved by the game.

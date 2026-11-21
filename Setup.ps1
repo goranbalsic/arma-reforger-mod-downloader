@@ -5,7 +5,7 @@
 # as its downloader. This script installs it once, with Steam's anonymous login, so
 # no Steam account is needed.
 $ErrorActionPreference = 'Stop'
-$Root   = $PSScriptRoot
+$Root   = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
 $Engine = Join-Path $Root 'armar-server'
 $Steam  = Join-Path $Root 'steamcmd'
 $Exe    = Join-Path $Engine 'ArmaReforgerServer.exe'
@@ -13,7 +13,6 @@ $AppId  = '1874900'   # Arma Reforger dedicated server
 
 if (Test-Path $Exe) {
   Write-Host 'The download engine is already installed. Nothing to do.' -ForegroundColor Green
-  Write-Host "Start the tool with `"Start Mods Download.cmd`"."
   exit 0
 }
 
@@ -35,27 +34,16 @@ if (-not (Test-Path (Join-Path $Steam 'steamcmd.exe'))) {
 }
 
 Write-Host '2/2  Downloading the engine (~12 GB). Progress is printed below; this' -ForegroundColor Yellow
-Write-Host '     can take a while. Do not close this window.'
+Write-Host '     can take a while.'
 # The path is passed as a plain argument on purpose: embedding quote characters
 # (as an earlier version did) makes SteamCMD fail with "Missing configuration".
 $scArgs = @('+force_install_dir', $Engine, '+login', 'anonymous', '+app_update', $AppId, 'validate', '+quit')
 & (Join-Path $Steam 'steamcmd.exe') @scArgs
 $code = $LASTEXITCODE
 
-if (-not (Test-Path $Exe)) {
-  # A failed first try leaves an empty steamapps folder behind, and SteamCMD then
-  # fails the same way on every retry until it is removed. A real, half-finished
-  # download keeps its appmanifest, and that one resumes instead of restarting.
-  Write-Host "First try failed (exit code $code). Retrying with a clean engine folder..." -ForegroundColor Yellow
-  $st = Join-Path $Engine 'steamapps'
-  if (-not (Test-Path (Join-Path $st 'appmanifest_1874900.acf'))) { Remove-Item $st -Recurse -Force -ErrorAction SilentlyContinue }
-  & (Join-Path $Steam 'steamcmd.exe') @scArgs
-  $code = $LASTEXITCODE
-}
-
 Write-Host ''
 if (Test-Path $Exe) {
-  Write-Host 'Ready. Double-click "Start Mods Download.cmd" to run the tool.' -ForegroundColor Green
+  Write-Host 'Download engine installed.' -ForegroundColor Green
   exit 0
 }
 Write-Host "The engine did not install (SteamCMD exit code $code)." -ForegroundColor Red

@@ -29,6 +29,7 @@ function Start-EngineLocked {
   $ctl = Lock-Engine
   if (-not $ctl) { return $false }
   try {
+    if ((Test-Path -LiteralPath $PauseFlag) -or !((Get-Queued $Cfg).Count)) { return $false }
     $cur = Get-OwnEngine $Cfg
     if ($null -eq $cur) { return $false }   # cannot ask: do not risk a second engine
     if ($cur) { return $false }
@@ -51,6 +52,9 @@ $saidPause = $false   # and for "paused": silent skipping looked exactly like a 
 $saidUnreadable = $false  # and for "config cannot be read": never treat it as "queue empty"
 while ($true) {
   Start-Sleep 15
+  if ($env:RFMM_DESKTOP_OWNER_PID -and !(Get-Process -Id $env:RFMM_DESKTOP_OWNER_PID -ErrorAction SilentlyContinue)) {
+    if ((Test-Path -LiteralPath $PauseFlag) -or !(Get-Queued $Cfg).Count) { break }
+  }
   if (-not (Test-Path $Cfg)) { continue }
   if (Test-Path $PauseFlag) {
     if (-not $saidPause) { Write-Wd 'paused - not restarting anything until the queue is started again'; $saidPause = $true }

@@ -19,7 +19,7 @@ jobs:
         run: |
           set -euo pipefail
           latest=$(gh api "repos/$GH_REPO/releases/latest")
-          jq -e 'any(.assets[]; .name == "arma-reforger-mod-downloader.zip" and .state == "uploaded" and .size > 0)' <<< "$latest" >/dev/null
+          jq -e 'any(.assets[]; .name == "ReforgerModDownloader.exe" and .state == "uploaded" and .size > 0)' <<< "$latest" >/dev/null
           keep=$(jq -r .id <<< "$latest")
           published=$(jq -r .published_at <<< "$latest")
           ids=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" | jq -r --argjson keep "$keep" --arg date "$published" '.[] | select(.draft == false and .id != $keep and .published_at <= $date) | .id')

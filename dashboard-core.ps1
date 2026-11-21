@@ -2,6 +2,14 @@
 function Get-Cfg {
   Repair-Cfg (Read-Json $Cfg ($CfgStub | ConvertFrom-Json))
 }
+function Get-QueueRevision {
+  $path = Join-Path $Data 'queue-revision.txt'
+  if ([IO.File]::Exists($path)) { [IO.File]::ReadAllText($path) }
+}
+function Reset-QueueRevision {
+  # Background checks started before a queue edit cannot undo that edit.
+  [IO.File]::WriteAllText((Join-Path $Data 'queue-revision.txt'), [guid]::NewGuid().ToString('N'))
+}
 function Get-SkippedNames {
   # written by watchdog.ps1 when the Workshop refuses a mod three times in a row
   if (((Get-Date) - $script:skippedAt).TotalSeconds -lt 10) { return $script:skipped }
@@ -161,23 +169,6 @@ function Get-Status {
   $clIds = Get-ClientIds
   $clSet = @{}
   foreach ($i in $clIds) { $clSet[$i] = $true }
-  # progress = per mod min(bytes on disk, Workshop size) + mods installed only in
-  # the client. Without the cap, temp chunk copies make doneB exceed the total
-  # (measured 63.56 GB of 63.27 GB with 53 mods still missing => a full bar).
-  $doneBytes = [double]0
-  foreach ($id in $sizeMap.Keys) {
-    $exp = [double]$sizeMap[$id].bytes
-    $d = $dirs[$id]
-    if ($d -and $d.bytes -gt 0) {
-      $doneBytes += if ($exp -gt 0) { [Math]::Min([double]$d.bytes, $exp) } else { [double]$d.bytes }
-    } elseif ($clSet.ContainsKey($id)) { $doneBytes += $exp }
-  }
-  # never let the bar walk backwards: the DS removes <mod>\temp\ before assembling,
-  # which briefly lowers the byte count (that was the "goes up and down" effect)
-  if ($script:maxDoneTotal -ne $TotalBytes) { $script:maxDoneTotal = [double]$TotalBytes; $script:maxDone = [double]0 }
-  if ($doneBytes -gt $script:maxDone) { $script:maxDone = $doneBytes }
-  $doneBytes = [Math]::Min($script:maxDone, [double]$TotalBytes)
-
   # complete = folder stable (no writes 2 min) AND size matches the Workshop size.
   # The 3 marker files are only used when the size is unknown: many Workshop mods
   # ship without addon.gproj (8-file packs), and requiring it left them unfinished
@@ -195,8 +186,6 @@ function Get-Status {
     if (-not (Test-AddonComplete $d.path $d.mtime)) { continue }
     $completed[$e.Key] = $true
   }
-  $doneCount = @($sizeMap.Keys | Where-Object { $completed.ContainsKey($_) -or $clSet.ContainsKey($_) }).Count
-
   # active = every folder currently being written (no cap: the page shows all).
   # Only when the downloader is actually running: a stopped process leaves
   # partial folders behind and they used to appear as "downloading".
@@ -236,28 +225,61 @@ function Get-Status {
     @{ id = $_.Key; name = $_.Value.name; b = [double]$_.Value.bytes }
   }
 
-  $queueList = @()
-  # only what is still missing: the config keeps every mod of the batch until the
-  # engine restarts, so the page listed mods that were already assembled and the
-  # count never went down while 100 of 102 were on disk
-  try { $queueList = @((Get-Cfg).game.mods |
-        Where-Object { -not $completed.ContainsKey($_.modId) -and -not $clSet.ContainsKey($_.modId) } |
-        ForEach-Object { @{ id = $_.modId; name = $_.name } }) } catch { }
-
-  @{ running = $runningNow; speedB = $sp.b; speedAge = $sp.age
-     doneB = [double]$doneBytes; totalB = [double]$TotalBytes
-     pct = if ($TotalBytes -gt 0) { [Math]::Min(100, [int](100 * $doneBytes / $TotalBytes)) } else { 0 }
-     pctF = if ($TotalBytes -gt 0) { [Math]::Round([Math]::Min(100, 100 * $doneBytes / $TotalBytes), 2) } else { 0 }
-     doneCount = $doneCount; totalMods = $sizeMap.Count
+  $queued = @((Get-Cfg).game.mods)
+  $batchBytes = [double]0
+  $doneBytes = [double]0
+  $doneCount = 0
+  $queueList = @(foreach ($mod in $queued) {
+    $id = Test-ModId $mod.modId
+    if (!$id) { continue }
+    $dir = $dirs[$id]
+    $expected = if ($mod.size) { [double]$mod.size } else { [double]$sizeMap[$id].bytes }
+    $batchBytes += $expected
+    $complete = if ($mod.version) {
+      $dir -and (Get-InstalledVersion $dir.path) -eq $mod.version -and (Test-AddonComplete $dir.path $dir.mtime)
+    } else {
+      $clSet.ContainsKey($id) -or ($dir -and (Test-AddonComplete $dir.path $dir.mtime))
+    }
+    if ($complete) {
+      $doneCount++
+      $doneBytes += $expected
+    } else {
+      if ($dir -and !$mod.version) { $doneBytes += [Math]::Min([double]$dir.bytes, $expected) }
+      @{ id = $id; name = $mod.name }
+    }
+  })
+  # Temporary fragments disappear during assembly, so keep a high-water mark
+  # only until the batch changes or finishes.
+  $batch = ($queued | ForEach-Object { "$($_.modId):$($_.version)" }) -join ','
+  if (!$queueList.Count) {
+    $batch = ''
+    $batchBytes = $doneBytes = $doneCount = 0
+    $queued = @()
+    $active = @()
+    $sp = @{ b = 0; age = 999 }
+    $script:rateSamples = @()
+  }
+  if ($script:progressBatch -ne $batch) {
+    $script:progressBatch = $batch
+    $script:maxDone = [double]0
+  }
+  $script:maxDone = [Math]::Max([double]$script:maxDone, $doneBytes)
+  $doneBytes = [Math]::Min($script:maxDone, $batchBytes)
+  @{ running = $runningNow; paused = (Test-Path -LiteralPath (Join-Path $Data 'paused.flag'))
+     speedB = $sp.b; speedAge = $sp.age
+     doneB = $doneBytes; totalB = $batchBytes
+     pct = if ($batchBytes -gt 0) { [int](100 * $doneBytes / $batchBytes) } else { 0 }
+     pctF = if ($batchBytes -gt 0) { [Math]::Round(100 * $doneBytes / $batchBytes, 2) } else { 0 }
+     doneCount = $doneCount; totalMods = $queued.Count
      addonsB = (Get-AddonsBytes)
      active = @($active); recent = @($recent); cl = $clIds; failed = (Get-SkippedNames)
-     queue = @($queueList); tok = $token; verify = $verify }
+     queue = @($queueList); queueRevision = (Get-QueueRevision); tok = $token; verify = $verify }
 }
 function Start-DS {
-  Remove-Item (Join-Path $Data 'paused.flag') -Force -ErrorAction SilentlyContinue
   $ctl = Lock-Engine
   if (-not $ctl) { return 'another start/stop is in progress - try again' }
   try {
+    if (!@((Get-Cfg).game.mods).Count) { return 'nothing to download - the queue is empty' }
     $mine = Get-DS -Fresh
     if ($null -eq $mine) { return 'cannot read the process list right now - press Start again' }
     if (@($mine).Count) { return 'already running' }
@@ -266,15 +288,6 @@ function Start-DS {
     if (Get-Process ArmaReforgerServer -ErrorAction SilentlyContinue) {
       return 'another ArmaReforgerServer is already running - close it, then press Start'
     }
-    # resume interrupted work: a partial download is not in the queue after Clear
-    # queue, but Start / Resume should continue it instead of saying "empty"
-    if (@((Get-Cfg).game.mods).Count -eq 0) {
-      $partial = @(Get-PartialMods)
-      if ($partial.Count) {
-        Update-Cfg { param($cfg) $cfg.game.mods = $partial } $Cfg | Out-Null
-        Write-Host "resuming $($partial.Count) unfinished download(s)" -ForegroundColor Cyan
-      }
-    }
     # the 1 MB download-list trap: trimming is lossless (the DS skips done mods
     # anyway); skipping it makes the DS insta-crash ~30 s after a false "started"
     & "$PSScriptRoot\trim-config.ps1" | Out-Null
@@ -282,6 +295,7 @@ function Start-DS {
     # running a world forever, doing no work
     $left = @((Get-Cfg).game.mods).Count
     if ($left -eq 0) { return 'nothing to download - the queue is empty' }
+    Remove-Item (Join-Path $Data 'paused.flag') -Force -ErrorAction SilentlyContinue
     Start-Process -FilePath $Exe -ArgumentList "-config `"$Cfg`" -profile `"$DsProfile`"" `
       -WorkingDirectory "$Root\armar-server" -WindowStyle Hidden
     # no 25 s sleep here: it froze the only HTTP thread (and the mirror with it).
@@ -302,8 +316,12 @@ function Stop-DS {
     $p | Stop-Process -Force
     # wait for the process to actually die: a 1 s sleep can be too short, and
     # Start-DS would then see the dying process and report "already running"
-    foreach ($i in 1..20) { if (-not (Get-DS -Fresh)) { break }; Start-Sleep -Milliseconds 500 }
-    'paused - progress kept'
+    foreach ($i in 1..20) {
+      $remaining = Get-DS -Fresh
+      if ($null -ne $remaining -and !@($remaining).Count) { return 'paused - progress kept' }
+      Start-Sleep -Milliseconds 500
+    }
+    throw 'could not confirm the downloader stopped'
   } finally { $ctl.ReleaseMutex() }
 }
 function Invoke-Verify {
@@ -352,9 +370,6 @@ function Get-HaveIds {
   $have
 }
 function Invoke-QueueServer([string]$Id) {
-  # this server's missing mods download first, then the rest of the batch as a
-  # full deterministic rebuild (every batch mod not on disk) - never a stale
-  # leftover config, so the order after the server's mods is stable
   $srv = @($serverList | Where-Object { $_.id -eq $Id })[0]
   if (-not $srv) { throw 'unknown server id' }
   $name = if ($srv.PSObject.Properties['key'] -and $srv.key) { [string]$srv.key } else { ([string]$srv.name -split '\|')[0].Trim() }
@@ -362,55 +377,41 @@ function Invoke-QueueServer([string]$Id) {
   $first = @($srv.mods | Where-Object { -not $have.ContainsKey($_.id) } |
     ForEach-Object { [PSCustomObject]@{ modId = $_.id; name = $_.name } })
   if (-not $first) { return "nothing to do - all $($srv.mods.Count) mods of '$name' are already installed" }
-  $ids = @($first | ForEach-Object { $_.modId })
-  $rest = @($sizeMap.Keys | Where-Object { -not $have.ContainsKey($_) -and $ids -notcontains $_ } |
-    ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$sizeMap[$_].name } })
-  # stop BEFORE writing: the engine rewrites this file on exit, so a write made
-  # while it runs is immediately undone (the button looked like it did nothing)
-  Stop-DS | Out-Null
-  Update-Cfg { param($cfg) $cfg.game.mods = @($first + $rest) } $Cfg | Out-Null
-  $r = Start-DS
-  $already = @($srv.mods).Count - $first.Count
-  "queue: $($first.Count) missing mods of '$name' download first, then the other $($rest.Count) batch mods follow ($already of $($srv.mods.Count) already installed) ($r)"
-}
-function Get-PartialMods {
-  # mods that were started but are not complete (the resume set). Same completion
-  # rule as trim/verify: comparing against the Workshop size made finished mods
-  # look partial (its size goes stale when a mod updates), so Start queued exactly
-  # one mod that trim then removed - "resuming 1" followed by "nothing to download".
-  $dirs = Get-DirMap
-  @($dirs.GetEnumerator() | Where-Object {
-      # only mods this install tracks: an untracked folder (a mod from a removed
-      # server, or one you half-deleted to save space) must not come back by itself
-      $sizeMap.ContainsKey($_.Key) -and $_.Value.bytes -gt 0 -and
-      -not (Test-AddonComplete $_.Value.path $_.Value.mtime)
-    } | ForEach-Object { [PSCustomObject]@{ modId = $_.Key; name = $_.Value.name } })
+  $firstIds = @($first.modId)
+  $ctl = Lock-Engine
+  if (!$ctl) { throw 'The downloader is busy. Try reordering the queue again.' }
+  try {
+    $engine = Get-DS -Fresh
+    if ($null -eq $engine) { throw 'Cannot check whether the downloader is running. Try again.' }
+    Stop-DS | Out-Null
+    $restCount = Update-Cfg {
+      param($cfg)
+      $existing = @{}
+      foreach ($mod in $cfg.game.mods) { $existing[$mod.modId] = $mod }
+      $priority = @($first | ForEach-Object {
+        if ($existing.ContainsKey($_.modId)) { $existing[$_.modId] } else { $_ }
+      })
+      $rest = @($cfg.game.mods | Where-Object { $_.modId -notin $firstIds })
+      $cfg.game.mods = @($priority + $rest)
+      $rest.Count
+    } $Cfg
+    $note = if (@($engine).Count) { " ($(Start-DS))" } else { ' - press Start / Resume' }
+    "Queued $($first.Count) missing mods from '$name' ahead of $restCount others$note."
+  } finally { $ctl.ReleaseMutex() }
 }
 function Invoke-StartQueue {
-  # start whatever is queued. If the queue is empty but a download was interrupted,
-  # resume just those. It never refills from the servers - that is "Queue all missing".
-  # Clear the pause flag here: on an empty queue this returns before Start-DS, which
-  # is the only other place that clears it, and the watchdog stayed paused forever.
-  Remove-Item (Join-Path $Data 'paused.flag') -Force -ErrorAction SilentlyContinue
-  # the partial set comes from a cached disk scan; Start is exactly when it must be
-  # current (a mod just deleted or interrupted)
   $script:dirCacheAt = (Get-Date).AddMinutes(-10)
   $script:haveAt = (Get-Date).AddMinutes(-10)
-  $j = Get-Cfg
-  if (@($j.game.mods).Count -eq 0) {
-    $partial = @(Get-PartialMods)
-    if ($partial.Count) {
-      $j.game.mods = $partial
-      Save-Json $j $Cfg
-      $r = Start-DS
-      return "resuming $($partial.Count) unfinished download(s) ($r)"
-    }
-    return 'queue is empty - press Queue all missing to fetch every missing mod of your servers'
-  }
-  & "$PSScriptRoot\trim-config.ps1" | Out-Null
-  $r = Start-DS
-  $left = @((Get-Cfg).game.mods).Count
-  "started with $left queued mods ($r)"
+  Start-DS
+}
+function Invoke-PauseQueue {
+  $ctl = Lock-Engine
+  if (!$ctl) { throw 'The downloader is busy. Try pausing again.' }
+  try {
+    $message = Stop-DS
+    Reset-QueueRevision
+    $message
+  } finally { $ctl.ReleaseMutex() }
 }
 function Invoke-MakePreset([string]$Id) {
   $out = & "$PSScriptRoot\make-preset.ps1" -ServerId $Id
@@ -451,6 +452,34 @@ function Get-ModDeps([string]$Id) {
   try { @((Invoke-RestMethod -Uri "$ApiBase/mods/$Id/dependencies" -Headers $ApiH -TimeoutSec 10).data.dependencies) }
   catch { @() }
 }
+function Add-QueuedMods($Mods) {
+  $ctl = Lock-Engine
+  if (!$ctl) { throw 'The downloader is busy. Try adding the mods again.' }
+  try {
+    $engine = Get-DS -Fresh
+    if ($null -eq $engine) { throw 'Cannot check whether the downloader is running. Try again.' }
+    $wasRunning = @($engine).Count -gt 0
+    # The watchdog and the dedicated server both use the same config.
+    # Keep an idle queue paused until the user presses Start.
+    if ($wasRunning) { Stop-DS | Out-Null }
+    else { New-Item -ItemType File -Force (Join-Path $Data 'paused.flag') | Out-Null }
+    $count = Update-Cfg {
+      param($cfg)
+      $queued = @{}
+      foreach ($mod in $cfg.game.mods) { $queued[$mod.modId] = $true }
+      $new = @(foreach ($mod in $Mods) {
+        if (!$queued.ContainsKey($mod.modId)) {
+          $queued[$mod.modId] = $true
+          $mod
+        }
+      })
+      $cfg.game.mods = @($cfg.game.mods) + $new
+      $new.Count
+    } $Cfg
+    $note = if ($wasRunning) { " ($(Start-DS))" } else { ' - press Start / Resume' }
+    @{ count = $count; note = $note }
+  } finally { $ctl.ReleaseMutex() }
+}
 function Invoke-AddMod([string]$Id) {
   # add ONE workshop mod (plus its dependencies) to the download queue, at the end
   if ($Id -notmatch '^[0-9A-Fa-f]{16}$') { throw 'not a mod id' }
@@ -490,19 +519,7 @@ function Invoke-AddMod([string]$Id) {
     }
     if ($cut) { break }
   }
-  # the engine rewrites the config on exit, so an append made while it runs is
-  # discarded: stop it first and start it again afterwards, like Add server.
-  # -Fresh: a cached "nothing running" would skip that stop and lose the append.
-  # "cannot ask" must abort before the write, not be read as "not running".
-  $engine = Get-DS -Fresh
-  if ($null -eq $engine) { throw 'cannot read the process list right now - nothing was added, try again in a moment' }
-  $wasRunning = @($engine).Count -gt 0
-  if ($wasRunning) { Stop-DS | Out-Null }
-  # serialised write; the engine's own copy is on disk because it was stopped
-  Update-Cfg {
-    param($cfg)
-    $cfg.game.mods = @($cfg.game.mods) + @($add | ForEach-Object { [PSCustomObject]@{ modId = $_.modId; name = $_.name } })
-  } $Cfg | Out-Null
+  $queueChange = Add-QueuedMods @($add | ForEach-Object { [PSCustomObject]@{ modId = $_.modId; name = $_.name } })
   # merge the sizes (merge-only: a replace would destroy the rest of the map)
   $sz = Read-Json $Sizes ('{"totalBytes":0,"mods":{}}' | ConvertFrom-Json)
   foreach ($a in $add) {
@@ -517,8 +534,7 @@ function Invoke-AddMod([string]$Id) {
   $msg = "queued '$($m.name)' ($([Math]::Round([double]$m.size / 1GB, 2)) GB)"
   if ($depNames.Count) { $msg += " + $($depNames.Count) dependency mod(s): $($depNames -join ', ')" }
   if ($cut) { $msg += " - dependency walk stopped at the 20 s / $cap mod limit; press Add again for the rest" }
-  if ($wasRunning) { $msg += " ($(Start-DS))" } else { $msg += ' - press Start' }
-  $msg
+  $msg + $queueChange.note
 }
 function Get-Browse([string]$q) {
   # live server list from the public reforgermods API, cached 15 s per query
@@ -570,17 +586,7 @@ function Invoke-AddServer([string]$Id) {
   Save-Json @{ servers = $serverList } $ServersPath 6
   if (-not $new) { return "'$name' is in the list - all $(@($want).Count) mods are on disk or queued, nothing to download" }
 
-  # the engine rewrites the config on exit, so a write made while it runs is lost.
-  # Match Add mod / Add-MissingToQueue: abort if the process list cannot be read,
-  # stop first, then read + append + save, then start.
-  $engine = Get-DS -Fresh
-  if ($null -eq $engine) { throw 'cannot read the process list right now - nothing was added, try again in a moment' }
-  if (@($engine).Count) { Stop-DS | Out-Null }
-  Update-Cfg {
-    param($cfg)
-    $cfg.game.mods = @($cfg.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_.id; name = $_.name } })
-  } $Cfg | Out-Null
-
+  $queueChange = Add-QueuedMods @($new | ForEach-Object { [PSCustomObject]@{ modId = $_.id; name = $_.name } })
   # merge the real sizes into the sizes file (merge-only: never replace it)
   $sz = Read-Json $Sizes ('{"totalBytes":0,"mods":{}}' | ConvertFrom-Json)
   foreach ($m in $new) {
@@ -597,8 +603,7 @@ function Invoke-AddServer([string]$Id) {
   # (one assignment only: the list is replaced above, so a second append here put
   # the same server in memory and in batch1-servers.json twice)
   $gb = [Math]::Round(($new | ForEach-Object { [double]$_.size } | Measure-Object -Sum).Sum / 1GB, 2)
-  $r = Start-DS
-  "added '$name': $($new.Count) new mods (~$gb GB) queued at the end, $(@($want).Count - $new.Count) already on disk ($r)"
+  "added '$name': $($new.Count) new mods (~$gb GB) queued at the end, $(@($want).Count - $new.Count) already on disk$($queueChange.note)"
 }
 function Merge-ServerMods($sv, $mods, $sz) {
   # apply a modlist that a background job fetched: sizes, then the "changed"
@@ -678,7 +683,7 @@ function Start-RefreshJob([string[]]$Ids) {
     }
     @{ servers = $servers; sizes = $sizes } | ConvertTo-Json -Depth 8 | Set-Content $out
   }
-  $script:refreshJob = @{ id = $id; out = $out; job = $job }
+  $script:refreshJob = @{ id = $id; out = $out; job = $job; queueRevision = (Get-QueueRevision) }
   @{ job = $id; msg = "refreshing $($ids.Count) server(s) in the background (job $id)..." }
 }
 function Complete-RefreshJob([string]$Id) {
@@ -718,11 +723,16 @@ function Complete-RefreshJob([string]$Id) {
         $sz.mods | Add-Member -MemberType NoteProperty -Name $sid -Value ([PSCustomObject]@{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }) -Force
       }
       $ok = 0; $fail = 0; $changed = @()
+      $want = [ordered]@{}
       foreach ($sp in @($payload.servers)) {
         $sv = @($serverList | Where-Object { $_.id -eq $sp.id })[0]
         if (-not $sv) { continue }            # removed while the job was running
         if ($sp.PSObject.Properties['error'] -and $sp.error) { $fail++; continue }
+        $previous = @($sv.mods.id)
         Merge-ServerMods $sv @($sp.mods) $sz
+        foreach ($mod in $sv.mods) {
+          if ($mod.id -notin $previous) { $want[$mod.id] = $mod.name }
+        }
         $c = $sv.PSObject.Properties['changed']
         if ($c -and $c.Value) { $changed += "$($sv.name): +$($c.Value.added) -$($c.Value.removed)" }
         $ok++
@@ -731,9 +741,8 @@ function Complete-RefreshJob([string]$Id) {
       $sz.totalBytes = [double]$script:TotalBytes
       Save-Json $sz $Sizes 4
       Save-Json @{ servers = $serverList } $ServersPath 6
-      $want = [ordered]@{}
-      foreach ($sv in $serverList) { foreach ($m in $sv.mods) { $want[$m.id] = $m.name } }
-      $q = Add-MissingToQueue $want
+      $q = if ($rj.queueRevision -eq (Get-QueueRevision)) { Add-MissingToQueue $want }
+        else { @{ count = 0; note = ' - queue changed during refresh' } }
       $result = @{ state = 'done'; msg = "refreshed $ok/$(@($payload.servers).Count) servers$(if ($fail) { " ($fail unreachable)" }): $($sizeMap.Count) mods tracked, $($q.count) new mods queued$(if (@($changed).Count) { " - modlist changed: $($changed -join '; ')" })$($q.note)" }
     }
   } catch {
@@ -753,22 +762,8 @@ function Add-MissingToQueue($want) {
   $queued = @{}
   foreach ($m in $j.game.mods) { $queued[$m.modId] = $true }
   $new = @($want.Keys | Where-Object { -not $have.ContainsKey($_) -and -not $queued.ContainsKey($_) })
-  $note = ''
-  if ($new.Count) {
-    # the DS rewrites the config on exit, so an append made while it runs is
-    # discarded: stop it first, like every other handler that writes the queue.
-    # -Fresh: the cache can say "nothing running" for 2 s after a watchdog start.
-    $engine = Get-DS -Fresh
-    if ($null -eq $engine) { throw 'cannot read the process list right now - the new mods were not queued, try again in a moment' }
-    $restart = @($engine).Count -gt 0
-    if ($restart) { Stop-DS | Out-Null }
-    Update-Cfg {
-      param($cfg)
-      $cfg.game.mods = @($cfg.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$want[$_] } })
-    } $Cfg | Out-Null
-    if ($restart) { $note = "; downloader restarted for the new mods ($(Start-DS))" }
-  }
-  @{ count = $new.Count; note = $note }
+  if (!$new.Count) { return @{ count = 0; note = '' } }
+  Add-QueuedMods @($new | ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$want[$_] } })
 }
 function Invoke-RemoveServer([string]$Id) {
   # drop the server from the list only: its mods stay on disk and in the queue
@@ -778,26 +773,45 @@ function Invoke-RemoveServer([string]$Id) {
   Save-Json @{ servers = $serverList } $ServersPath 6
   "removed '$($sv.name)' from the list - its mods stay on disk and in the queue, nothing was deleted"
 }
+function Invoke-RemoveQueuedMod([string]$Id) {
+  $Id = Test-ModId $Id
+  if (!$Id) { throw 'Invalid mod ID.' }
+  $ctl = Lock-Engine
+  if (!$ctl) { throw 'another start/stop is in progress - the queue was not changed' }
+  try {
+    $mod = (Get-Cfg).game.mods | Where-Object modId -eq $Id | Select-Object -First 1
+    if (!$mod) { return 'mod is no longer queued' }
+    $engine = Get-DS -Fresh
+    if ($null -eq $engine) { throw 'cannot read the process list right now - the queue was not changed' }
+    $restart = @($engine).Count -gt 0
+    if ($restart) { Stop-DS | Out-Null }
+    Update-Cfg {
+      param($cfg)
+      $cfg.game.mods = @($cfg.game.mods | Where-Object modId -ne $Id)
+    } $Cfg | Out-Null
+    Reset-QueueRevision
+    $message = "removed '$($mod.name)' from the queue"
+    if ($restart -and @((Get-Cfg).game.mods).Count) { $message += " ($(Start-DS))" }
+    $message
+  } finally { $ctl.ReleaseMutex() }
+}
 function Invoke-ClearQueue {
-  # empty the queue and stop the downloader - nothing is deleted from disk.
-  # Stop FIRST: the DS writes its config back on shutdown, which would refill it.
-  $n = @((Get-Cfg).game.mods).Count
-  Stop-DS | Out-Null
-  Start-Sleep 2
-  Update-Cfg { param($cfg) $cfg.game.mods = @() } $Cfg | Out-Null
-  "queue cleared ($n mods removed) - installed mods are untouched"
+  $ctl = Lock-Engine
+  if (!$ctl) { throw 'another start/stop is in progress - the queue was not changed' }
+  try {
+    Stop-DS | Out-Null
+    $n = Update-Cfg {
+      param($cfg)
+      @($cfg.game.mods).Count
+      $cfg.game.mods = @()
+    } $Cfg
+    Reset-QueueRevision
+    "queue cleared ($n mods removed)"
+  } finally { $ctl.ReleaseMutex() }
 }
 function Invoke-ResumeAll {
-  # queue every mod of every tracked server that is not installed yet
-  $have = Get-HaveIds
   $want = [ordered]@{}
   foreach ($sv in $serverList) { foreach ($m in $sv.mods) { $want[$m.id] = $m.name } }
-  foreach ($id in $sizeMap.Keys) { if (-not $want.Contains($id)) { $want[$id] = [string]$sizeMap[$id].name } }
-  $mods = @($want.Keys | Where-Object { -not $have.ContainsKey($_) } |
-    ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$want[$_] } })
-  # stop BEFORE writing: the engine rewrites the config on exit
-  Stop-DS | Out-Null
-  Update-Cfg { param($cfg) $cfg.game.mods = $mods } $Cfg | Out-Null
-  $r = Start-DS
-  "resume all: $($mods.Count) mods queued, $(@($want.Keys).Count - $mods.Count) already installed ($r)"
+  $result = Add-MissingToQueue $want
+  "Queued $($result.count) more missing server mods$($result.note)."
 }

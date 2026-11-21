@@ -5,3 +5,7 @@ armar-server/
 steamcmd/
 *.log
 *.zip
+
+# Desktop build output
+/.desktop-build/
+/dist/

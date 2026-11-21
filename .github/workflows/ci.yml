@@ -7,6 +7,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build desktop executable
+        shell: powershell
+        run: .\desktop\Build.ps1
+      - name: Test the desktop transport
+        shell: powershell
+        run: .\desktop\Test.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReforgerModDownloader-windows-x64
+          path: dist/ReforgerModDownloader.exe
+          if-no-files-found: error
+
   audit:
     # the tool targets Windows PowerShell 5.1, so the gate runs on Windows
     runs-on: windows-latest
