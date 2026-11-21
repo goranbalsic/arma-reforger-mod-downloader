@@ -16,26 +16,47 @@ $Sizes   = "$Data\batch1-sizes.json"
 $ServersPath = "$Data\batch1-servers.json"
 $DsProfile = "$Root\serverprofile"
 $Addons  = "$DsProfile\addons"
+$ClientAddons = "$env:USERPROFILE\Documents\My Games\ArmaReforger\addons"
 $Url     = 'http://localhost:8123/'
-
-# first run on any machine: create empty state files instead of failing
-if (-not (Test-Path $Data)) { New-Item -ItemType Directory -Force $Data | Out-Null }
-if (-not (Test-Path $Sizes))       { '{"totalBytes":0,"mods":{}}' | Set-Content $Sizes -Encoding UTF8 }
-if (-not (Test-Path $Cfg))         { '{"game":{"mods":[]}}'     | Set-Content $Cfg -Encoding UTF8 }
-if (-not (Test-Path $ServersPath)) { '{"servers":[]}'           | Set-Content $ServersPath -Encoding UTF8 }
 
 # shared helpers (Save-Json, Read-Json, Test-AddonComplete): one copy for every
 # script, so the completion rule cannot drift between the app, the trim and the test
 . "$PSScriptRoot\state.ps1"
 
+# first run on any machine: create empty state files instead of failing
+if (-not (Test-Path $Data)) { New-Item -ItemType Directory -Force $Data | Out-Null }
+if (-not (Test-Path $Sizes))       { '{"totalBytes":0,"mods":{}}' | Set-Content $Sizes -Encoding UTF8 }
+if (-not (Test-Path $Cfg))         { $CfgStub | Set-Content $Cfg -Encoding UTF8 }
+if (-not (Test-Path $ServersPath)) { '{"servers":[]}'           | Set-Content $ServersPath -Encoding UTF8 }
+
+# The engine can only assemble mods inside its own profile, and the game reads its
+# own addons folder. A directory junction makes those one folder: each mod is
+# stored once, where the game looks, instead of downloaded here and copied there.
+function Initialize-AddonsLink {
+  $own = Get-OwnEngine $Cfg
+  if ($null -eq $own) { return $false }            # cannot ask: never move files blindly
+  if (@($own).Count) { return $false }             # never move files under a live engine
+  if (-not (Test-Path $ClientAddons)) { New-Item -ItemType Directory -Force $ClientAddons | Out-Null }
+  $item = Get-Item $Addons -Force -ErrorAction SilentlyContinue
+  if ($item -and $item.LinkType) { return $true }  # already one folder
+  New-Item -ItemType Directory -Force $DsProfile | Out-Null
+  if ($item) {
+    # an older install kept its own copies: move them in (same volume = instant).
+    # A name that already exists in the game folder stays as the game's copy.
+    foreach ($d in @(Get-ChildItem $Addons -Force -ErrorAction SilentlyContinue)) {
+      Move-Item $d.FullName $ClientAddons -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item $Addons -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  New-Item -ItemType Junction -Path $Addons -Target $ClientAddons -ErrorAction SilentlyContinue | Out-Null
+  [bool](Get-Item $Addons -Force -ErrorAction SilentlyContinue).LinkType
+}
+if (-not (Initialize-AddonsLink)) {
+  Write-Host 'the engine folder could not be linked to the game addons folder - mods are kept here and copied there'
+}
+
 function Get-Cfg {
-  $j = Read-Json $Cfg ('{"game":{"mods":[]}}' | ConvertFrom-Json)
-  if ($null -eq $j -or $null -eq $j.game) { $j = '{"game":{"mods":[]}}' | ConvertFrom-Json }
-  # the DS writes "mods": null back into the config on shutdown, and @($null).Count
-  # is 1 - so every caller believed one mod was still queued when the queue was
-  # empty (Start skipped the partial resume, trim started an empty DS)
-  if ($null -eq $j.game.mods) { $j.game.mods = @() }
-  $j
+  Repair-Cfg (Read-Json $Cfg ($CfgStub | ConvertFrom-Json))
 }
 
 $j = Read-Json $Sizes ('{"totalBytes":0,"mods":{}}' | ConvertFrom-Json)

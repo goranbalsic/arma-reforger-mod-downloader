@@ -5,6 +5,26 @@
 # copy of the completion rule. One copy, one rule.
 $script:exactCache = @{}
 
+# The engine validates its config before it does anything and refuses to start
+# without these two ("required params are missing: name scenarioId"). A fresh
+# install had a config with only "mods", so the engine exited in under a second
+# and the watchdog restarted it forever. It never loads a world - the scenario
+# only has to be one that ships with the game.
+$script:CfgStub = '{"game":{"name":"Reforger Mod Downloader","scenarioId":"{59AD59368755F41A}Missions/21_GM_Eden.conf","mods":[]}}'
+
+function Repair-Cfg($j) {
+  # one repair for configs written before the stub had name/scenarioId, used by the
+  # app and by the trim, so the engine is never started from a config it rejects.
+  # Add-Member -Force: an object read from JSON cannot gain a property by assignment.
+  if ($null -eq $j -or $null -eq $j.game) { return $CfgStub | ConvertFrom-Json }
+  if (-not $j.game.name) { $j.game | Add-Member -NotePropertyName name -NotePropertyValue 'Reforger Mod Downloader' -Force }
+  if (-not $j.game.scenarioId) { $j.game | Add-Member -NotePropertyName scenarioId -NotePropertyValue '{59AD59368755F41A}Missions/21_GM_Eden.conf' -Force }
+  # the DS writes "mods": null on shutdown, and @($null).Count is 1 - so every
+  # caller believed one mod was still queued when the queue was empty
+  if ($null -eq $j.game.mods) { $j.game | Add-Member -NotePropertyName mods -NotePropertyValue @() -Force }
+  $j
+}
+
 function Get-OwnEngine([string]$ConfigPath) {
   # ONLY an engine this tool launched: its command line must carry our config path.
   # Matching the process name alone killed a community server the user runs

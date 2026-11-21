@@ -39,8 +39,9 @@ No Steam account. No game launch. One-click setup.
   16-character mod id, and add only what you want.
 - **Dependencies included.** If a mod needs other mods, they are queued with it
   and marked as dependencies, so the size total is honest.
-- **Downloads straight to the game.** Finished mods are copied into
-  `Documents\My Games\ArmaReforger\addons`, which is the folder the game reads.
+- **Downloads straight to the game.** The engine writes into
+  `Documents\My Games\ArmaReforger\addons`, the folder the game reads, so every
+  mod is stored once instead of being downloaded and then copied.
 - **Verification.** Every mod is checked against the file list inside the mod
   itself, so a half-finished download is never counted as installed.
 - **Launcher presets.** Write a preset for a server, containing exactly the mods
@@ -71,7 +72,12 @@ anyway**. That message appears because the files are new and unsigned.
 ### What setup installs
 
 Setup downloads SteamCMD, then the free Arma Reforger dedicated server, about
-1.4 GB in total, once. The tool uses that server as its download engine.
+12 GB in total, once. The tool uses that server as its download engine.
+
+To get a newer version later, double-click **`2 - Update.cmd`**. It downloads the
+latest release over your folder and keeps the engine, SteamCMD and your queue.
+`Start Mods Download.cmd` also checks once at startup and tells you when an update
+is waiting.
 
 It needs an engine because **the Workshop has no public download link**. Mod files
 are served only to a signed-in game or to the dedicated server. The server
@@ -83,8 +89,8 @@ installs with Steam's anonymous login, so no account is created or used.
 2. Press **Add server** on the one you want. Its mods are appended to the queue.
 3. Press **Start**.
 
-Each mod is downloaded, checked file by file, then copied into your addons
-folder. Mods you already have are skipped.
+Each mod is downloaded straight into your addons folder, then checked file by
+file. Mods you already have are skipped.
 
 ## Download individual mods
 
@@ -132,7 +138,7 @@ Close the game first: it rewrites its settings file on exit.
 | --- | --- |
 | Mods (read by the game) | `Documents\My Games\ArmaReforger\addons` |
 | Download engine | `armar-server\` in the tool's folder |
-| Working copy of downloads | `serverprofile\` in the tool's folder |
+| Engine output folder | `serverprofile\addons` - a link to the game's folder, not a copy |
 | Saved lists and sizes | `data\` in the tool's folder |
 | What you clicked, and when | `data\actions.log` - one line per button press |
 
@@ -168,8 +174,9 @@ Open the mod on the Workshop; the id is the 16 characters at the end of the link
 
 ## Troubleshooting
 
-**Setup fails.** Run `1 - Setup.cmd` again; the download resumes. Check that you
-are online and have ~2 GB free.
+**Setup fails.** Run `1 - Setup.cmd` again; the download resumes and it retries
+with a clean engine folder by itself. Check that you are online and have ~20 GB
+free. The exact SteamCMD error is in `steamcmd\logs\console_log.txt`.
 
 **Nothing opens in the browser.** Type `http://localhost:8123/` into the address
 bar.
@@ -205,9 +212,9 @@ you no longer want.
 ## How it works
 
 The tool writes a config for the dedicated server that lists exactly the mods you
-picked, starts it headless, and watches its log and its output folder. When the
-engine finishes, the tool checks each mod against its own file list and mirrors
-the finished folders into the game's addons folder with `robocopy /MIR`.
+picked, starts it headless, and watches its log and its output folder. The
+engine's output folder is a directory link to the game's addons folder, so the
+engine downloads each mod once, straight to where the game reads it.
 
 Search and sizes come from the public [reforgermods.net](https://reforgermods.net)
 API. Downloads come from the official Workshop through Steam. Nothing is

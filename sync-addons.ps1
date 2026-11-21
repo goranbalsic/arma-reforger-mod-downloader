@@ -8,13 +8,25 @@ $src = "$Root\serverprofile\addons"
 $dst = "$env:USERPROFILE\Documents\My Games\ArmaReforger\addons"
 $Url = 'http://localhost:8123/status'
 
+# a linked engine folder IS the game folder: there is nothing to copy, and
+# robocopy would be handed the same path as source and destination
+$srcItem = Get-Item $src -Force -ErrorAction SilentlyContinue
+if ($srcItem -and $srcItem.LinkType) { exit 0 }
+
 function Sync-Completed {
   try { $s = Invoke-RestMethod $Url -TimeoutSec 10 } catch { return $false }   # dashboard down -> caller decides
   Get-ChildItem $src -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match '_([0-9A-F]{16})$' -and $s.recent.id -contains $Matches[1] } |
     ForEach-Object {
-      robocopy $_.FullName "$dst\$($_.Name)" /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS | Out-Null
-      if ($LASTEXITCODE -ge 8) { Write-Host "copy failed: $($_.Name)" -ForegroundColor Red }
+      $dir = $_
+      $id = [regex]::Match($dir.Name, '_([0-9A-F]{16})$').Groups[1].Value
+      # one folder per mod id: an older copy under another name would make the
+      # game mount the same mod twice, and /MIR would fill both
+      $same = @(Get-ChildItem $dst -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "_$id$" })
+      $target = if ($same.Count) { $same[0].FullName } else { Join-Path $dst $dir.Name }
+      $same | Select-Object -Skip 1 | ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+      robocopy $dir.FullName $target /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS | Out-Null
+      if ($LASTEXITCODE -ge 8) { Write-Host "copy failed: $($dir.Name)" -ForegroundColor Red }
     }
   $true
 }

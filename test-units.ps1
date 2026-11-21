@@ -64,6 +64,16 @@ try { Save-Json @{} 'notapath' } catch { $threw = $true }
 Check 'a non-path is refused loudly'          $threw
 Check 'missing file returns the default'      ((Read-Json (Join-Path $tmp 'nope.json') 'dflt') -eq 'dflt')
 
+Write-Host 'engine config (the engine refuses a config without these)'
+$stub = $CfgStub | ConvertFrom-Json
+Check 'stub names the server'                 ([bool]$stub.game.name)
+Check 'stub has a scenario'                   ([bool]$stub.game.scenarioId)
+Check 'stub has a mods array'                 ($null -ne $stub.game.mods)
+$repaired = Repair-Cfg ([pscustomobject]@{ game = [pscustomobject]@{ mods = @([ordered]@{ modId = 'X'; name = 'y' }) } })
+Check 'repair adds name and scenario'         (([bool]$repaired.game.name) -and ([bool]$repaired.game.scenarioId))
+Check 'repair keeps the queue'                (@($repaired.game.mods).Count -eq 1)
+Check 'repair turns null mods into an array'  (@((Repair-Cfg ([pscustomobject]@{ game = [pscustomobject]@{ mods = $null } })).game.mods).Count -eq 0)
+
 Write-Host 'engine ownership (only the engine we started)'
 $none = Get-OwnEngine (Join-Path $tmp 'no-such-config.json')
 Check 'no match is an empty array, not $null' (($null -ne $none) -and (@($none).Count -eq 0))

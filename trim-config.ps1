@@ -9,28 +9,24 @@ $cfgPath = "$Data\batch1-serverconfig.json"
 $addons  = "$Root\serverprofile\addons"
 
 
+$raw = Get-Content $cfgPath -Raw -ErrorAction SilentlyContinue
+$j = Read-Json $cfgPath ($CfgStub | ConvertFrom-Json)
+if (-not $raw) { "config was empty or unreadable - recreated" }
+# adds name/scenarioId (the engine refuses a config without them) and repairs
+# "mods": null, which the DS writes on shutdown
+$j = Repair-Cfg $j
+
 $done = @{}
-# same completion rule as Get-HaveIds in the dashboard: a folder with the 3 marker
-# files but unfinished paks is NOT done (the DS writes the markers first), and a
-# mod whose Workshop size went stale still counts when its meta list matches.
-Get-ChildItem $addons -Directory -ErrorAction SilentlyContinue |
-  Where-Object { $_.Name -match '_([0-9A-F]{16})$' } |
-  ForEach-Object {
-    $id = $Matches[1]
-    if (Test-AddonComplete $_.FullName) { $done[$id] = $true }
-  }
+# only the queued mods are checked: the engine's folder is linked into the game
+# folder and holds the whole library, and parsing 1000 meta files before every
+# engine start made the watchdog crawl. Same completion rule as Get-HaveIds.
+foreach ($m in @($j.game.mods)) {
+  if (-not $m.modId -or $done.ContainsKey($m.modId)) { continue }
+  $d = Get-ChildItem $addons -Directory -Filter "*_$($m.modId)" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($d -and (Test-AddonComplete $d.FullName $d.LastWriteTime)) { $done[$m.modId] = $true }
+}
 "assembled on disk: $($done.Count)"
 
-$j = Get-Content $cfgPath -Raw | ConvertFrom-Json
-if (-not $j -or -not $j.game) {
-  # an empty/truncated config is not a queue: recreate the shell instead of dying
-  # here, which used to leave it 0 bytes and the watchdog restarting a broken DS
-  $j = '{"game":{"mods":[]}}' | ConvertFrom-Json
-  "config was empty or unreadable - recreated"
-}
-# the DS writes "mods": null on shutdown; piping that yields one $null item and
-# ContainsKey($null) throws, which left the config unrepaired
-if ($null -eq $j.game.mods) { $j.game.mods = @() }
 $left = @($j.game.mods | Where-Object { -not $done.ContainsKey($_.modId) })
 "config: $(@($j.game.mods).Count) -> remaining: $($left.Count)"
 
