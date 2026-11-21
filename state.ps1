@@ -36,6 +36,7 @@ function Get-ClientAddons([string]$EngineProfile) {
   Join-Path $EngineProfile 'addons'
 }
 function Get-EngineExecutable([string]$InstallRoot) {
+  if ($env:RFMM_ENGINE_EXE) { return $env:RFMM_ENGINE_EXE }
   $name = if ($IsLinux) { 'ArmaReforgerServer' } else { 'ArmaReforgerServer.exe' }
   Join-Path (Join-Path $InstallRoot 'armar-server') $name
 }

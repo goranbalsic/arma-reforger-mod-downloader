@@ -28,12 +28,14 @@ internal sealed class DownloadWindow : Form
     private WebView2 view;
     private PowerShellHost backend;
     private string root;
+    private readonly string steamEngine;
     private bool installing;
 
     internal DownloadWindow(string runtimePath)
     {
         runtime = runtimePath;
         root = FindDownloadFolder();
+        steamEngine = SteamEngineDiscovery.Find();
         Text = Program.Title;
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Font = new Font("Segoe UI", 10);
@@ -43,7 +45,8 @@ internal sealed class DownloadWindow : Form
         ShowSetup();
         Shown += async (sender, args) =>
         {
-            if (EngineInstalled()) await OpenDashboardAsync();
+            if (File.Exists(EnginePath(root)) || (steamEngine != null && File.Exists(Path.Combine(root, "data", "batch1-serverconfig.json"))))
+                await OpenDashboardAsync();
         };
     }
 
@@ -72,7 +75,12 @@ internal sealed class DownloadWindow : Form
         return Path.Combine(folder, "armar-server", "ArmaReforgerServer.exe");
     }
 
-    private bool EngineInstalled() { return File.Exists(EnginePath(root)); }
+    private string ExistingEngine()
+    {
+        return File.Exists(EnginePath(root)) ? EnginePath(root) : steamEngine;
+    }
+
+    private bool EngineInstalled() { return File.Exists(ExistingEngine()); }
 
     private void ShowSetup()
     {
@@ -134,7 +142,10 @@ internal sealed class DownloadWindow : Form
 
     private void RefreshSetupLocation()
     {
-        location.Text = root;
+        string engine = ExistingEngine();
+        location.Text = engine != null && engine == steamEngine
+            ? "Downloader data: " + root + Environment.NewLine + "Steam dedicated server found: " + Path.GetDirectoryName(engine)
+            : root;
         install.Text = EngineInstalled() ? "Open downloader" : "Install engine";
     }
 
@@ -256,7 +267,7 @@ internal sealed class DownloadWindow : Form
             };
             core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
             core.WebResourceRequested += ServeDashboard;
-            backend = new PowerShellHost(runtime, root);
+            backend = new PowerShellHost(runtime, root, ExistingEngine());
             RememberLocation();
             core.Navigate(Dashboard.AbsoluteUri);
         }

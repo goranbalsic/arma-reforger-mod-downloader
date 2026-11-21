@@ -20,9 +20,10 @@ internal sealed class PowerShellHost : IDisposable
         public string body { get; set; }
     }
 
-    internal PowerShellHost(string runtime, string root)
+    internal PowerShellHost(string runtime, string root, string engine)
     {
         var info = StartInfo(runtime, root, "download-web.ps1", "-Desktop");
+        info.EnvironmentVariables["RFMM_ENGINE_EXE"] = engine;
         info.RedirectStandardInput = true;
         process = Process.Start(info);
         process.ErrorDataReceived += (sender, line) => Log(line.Data);

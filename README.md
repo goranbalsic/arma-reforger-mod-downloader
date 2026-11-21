@@ -10,6 +10,8 @@ Download **Arma Reforger Workshop mods before joining a multiplayer server**. Se
 2. Choose where to keep the download engine, then select **Install engine**. Allow about 20 GB for setup and additional space for your mods.
 3. In **Find mods**, search for your server and select **Add server**. Go to **Downloads** and select **Start / Resume**.
 
+Windows setup checks Steam libraries for an installed Arma Reforger Dedicated Server. If it finds one, choose where to save the downloader's data and select **Open downloader** to reuse the engine.
+
 The app uses the Microsoft Edge WebView2 Runtime for its window. If Windows is missing it, install the Evergreen Runtime. [Microsoft WebView2 download](https://developer.microsoft.com/microsoft-edge/webview2/)
 
 ## Install on Linux x64
