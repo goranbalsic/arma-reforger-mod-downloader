@@ -138,7 +138,15 @@ while ($true) {
     $lg = Get-LatestLog
     if (-not $lg -or $lg.LastWriteTime -lt (Get-Date).AddMinutes(-5)) {
       Write-Wd "downloader silent 5 min with $($queued.Count) mods queued - restarting it"
-      $ds | Stop-Process -Force
+      # kill only while holding the engine lock: the dashboard starts and stops the
+      # same engine, and a kill outside the lock can land in its start sequence
+      $ctl = Lock-Engine
+      if ($ctl) {
+        try { $ds | Stop-Process -Force } finally { $ctl.ReleaseMutex() }
+      } else {
+        Write-Wd 'cannot take the engine lock - not restarting this time'
+        continue
+      }
       Start-Sleep 2
       # trim before restarting: a finished mod left in the list pushes the download
       # request over the DS's ~1 MB limit, and the restart would insta-crash

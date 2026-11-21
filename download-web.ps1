@@ -32,26 +32,7 @@ if (-not (Test-Path $ServersPath)) { '{"servers":[]}'           | Set-Content $S
 # The engine can only assemble mods inside its own profile, and the game reads its
 # own addons folder. A directory junction makes those one folder: each mod is
 # stored once, where the game looks, instead of downloaded here and copied there.
-function Initialize-AddonsLink {
-  $item = Get-Item $Addons -Force -ErrorAction SilentlyContinue
-  if ($item -and $item.LinkType) { return $true }  # already one folder
-  $own = Get-OwnEngine $Cfg
-  if ($null -eq $own) { return $false }            # cannot ask: never move files blindly
-  if (@($own).Count) { return $false }             # never move files under a live engine
-  if (-not (Test-Path $ClientAddons)) { New-Item -ItemType Directory -Force $ClientAddons | Out-Null }
-  New-Item -ItemType Directory -Force $DsProfile | Out-Null
-  if ($item) {
-    # an older install kept its own copies: move them in (same volume = instant).
-    # A name that already exists in the game folder stays as the game's copy.
-    foreach ($d in @(Get-ChildItem $Addons -Force -ErrorAction SilentlyContinue)) {
-      Move-Item $d.FullName $ClientAddons -Force -ErrorAction SilentlyContinue
-    }
-    Remove-Item $Addons -Recurse -Force -ErrorAction SilentlyContinue
-  }
-  New-Item -ItemType Junction -Path $Addons -Target $ClientAddons -ErrorAction SilentlyContinue | Out-Null
-  [bool](Get-Item $Addons -Force -ErrorAction SilentlyContinue).LinkType
-}
-if (-not (Initialize-AddonsLink)) {
+if (-not (Initialize-AddonsLink $Addons $ClientAddons $Cfg)) {
   Write-Host 'the engine folder could not be linked to the game addons folder - mods are kept here and copied there'
 }
 
@@ -391,9 +372,10 @@ function Start-DS {
 }
 
 function Stop-DS {
-  New-Item -ItemType File -Force (Join-Path $Data 'paused.flag') | Out-Null
   $ctl = Lock-Engine
+  if (-not $ctl) { throw 'another start/stop is in progress - try again' }
   try {
+    New-Item -ItemType File -Force (Join-Path $Data 'paused.flag') | Out-Null
     # Prove the engine is gone before writing the config: if the process list
     # cannot be read we must not claim "paused" - the callers write right after.
     $p = Get-DS -Fresh
@@ -404,7 +386,7 @@ function Stop-DS {
     # Start-DS would then see the dying process and report "already running"
     foreach ($i in 1..20) { if (-not (Get-DS -Fresh)) { break }; Start-Sleep -Milliseconds 500 }
     'paused - progress kept'
-  } finally { if ($ctl) { $ctl.ReleaseMutex() } }
+  } finally { $ctl.ReleaseMutex() }
 }
 
 function Invoke-Verify {

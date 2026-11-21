@@ -77,7 +77,9 @@ Check 'repair turns null mods into an array'  (@((Repair-Cfg ([pscustomobject]@{
 Write-Host 'preset writer (empty preset storage block, update in place)'
 $pd = Join-Path $tmp 'preset'
 New-Item -ItemType Directory -Force (Join-Path $pd 'data'), (Join-Path $pd 'addons\TestMod_0123456789ABCDEF') | Out-Null
-'x' | Set-Content (Join-Path $pd 'addons\TestMod_0123456789ABCDEF\meta')
+[IO.File]::WriteAllText((Join-Path $pd 'addons\TestMod_0123456789ABCDEF\data.pak'), ('x' * 4))
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "data.pak", "size": 4 } ] } } ] } }' |
+  Set-Content (Join-Path $pd 'addons\TestMod_0123456789ABCDEF\meta')
 @{ servers = @(@{ id = 'aaaaaaaa-0000-0000-0000-000000000000'; name = 'Test Server'
                   mods = @(@{ id = '0123456789ABCDEF'; name = 'Test Mod' }) }) } |
   ConvertTo-Json -Depth 5 | Set-Content (Join-Path $pd 'data\batch1-servers.json')
@@ -116,6 +118,49 @@ $env:RFMM_HOME = $td; $env:RFMM_DATA = Join-Path $td 'data'
 $tout2 = try { (& "$PSScriptRoot\trim-config.ps1" 2>&1) -join ' ' } catch { "ERROR: $_" }
 $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
 Check 'no second delete within 30 minutes' ((Test-Path (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD')) -and $tout2 -match 'kept a partial')
+
+Write-Host 'completion rule (meta file list, and its cache)'
+$cd = Join-Path $tmp 'complete\Add_AAAABBBBCCCCDDDD'
+New-Item -ItemType Directory -Force $cd | Out-Null
+[IO.File]::WriteAllText((Join-Path $cd 'data.pak'), ('x' * 10))
+[IO.File]::WriteAllText((Join-Path $cd 'data001.pak'), ('y' * 20))
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "data.pak", "size": 10 }, { "name": "data001.pak", "size": 20 } ] } } ] } }' |
+  Set-Content (Join-Path $cd 'meta')
+$cmt = (Get-Item $cd).LastWriteTime
+Check 'an addon whose files match its meta is complete' (Test-AddonComplete $cd $cmt)
+# the newest file does not change when an OLDER one is deleted, so the cache must
+# also look at the folder's own write time
+Start-Sleep -Milliseconds 60
+Remove-Item (Join-Path $cd 'data001.pak')
+Check 'deleting an older file invalidates the cached result' (-not (Test-AddonComplete $cd $cmt))
+
+$md = Join-Path $tmp 'complete\Add_EEEEFFFF00001111'
+New-Item -ItemType Directory -Force $md | Out-Null
+'x' | Set-Content (Join-Path $md 'data.pak')
+'{ "meta": { "versions": [ { "package": { } } ] } }' | Set-Content (Join-Path $md 'meta')
+Check 'meta without a file list is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
+'{ "meta": { "versions": [ { "package": { "files": [ { "size": 5 } ] } } ] } }' | Set-Content (Join-Path $md 'meta')
+Check 'meta entry without a name is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
+
+Write-Host 'addons folder migration (never delete what was not moved)'
+$mg = Join-Path $tmp 'migrate'
+$mp = Join-Path $mg 'profile\addons'
+$game = Join-Path $mg 'game\addons'
+New-Item -ItemType Directory -Force (Join-Path $mp 'Old_AAAABBBBCCCCDDDD') | Out-Null
+'x' | Set-Content (Join-Path $mp 'Old_AAAABBBBCCCCDDDD\meta')
+$migOk = Initialize-AddonsLink $mp $game (Join-Path $mg 'data\cfg.json')
+Check 'moves old copies and links the folder' ($migOk -and (Test-Path (Join-Path $game 'Old_AAAABBBBCCCCDDDD\meta')) -and [bool](Get-Item $mp -Force).LinkType)
+
+$mg2 = Join-Path $tmp 'migrate-locked'
+$mp2 = Join-Path $mg2 'profile\addons'
+$game2 = Join-Path $mg2 'game\addons'
+New-Item -ItemType Directory -Force (Join-Path $mp2 'Locked_EEEEFFFF00001111') | Out-Null
+'x' | Set-Content (Join-Path $mp2 'Locked_EEEEFFFF00001111\meta')
+$handle = [IO.File]::Open((Join-Path $mp2 'Locked_EEEEFFFF00001111\meta'), 'Open', 'Read', 'None')
+$migBad = Initialize-AddonsLink $mp2 $game2 (Join-Path $mg2 'data\cfg.json')
+$handle.Close()
+Check 'keeps the old folder when a move fails' ((-not $migBad) -and (Test-Path (Join-Path $mp2 'Locked_EEEEFFFF00001111\meta')))
+Check 'leaves no empty copy in the game folder' (-not (Test-Path (Join-Path $game2 'Locked_EEEEFFFF00001111')))
 
 Write-Host 'engine ownership (only the engine we started)'
 $none = Get-OwnEngine (Join-Path $tmp 'no-such-config.json')

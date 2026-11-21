@@ -16,6 +16,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
+# the completion rule (meta lists every file with its exact size) - one copy
+. "$PSScriptRoot\state.ps1"
 
 $conf = if ($ConfPath) { $ConfPath } else {
   # newest wins: several profile folders (one per Steam/user) each hold a copy,
@@ -68,12 +70,18 @@ $presetName = $presetName -replace '"', "'"
 
 # a folder alone is not an installed addon: UTF-Hesco_6A23267521A13350 exists in
 # this machine's client folder with 0 files, and a preset referencing an id the
-# launcher cannot resolve loses the whole preset. The meta file is what the
-# launcher reads, so require it (see the completion rule in the README).
+# launcher cannot resolve loses the whole preset. The meta file is required (the
+# launcher reads it) AND must match the files on disk - same completion rule as the
+# downloader and verify, so a half-downloaded mod never ends up in a preset.
 $installed = @{}
 Get-ChildItem $clAddons -Directory |
   Where-Object { $_.Name -match '_([0-9A-F]{16})$' -and (Test-Path (Join-Path $_.FullName 'meta')) } |
-  ForEach-Object { $installed[$Matches[1]] = ($_.Name -replace '_[0-9A-F]{16}$', '') }
+  ForEach-Object {
+    if (Test-AddonComplete $_.FullName $_.LastWriteTime) {
+      $id = [regex]::Match($_.Name, '_([0-9A-F]{16})$').Groups[1].Value
+      $installed[$id] = ($_.Name -replace '_[0-9A-F]{16}$', '')
+    }
+  }
 $mods = @($srv.mods | Where-Object { $installed.ContainsKey($_.id) })
 $installedCount = $mods.Count
 $dropped = @()

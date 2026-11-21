@@ -33,48 +33,54 @@ $left = @($j.game.mods | Where-Object { -not $done.ContainsKey($_.modId) })
 # A partial download with addon.gproj/meta/rdb on disk looks installed to the DS,
 # so it is skipped forever and the queue never drains. A folder WITHOUT those
 # markers is re-fetched by the DS by itself, so only the installed-looking ones
-# are deleted. The delete runs under the engine mutex: the watchdog starts the DS
-# from another process, and it must not start while files are being removed.
+# are deleted. The whole tail - check, delete, config write - runs under the engine
+# mutex: the watchdog starts the DS from another process, and it must not start
+# while files are being removed or the config is half-written.
+$j.game.mods = $left
 $reFile = "$Data\redownload.json"
 $re = Read-Json $reFile @{}
 $now = Get-Date
 $ctl = Lock-Engine
 if (-not $ctl) {
-  "another start/stop is in progress - partial folders left alone"
-} else {
-  try {
-    $eng = Get-OwnEngine $cfgPath
-    if ($null -ne $eng -and @($eng).Count -eq 0) {
-      foreach ($m in $left) {
-        $d = Get-ChildItem $addons -Directory -Filter "*_$($m.modId)" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $d) { continue }
-        if (-not (Test-Path (Join-Path $d.FullName 'addon.gproj'))) { continue }
-        # one attempt per 30 min: a mod the DS can never finish would otherwise be
-        # deleted and downloaded again on every restart, forever
-        $last = $re.PSObject.Properties[$m.modId]
-        if ($last -and $last.Value) {
-          $at = [datetime]::MinValue
-          if ([datetime]::TryParse([string]$last.Value, [ref]$at) -and ($now - $at).TotalMinutes -lt 30) {
-            "kept a partial (already re-downloaded less than 30 min ago): $($d.Name)"
-            continue
-          }
-        }
-        Remove-Item $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        if (-not (Test-Path $d.FullName)) {
-          $re | Add-Member -NotePropertyName $m.modId -NotePropertyValue ($now.ToString('s')) -Force
-          "deleted unusable partial (the engine would have skipped it): $($d.Name)"
-        }
-      }
-      # forget attempts older than a day, so the file never grows past the library
-      foreach ($p in @($re.PSObject.Properties)) {
-        $at = [datetime]::MinValue
-        if ([datetime]::TryParse([string]$p.Value, [ref]$at) -and ($now - $at).TotalDays -ge 1) { $re.PSObject.Properties.Remove($p.Name) }
-      }
-      Save-Json $re $reFile 4
-    }
-  } finally { $ctl.ReleaseMutex() }
+  "another start/stop is in progress - config and partial folders left alone"
+  exit 1
 }
-
-$j.game.mods = $left
-Save-Json $j $cfgPath
-"saved"
+try {
+  $eng = Get-OwnEngine $cfgPath
+  if ($null -eq $eng) {
+    "cannot read the process list right now - config and partial folders left alone"
+    exit 1
+  }
+  if (@($eng).Count) {
+    "engine is running - config and partial folders left alone"
+    exit 1
+  }
+  foreach ($m in $left) {
+    $d = Get-ChildItem $addons -Directory -Filter "*_$($m.modId)" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $d) { continue }
+    if (-not (Test-Path (Join-Path $d.FullName 'addon.gproj'))) { continue }
+    # one attempt per 30 min: a mod the DS can never finish would otherwise be
+    # deleted and downloaded again on every restart, forever
+    $last = $re.PSObject.Properties[$m.modId]
+    if ($last -and $last.Value) {
+      $at = [datetime]::MinValue
+      if ([datetime]::TryParse([string]$last.Value, [ref]$at) -and ($now - $at).TotalMinutes -lt 30) {
+        "kept a partial (already re-downloaded less than 30 min ago): $($d.Name)"
+        continue
+      }
+    }
+    Remove-Item $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path $d.FullName)) {
+      $re | Add-Member -NotePropertyName $m.modId -NotePropertyValue ($now.ToString('s')) -Force
+      "deleted unusable partial (the engine would have skipped it): $($d.Name)"
+    }
+  }
+  # forget attempts older than a day, so the file never grows past the library
+  foreach ($p in @($re.PSObject.Properties)) {
+    $at = [datetime]::MinValue
+    if ([datetime]::TryParse([string]$p.Value, [ref]$at) -and ($now - $at).TotalDays -ge 1) { $re.PSObject.Properties.Remove($p.Name) }
+  }
+  Save-Json $re $reFile 4
+  Save-Json $j $cfgPath
+  "saved"
+} finally { $ctl.ReleaseMutex() }

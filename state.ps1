@@ -95,18 +95,26 @@ function Read-Json([string]$Path, $Default) {
 function Test-AddonComplete([string]$Path, $Mtime) {
   # THE completion rule: the addon's own meta lists every file with its exact
   # size, and the game itself reads it that way. Never use a folder total.
+  # The cache also keys on the folder's own write time: removing a file changes
+  # that, while the newest-file time (Mtime) stays the same - so a mod that lost
+  # an old file kept its cached "complete".
+  $dirTime = (Get-Item $Path -Force -ErrorAction SilentlyContinue).LastWriteTimeUtc.Ticks
   $c = $script:exactCache[$Path]
-  if ($c -and $c.mtime -eq $Mtime) { return $c.ok }
+  if ($c -and $c.mtime -eq $Mtime -and $c.dir -eq $dirTime) { return $c.ok }
   $ok = $false
   $metaPath = Join-Path $Path 'meta'
   if (Test-Path $metaPath) {
     try {
       $j = Get-Content $metaPath -Raw -ErrorAction Stop | ConvertFrom-Json
-      $files = @(@($j.meta.versions)[0].package.files)
-      if ($files.Count -gt 0) {
+      $versions = @($j.meta.versions)
+      $files = @()
+      if ($versions.Count -and $versions[0].package) { $files = @($versions[0].package.files) }
+      # @($null).Count is 1: a meta with no file list used to enter the success
+      # branch, skip every nameless entry and report the addon as complete
+      if ($files.Count -gt 0 -and $files[0] -and $files[0].name -and $null -ne $files[0].size) {
         $ok = $true
         foreach ($f in $files) {
-          if (-not $f.name) { continue }
+          if (-not $f -or -not $f.name -or $null -eq $f.size) { $ok = $false; break }
           $p = Join-Path $Path $f.name
           if (-not (Test-Path $p)) { $ok = $false; break }
           if ((Get-Item $p).Length -ne [long]$f.size) { $ok = $false; break }
@@ -114,6 +122,54 @@ function Test-AddonComplete([string]$Path, $Mtime) {
       }
     } catch { $ok = $false }
   }
-  $script:exactCache[$Path] = @{ mtime = $Mtime; ok = $ok }
+  $script:exactCache[$Path] = @{ mtime = $Mtime; dir = $dirTime; ok = $ok }
   $ok
+}
+
+function Initialize-AddonsLink([string]$Addons, [string]$ClientAddons, [string]$ConfigPath) {
+  # One folder for mods: the engine writes into its own profile, the game reads its
+  # own addons folder, and a junction makes those the same folder. Lives here so the
+  # migration can be tested without starting the dashboard.
+  $item = Get-Item $Addons -Force -ErrorAction SilentlyContinue
+  if ($item -and $item.LinkType) { return $true }   # already one folder
+  $own = Get-OwnEngine $ConfigPath
+  if ($null -eq $own) { return $false }             # cannot ask: never move files blindly
+  if (@($own).Count) { return $false }              # never move files under a live engine
+  if (-not (Test-Path $ClientAddons)) { New-Item -ItemType Directory -Force $ClientAddons | Out-Null }
+  New-Item -ItemType Directory -Force (Split-Path $Addons -Parent) | Out-Null
+  if ($item) {
+    # move an older install's copies in (same volume = instant). A name that already
+    # exists in the game folder stays as the game's copy. Never delete what was not
+    # moved: a locked file made Move-Item fail and the old code removed the folder,
+    # losing everything that had not been moved. A failed move can leave an EMPTY
+    # destination folder behind, so success is judged by the source being gone.
+    $had = @{}
+    foreach ($d in @(Get-ChildItem $Addons -Force -ErrorAction SilentlyContinue)) {
+      $had[$d.Name] = Test-Path (Join-Path $ClientAddons $d.Name)
+    }
+    $failed = @()
+    foreach ($d in @(Get-ChildItem $Addons -Force -ErrorAction SilentlyContinue)) {
+      $target = Join-Path $ClientAddons $d.Name
+      if (-not $had[$d.Name]) {
+        Move-Item $d.FullName $target -Force -ErrorAction SilentlyContinue
+        if (Test-Path $d.FullName) {
+          if (-not @(Get-ChildItem $target -Force -ErrorAction SilentlyContinue).Count) {
+            Remove-Item $target -Force -ErrorAction SilentlyContinue
+          }
+          $failed += $d.Name
+        }
+      }
+    }
+    if ($failed.Count) {
+      Write-Host "could not move $($failed.Count) item(s) into the game addons folder - nothing was deleted: $($failed -join ', ')" -ForegroundColor Yellow
+      return $false
+    }
+    Remove-Item $Addons -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $Addons) {
+      Write-Host 'the old engine addons folder could not be removed - not linking' -ForegroundColor Yellow
+      return $false
+    }
+  }
+  New-Item -ItemType Junction -Path $Addons -Target $ClientAddons -ErrorAction SilentlyContinue | Out-Null
+  [bool](Get-Item $Addons -Force -ErrorAction SilentlyContinue).LinkType
 }
