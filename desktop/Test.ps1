@@ -49,6 +49,9 @@ try {
   $page = Send-Request '/'
   if ($page.status -ne 200) { throw "The dashboard returned $($page.status): $($page.body)" }
   if ($page.body -notmatch 'Remove') { throw 'The dashboard did not return the expected page.' }
+  foreach ($id in 'failedNotice','vresNotice','modUpdateNotice','cancelModUpdates') {
+    if (!$page.body.Contains(('id="{0}"' -f $id))) { throw "The dashboard is missing $id." }
+  }
   $before = (Send-Request '/status').body | ConvertFrom-Json
   if ($before.queue.Count -ne 1 -or $before.totalB -ne 1048576 -or $before.running) { throw 'Unexpected initial queue.' }
   if ((Send-Request '/clear-queue').status -ne 405) { throw 'Queue controls should require POST.' }
