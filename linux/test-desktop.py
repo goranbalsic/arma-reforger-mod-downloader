@@ -36,7 +36,8 @@ with tempfile.TemporaryDirectory(prefix="reforger-linux-") as fixture:
 
         def check_queue(self):
             self.view.evaluate_javascript(
-                "document.getElementById('queue')?.textContent.includes('Linux fixture') ?? false",
+                "(document.getElementById('queue')?.textContent.includes('Linux fixture') ?? false)"
+                " && !document.getElementById('say')?.textContent",
                 -1, None, app.ORIGIN, None, self.check_result, None,
             )
             return not self.passed
