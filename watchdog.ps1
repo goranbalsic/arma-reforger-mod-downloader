@@ -10,9 +10,9 @@ $ErrorActionPreference = 'Continue'
 $Root = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
 $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
 . "$PSScriptRoot\state.ps1"
-$Cfg = "$Data\batch1-serverconfig.json"
-$Exe = "$Root\armar-server\ArmaReforgerServer.exe"
-$DsProfile = "$Root\serverprofile"
+$Cfg = Join-Path $Data 'batch1-serverconfig.json'
+$Exe = Get-EngineExecutable $Root
+$DsProfile = Join-Path $Root 'serverprofile'
 $LogFile = "$Data\watchdog.log"
 $PauseFlag = "$Data\paused.flag"
 $SkipFile = "$Data\skipped.json"
@@ -33,8 +33,7 @@ function Start-EngineLocked {
     $cur = Get-OwnEngine $Cfg
     if ($null -eq $cur) { return $false }   # cannot ask: do not risk a second engine
     if ($cur) { return $false }
-    Start-Process -FilePath $Exe -ArgumentList "-config `"$Cfg`" -profile `"$DsProfile`"" `
-      -WorkingDirectory "$Root\armar-server" -WindowStyle Hidden
+    Start-DownloadEngine
     return $true
   } finally { $ctl.ReleaseMutex() }
 }

@@ -25,6 +25,27 @@ function Repair-Cfg($j) {
   $j
 }
 
+function Get-GameProfile {
+  if ($env:RFMM_GAME_PROFILE) { return $env:RFMM_GAME_PROFILE }
+  if ($IsLinux) { return $null }
+  Join-Path $env:USERPROFILE 'Documents\\My Games\\ArmaReforger'
+}
+function Get-ClientAddons([string]$EngineProfile) {
+  $game = Get-GameProfile
+  if ($game) { return (Join-Path $game 'addons') }
+  Join-Path $EngineProfile 'addons'
+}
+function Get-EngineExecutable([string]$InstallRoot) {
+  $name = if ($IsLinux) { 'ArmaReforgerServer' } else { 'ArmaReforgerServer.exe' }
+  Join-Path (Join-Path $InstallRoot 'armar-server') $name
+}
+function Start-DownloadEngine {
+  if ($IsLinux) {
+    Start-Process -FilePath $Exe -ArgumentList ('-config "{0}" -profile "{1}"' -f $Cfg,$DsProfile) -WorkingDirectory (Split-Path $Exe -Parent) -RedirectStandardInput '/dev/null' -RedirectStandardOutput (Join-Path $Data 'engine-output.log') -RedirectStandardError (Join-Path $Data 'engine-error.log')
+  } else {
+    Start-Process -FilePath $Exe -ArgumentList ('-config "{0}" -profile "{1}"' -f $Cfg,$DsProfile) -WorkingDirectory (Split-Path $Exe -Parent) -WindowStyle Hidden
+  }
+}
 function Get-OwnEngine([string]$ConfigPath) {
   # ONLY an engine this tool launched: its command line must carry our config path.
   # Matching the process name alone killed a community server the user runs
@@ -32,6 +53,20 @@ function Get-OwnEngine([string]$ConfigPath) {
   # never read as "not running" or a second engine starts on the same profile.
   # No path means no rule: matching on '' would claim every engine on the box.
   if (-not $ConfigPath) { return $null }
+  if ($IsLinux) {
+    $found = @(foreach ($process in Get-Process -Name 'ArmaReforgerSer*' -ErrorAction SilentlyContinue) {
+      try { $argsOnDisk = [IO.File]::ReadAllText("/proc/$($process.Id)/cmdline").Split([char]0) }
+      catch [IO.FileNotFoundException] { continue }
+      catch [IO.DirectoryNotFoundException] { continue }
+      catch { return $null }
+      $flag = [Array]::IndexOf($argsOnDisk, '-config')
+      if ($argsOnDisk.Length -gt 1 -and [IO.Path]::GetFileName($argsOnDisk[0]) -ceq 'ArmaReforgerServer' -and
+          $flag -ge 0 -and $flag + 1 -lt $argsOnDisk.Length -and $argsOnDisk[$flag + 1] -ceq $ConfigPath) {
+        $process
+      }
+    })
+    return ,$found
+  }
   # WMI does fail on a busy machine: it errored for 2.5 minutes straight while the
   # audit ran, and a blind watchdog cannot restart a dead engine. One retry makes a
   # single hiccup invisible; a real outage still reports "unknown" and is skipped.

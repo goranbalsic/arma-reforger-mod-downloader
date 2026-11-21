@@ -23,13 +23,15 @@ $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'd
 $conf = if ($ConfPath) { $ConfPath } else {
   # newest wins: several profile folders (one per Steam/user) each hold a copy,
   # and picking an arbitrary one rewrote a stale conf
-  $f = Get-ChildItem "$env:USERPROFILE\Documents\My Games\ArmaReforger\profile\.save" -Recurse -Filter ReforgerGameSettings.conf -ErrorAction SilentlyContinue |
+  $game = Get-GameProfile
+  if (!$game) { throw 'Set RFMM_GAME_PROFILE to the game profile folder to make presets.' }
+  $f = Get-ChildItem (Join-Path $game 'profile/.save') -Recurse -Filter ReforgerGameSettings.conf -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
   if (-not $f) { throw 'ReforgerGameSettings.conf not found' }
   $f.FullName
 }
 $srvs = Get-Content "$Data\batch1-servers.json" -Raw | ConvertFrom-Json
-$clAddons = if ($AddonsDir) { $AddonsDir } else { "$env:USERPROFILE\Documents\My Games\ArmaReforger\addons" }
+$clAddons = if ($AddonsDir) { $AddonsDir } else { (Join-Path (Get-GameProfile) 'addons') }
 
 # any running client build (Steam, MS Store, DX12 variants), never the dedicated
 # server: the game rewrites this file on exit and the preset would vanish

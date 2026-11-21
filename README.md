@@ -1,6 +1,6 @@
 # Arma Reforger Mod Downloader
 
-Pick a server and download its missing Workshop mods before you join. Reforger Mod Downloader is a Windows x64 desktop app. It uses the free Arma Reforger dedicated server to download mods into the addons folder your game already uses.
+Pick a server and download its missing Workshop mods before you join. Reforger Mod Downloader supports Windows x64 and has a Linux x64 desktop build. It uses the free Arma Reforger dedicated server to fetch mods.
 
 ## Get started
 
@@ -9,6 +9,16 @@ Pick a server and download its missing Workshop mods before you join. Reforger M
 3. In **Find mods**, search for your server and select **Add server**. Go to **Downloads** and select **Start / Resume**.
 
 The app uses the Microsoft Edge WebView2 Runtime for its window. If Windows is missing it, install the Evergreen Runtime. [Microsoft WebView2 download](https://developer.microsoft.com/microsoft-edge/webview2/)
+
+## Linux x64
+
+Download the Linux artifact from the repository’s **Actions** tab, extract it, then run `./ReforgerModDownloader` from the extracted folder. Linux uses native SteamCMD and the native Arma Reforger dedicated server.
+
+Install PowerShell 7 (`pwsh`), SteamCMD, and the GTK 3 and WebKitGTK 4.1 Python bindings from your distribution. The Ubuntu and Debian packages for the window are `python3-gi`, `gir1.2-gtk-3.0`, and `gir1.2-webkit2-4.1`. Select **Install engine** on first launch.
+
+The default data folder is `~/.local/share/reforger-mod-downloader` (or the corresponding folder under `XDG_DATA_HOME`). Mods go into its `serverprofile/addons` directory. To share mods with a Steam Proton install and enable launcher presets, set `RFMM_GAME_PROFILE` to the complete path of the game’s `Documents/My Games/ArmaReforger` folder before first launch. For a custom engine location, set `RFMM_HOME`.
+
+Build the Linux archive with `sh linux/package.sh`.
 
 For a single addon, use **Find a Workshop mod**. You can search by name, author, or the 16-character mod ID.
 
