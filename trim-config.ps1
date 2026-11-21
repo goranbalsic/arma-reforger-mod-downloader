@@ -30,22 +30,18 @@ foreach ($m in @($j.game.mods)) {
 $left = @($j.game.mods | Where-Object { -not $done.ContainsKey($_.modId) })
 "config: $(@($j.game.mods).Count) -> remaining: $($left.Count)"
 
-# A partial download has addon.gproj/meta/rdb on disk, so the DS can believe it
-# is installed and never fetch it again. Delete only files that have not been
-# touched for 15 minutes: a fresh partial may be resumed by the next run and
-# deleting it would throw that progress away.
-if (-not (Get-Process ArmaReforgerServer -ErrorAction SilentlyContinue)) {
+# A partial download with addon.gproj/meta/rdb on disk looks installed to the DS,
+# so it is skipped forever and the queue never drains. A folder WITHOUT those
+# markers is re-fetched by the DS by itself, so only the installed-looking ones
+# are deleted. Only when no engine is running: never delete files under a live one.
+$eng = Get-OwnEngine $cfgPath
+if ($null -ne $eng -and @($eng).Count -eq 0) {
   foreach ($m in $left) {
     $d = Get-ChildItem $addons -Directory -Filter "*_$($m.modId)" -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $d) { continue }
-    # the newest FILE, not the folder: the DS appends inside <mod>\temp\ and never
-    # touches the directory time, so a 40-minute download looked 40 minutes stale
-    # and got deleted - throwing away every fragment it had fetched
-    $newest = (Get-ChildItem $d.FullName -File -Recurse -ErrorAction SilentlyContinue |
-      Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
-    if (-not $newest -or $newest -gt (Get-Date).AddMinutes(-15)) { continue }
+    if (-not (Test-Path (Join-Path $d.FullName 'addon.gproj'))) { continue }
     Remove-Item $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
-    "deleted stale partial download: $($d.Name)"
+    "deleted unusable partial (the engine would have skipped it): $($d.Name)"
   }
 }
 

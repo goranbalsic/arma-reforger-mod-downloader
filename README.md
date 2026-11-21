@@ -235,6 +235,16 @@ re-hosted, and the tool has no server or telemetry of its own.
 - Workshop search and sizes come from [reforgermods.net](https://reforgermods.net).
 - The engine is the free [Arma Reforger dedicated server](https://developer.valvesoftware.com/wiki/Arma_Reforger:_Dedicated_Server).
 
+## Tests
+
+Two scripts, no install needed:
+
+- `powershell -File test-units.ps1` - offline checks of the shared rules (completion
+  rule, config repair, preset writer, partial cleanup). A second is enough.
+- `powershell -File test-torture.ps1` - beats on a *running* dashboard: every route,
+  wrong ids, wrong token, parallel polling, a server remove/re-add round trip, then
+  checks the state files. It pauses and restarts your download on purpose.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

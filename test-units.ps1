@@ -95,6 +95,20 @@ Check 're-running updates instead of failing'     ($out2 -match 'updated')
 Check 'exactly one preset after both runs'        (([regex]::Matches($presetText, 'SCR_WorkshopAddonPreset "\{')).Count -eq 1)
 Check 'preset sits inside m_aPresets'             ($presetText.IndexOf('m_aPresets') -lt $presetText.IndexOf('SCR_WorkshopAddonPreset "'))
 
+Write-Host 'trim: a partial that looks installed is deleted, one without markers is kept'
+$td = Join-Path $tmp 'trim'
+New-Item -ItemType Directory -Force (Join-Path $td 'data'), (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD'), (Join-Path $td 'serverprofile\addons\NoMark_EEEEFFFF00001111') | Out-Null
+'x' | Set-Content (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD\addon.gproj')
+'x' | Set-Content (Join-Path $td 'serverprofile\addons\NoMark_EEEEFFFF00001111\data.pak')
+'{"game":{"name":"n","scenarioId":"s","mods":[{"modId":"AAAABBBBCCCCDDDD","name":"Half"},{"modId":"EEEEFFFF00001111","name":"NoMark"}]}}' |
+  Set-Content (Join-Path $td 'data\batch1-serverconfig.json')
+$oldHome = $env:RFMM_HOME
+$env:RFMM_HOME = $td; $env:RFMM_DATA = Join-Path $td 'data'
+$tout = try { (& "$PSScriptRoot\trim-config.ps1" 2>&1) -join ' ' } catch { "ERROR: $_" }
+$env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
+Check 'deletes the partial the engine would skip' (-not (Test-Path (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD')))
+Check 'keeps the partial the engine re-fetches'   (Test-Path (Join-Path $td 'serverprofile\addons\NoMark_EEEEFFFF00001111'))
+
 Write-Host 'engine ownership (only the engine we started)'
 $none = Get-OwnEngine (Join-Path $tmp 'no-such-config.json')
 Check 'no match is an empty array, not $null' (($null -ne $none) -and (@($none).Count -eq 0))

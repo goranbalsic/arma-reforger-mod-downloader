@@ -481,18 +481,26 @@ function Invoke-QueueServer([string]$Id) {
 
 
 function Get-PartialMods {
-  # mods that were started but are not complete (the resume set)
+  # mods that were started but are not complete (the resume set). Same completion
+  # rule as trim/verify: comparing against the Workshop size made finished mods
+  # look partial (its size goes stale when a mod updates), so Start queued exactly
+  # one mod that trim then removed - "resuming 1" followed by "nothing to download".
   $dirs = Get-DirMap
   @($dirs.GetEnumerator() | Where-Object {
-      $sm = $sizeMap[$_.Key]
-      $sm -and [double]$sm.bytes -gt 0 -and $_.Value.bytes -gt 0 -and
-      $_.Value.bytes -lt [double]$sm.bytes -and $_.Value.mtime -lt (Get-Date).AddMinutes(-1)
+      $_.Value.bytes -gt 0 -and -not (Test-AddonComplete $_.Value.path $_.Value.mtime)
     } | ForEach-Object { [PSCustomObject]@{ modId = $_.Key; name = $_.Value.name } })
 }
 
 function Invoke-StartQueue {
   # start whatever is queued. If the queue is empty but a download was interrupted,
   # resume just those. It never refills from the servers - that is "Queue all missing".
+  # Clear the pause flag here: on an empty queue this returns before Start-DS, which
+  # is the only other place that clears it, and the watchdog stayed paused forever.
+  Remove-Item (Join-Path $Data 'paused.flag') -Force -ErrorAction SilentlyContinue
+  # the partial set comes from a cached disk scan; Start is exactly when it must be
+  # current (a mod just deleted or interrupted)
+  $script:dirCacheAt = (Get-Date).AddMinutes(-10)
+  $script:haveAt = (Get-Date).AddMinutes(-10)
   $j = Get-Cfg
   if (@($j.game.mods).Count -eq 0) {
     $partial = @(Get-PartialMods)
@@ -556,6 +564,10 @@ function Invoke-AddMod([string]$Id) {
   # add ONE workshop mod (plus its dependencies) to the download queue, at the end
   if ($Id -notmatch '^[0-9A-Fa-f]{16}$') { throw 'not a mod id' }
   $Id = $Id.ToUpper()
+  # a mod deleted in Explorer still looked installed for 3 s (cached scan), so Add
+  # answered "already installed" and nothing happened
+  $script:haveAt = (Get-Date).AddMinutes(-10)
+  $script:dirCacheAt = (Get-Date).AddMinutes(-10)
   $have = Get-HaveIds
   $j = Get-Cfg
   $queued = @{}
