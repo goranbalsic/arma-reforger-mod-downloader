@@ -33,12 +33,12 @@ if (-not (Test-Path $ServersPath)) { '{"servers":[]}'           | Set-Content $S
 # own addons folder. A directory junction makes those one folder: each mod is
 # stored once, where the game looks, instead of downloaded here and copied there.
 function Initialize-AddonsLink {
+  $item = Get-Item $Addons -Force -ErrorAction SilentlyContinue
+  if ($item -and $item.LinkType) { return $true }  # already one folder
   $own = Get-OwnEngine $Cfg
   if ($null -eq $own) { return $false }            # cannot ask: never move files blindly
   if (@($own).Count) { return $false }             # never move files under a live engine
   if (-not (Test-Path $ClientAddons)) { New-Item -ItemType Directory -Force $ClientAddons | Out-Null }
-  $item = Get-Item $Addons -Force -ErrorAction SilentlyContinue
-  if ($item -and $item.LinkType) { return $true }  # already one folder
   New-Item -ItemType Directory -Force $DsProfile | Out-Null
   if ($item) {
     # an older install kept its own copies: move them in (same volume = instant).
@@ -141,7 +141,7 @@ function Get-AddonsBytes {
 
 function Get-ClientIds {
   # exact rule (the addon's own meta file list), same as Get-HaveIds and verify.
-  # The old ±2 MB folder-size tolerance reported mods as installed when only a
+  # The old +/-2 MB folder-size tolerance reported mods as installed when only a
   # fifth of their paks were on disk (WCS_LoadoutEditor: 202 KB there, 921 KB
   # expected), so the dashboard said 980/980 over a broken client copy.
   # Cost is paid once: Test-AddonComplete caches per folder + mtime.
@@ -870,7 +870,7 @@ function renderQueue(queue,A){
   const el=document.getElementById('queue'); if(!el)return;
   document.getElementById('qcount').textContent='('+queue.length+')';
   const qp=document.getElementById('qpreview');
-  if(qp)qp.textContent=queue.length?(' - '+queue.slice(0,3).map(q=>q.name).join(' · ')+(queue.length>3?' …':'')):'';
+  if(qp)qp.textContent=queue.length?(' - '+queue.slice(0,3).map(q=>q.name).join(' | ')+(queue.length>3?' ...':'')):'';
   const shown=queue.filter(q=>match(q.name,FILTER.queue));
   el.innerHTML=shown.length
    ?'<ol>'+shown.map(q=>'<li>'+(A[q.id]?'<span class="warn">&#10227;</span> ':'')+esc(q.name)+'</li>').join('')+'</ol>'
