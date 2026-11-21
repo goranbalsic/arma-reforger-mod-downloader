@@ -357,6 +357,40 @@ $locked = Get-Queued $q2
 $qh.Close()
 Check 'an unreadable file returns null' ($null -eq $locked)
 
+Write-Host 'item 5: corrupt state and legal dot names'
+$dots = Join-Path $tmp 'dots\Add_0A0B0C0D0E0F0102'
+New-Item -ItemType Directory -Force $dots | Out-Null
+[IO.File]::WriteAllText((Join-Path $dots 'a..b.pak'), 'abc')
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "a..b.pak", "size": 3 } ] } } ] } }' | Set-Content (Join-Path $dots 'meta')
+Check 'a name like a..b.pak is a legal file' (Test-AddonComplete $dots (Get-Item $dots).LastWriteTime)
+$esc = Join-Path $tmp 'dots\Add_0A0B0C0D0E0F0304'
+New-Item -ItemType Directory -Force $esc | Out-Null
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "..\\outside.pak", "size": 3 } ] } } ] } }' | Set-Content (Join-Path $esc 'meta')
+Check 'a .. segment is still rejected' (-not (Test-AddonComplete $esc (Get-Item $esc).LastWriteTime))
+
+'not json' | Set-Content (Join-Path $Data 'skipped.json')
+$script:skippedAt = (Get-Date).AddMinutes(-10)
+$skipped = try { @(Get-SkippedNames) } catch { 'THREW' }
+Check 'a corrupt skipped.json does not break /status' ($skipped -notcontains 'THREW')
+
+Reset-State
+Remove-Item $Sizes -Force -ErrorAction SilentlyContinue
+function Get-Detail {
+  param($Id)
+  [pscustomobject]@{ name = 'S'; passwordProtected = $false; mods = @(
+    [pscustomobject]@{ id = 'ABCDEF0123456789'; name = 'ok'; size = 10; sizeKnown = $true }) }
+}
+function Get-HaveIds { @{} }
+function Get-DS { param([switch]$Fresh) ,@() }
+function Stop-DS { 'stopped' }
+function Start-DS { 'started' }
+$szErr = $null
+try { $null = Invoke-AddServer '44444444-4444-4444-4444-444444444444' } catch { $szErr = $_ }
+$szNow = if (Test-Path $Sizes) { Get-Content $Sizes -Raw | ConvertFrom-Json } else { $null }
+Check 'a missing sizes file does not break add server' ($null -eq $szErr)
+Check 'the size of the new mod is recorded' ($szNow -and $szNow.mods.ABCDEF0123456789.bytes -eq 10)
+. "$PSScriptRoot\dashboard-core.ps1"
+
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)

@@ -6,7 +6,13 @@ function Get-SkippedNames {
   # written by watchdog.ps1 when the Workshop refuses a mod three times in a row
   if (((Get-Date) - $script:skippedAt).TotalSeconds -lt 10) { return $script:skipped }
   $p = Join-Path $Data 'skipped.json'
-  $script:skipped = if (Test-Path $p) { @(Get-Content $p -Raw | ConvertFrom-Json) } else { @() }
+  # Read-Json cannot throw: a corrupt file is moved aside and the default is used,
+  # so one bad file cannot take /status down
+  $script:skipped = @()
+  if (Test-Path $p) {
+    $data = Read-Json $p @()
+    if ($null -ne $data) { $script:skipped = @($data) }
+  }
   $script:skippedAt = Get-Date
   $script:skipped
 }
@@ -568,7 +574,7 @@ function Invoke-AddServer([string]$Id) {
   Save-Json $j $Cfg
 
   # merge the real sizes into the sizes file (merge-only: never replace it)
-  $sz = Read-Json $Sizes $j
+  $sz = Read-Json $Sizes ('{"totalBytes":0,"mods":{}}' | ConvertFrom-Json)
   foreach ($m in $new) {
     if (-not $sizeMap.ContainsKey($m.id)) {
       $sizeMap[$m.id] = @{ name = $m.name; bytes = [double]$m.size; exact = [bool]$m.sizeKnown }
@@ -695,7 +701,7 @@ function Complete-RefreshJob([string]$Id) {
       $script:dCache = @{}; $script:dCacheAt = @{}
       $script:dirCacheAt = (Get-Date).AddMinutes(-10)
       $script:clCacheAt = (Get-Date).AddMinutes(-10)
-      $sz = Read-Json $Sizes $j
+      $sz = Read-Json $Sizes ('{"totalBytes":0,"mods":{}}' | ConvertFrom-Json)
       foreach ($p in $sz.mods.PSObject.Properties) { $sizeMap[$p.Name] = $p.Value }
       foreach ($p in @($payload.sizes.PSObject.Properties)) {
         $sid = Test-ModId $p.Name

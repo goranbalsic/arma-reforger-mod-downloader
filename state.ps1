@@ -173,9 +173,11 @@ function Test-AddonComplete([string]$Path, $Mtime) {
         $ok = $true
         foreach ($f in $files) {
           if (-not $f -or -not $f.name -or $null -eq $f.size) { $ok = $false; break }
-          # a meta must not point outside its own folder: '..', a drive path or an
-          # alternate data stream would verify a file that is not part of the addon
-          if ($f.name -match '\.\.' -or [IO.Path]::IsPathRooted($f.name) -or $f.name -match ':') { $ok = $false; break }
+          # a meta must not point outside its own folder: an absolute path, an
+          # alternate data stream, or a '..' SEGMENT. A name like 'a..b.pak' is a
+          # legal file name and must not be rejected.
+          $segments = @($f.name -split '[\\/]')
+          if ([IO.Path]::IsPathRooted($f.name) -or $f.name -match ':' -or ($segments -contains '..')) { $ok = $false; break }
           $p = Join-Path $Path $f.name
           if (-not (Test-Path $p)) { $ok = $false; break }
           if ((Get-Item $p).Length -ne [long]$f.size) { $ok = $false; break }
