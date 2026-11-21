@@ -60,7 +60,7 @@ $script:dsCache = $null; $script:dsAt = (Get-Date).AddMinutes(-1)
 $script:speedCache = @{ b = 0; age = 999 }; $script:speedCacheAt = (Get-Date).AddMinutes(-5)
 
 $ApiBase = 'https://api.reforgermods.net/v2'
-$ApiH# one user agent for every API call, versioned from version.txt
+# one user agent for every API call, versioned from version.txt
 $UserAgent = 'arma-reforger-mod-downloader/' + (((Get-Content (Join-Path $PSScriptRoot 'version.txt') -Raw -ErrorAction SilentlyContinue) -replace '\s', ''))
 if ($UserAgent -match '/$') { $UserAgent = 'arma-reforger-mod-downloader/dev' }
 $ApiH = @{ 'User-Agent' = $UserAgent }
@@ -175,7 +175,7 @@ while ($l.IsListening) {
     switch ($path) {
       '/' {
         $html = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'page.html'))
-        $b = [Text.Encoding]::UTF8.GetBytes($html.Replace('__T__', $token))
+        $b = [Text.Encoding]::UTF8.GetBytes($html.Replace('__VERSION__', [Net.WebUtility]::HtmlEncode($UserAgent.Split('/')[-1])).Replace('__T__', $token))
         $ctx.Response.ContentType = 'text/html; charset=utf-8'
         $ctx.Response.ContentLength64 = $b.Length
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)

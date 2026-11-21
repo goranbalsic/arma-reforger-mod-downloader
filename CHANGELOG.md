@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.19
+
+- Show the running dashboard version beside its title and keep the GitHub banner near the navigation.
+
 ## 1.0.18
 
 - Split the dashboard into Downloads, Find mods, and Library views. Added a GitHub repository link and reload the dashboard template on each page visit.
