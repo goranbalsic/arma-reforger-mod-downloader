@@ -108,6 +108,14 @@ $tout = try { (& "$PSScriptRoot\trim-config.ps1" 2>&1) -join ' ' } catch { "ERRO
 $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
 Check 'deletes the partial the engine would skip' (-not (Test-Path (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD')))
 Check 'keeps the partial the engine re-fetches'   (Test-Path (Join-Path $td 'serverprofile\addons\NoMark_EEEEFFFF00001111'))
+# a mod the DS can never finish must not be deleted and downloaded again on every
+# restart: the second attempt within 30 minutes is refused
+New-Item -ItemType Directory -Force (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD') | Out-Null
+'x' | Set-Content (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD\addon.gproj')
+$env:RFMM_HOME = $td; $env:RFMM_DATA = Join-Path $td 'data'
+$tout2 = try { (& "$PSScriptRoot\trim-config.ps1" 2>&1) -join ' ' } catch { "ERROR: $_" }
+$env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
+Check 'no second delete within 30 minutes' ((Test-Path (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD')) -and $tout2 -match 'kept a partial')
 
 Write-Host 'engine ownership (only the engine we started)'
 $none = Get-OwnEngine (Join-Path $tmp 'no-such-config.json')

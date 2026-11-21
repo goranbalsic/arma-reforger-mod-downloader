@@ -3,14 +3,14 @@
 # checked for damage. It restarts the download at the end.
 #
 #   powershell -File test-torture.ps1          (exit 0 = everything survived)
-#   powershell -File test-torture.ps1 -NoServerRoundTrip
+#   powershell -File test-torture.ps1 -ServerRoundTrip
 #
 # It works on the live install: pause/start and one refresh hit the real queue.
-# Nothing is deleted from disk; removing a server only drops it from the list and
-# it is added back at the end.
+# Nothing is deleted from disk. The remove/re-add round trip is opt-in because it
+# needs the Workshop API: if that call fails, the server stays off your list.
 param(
   [string]$Base = 'http://localhost:8123',
-  [switch]$NoServerRoundTrip
+  [switch]$ServerRoundTrip
 )
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
@@ -71,7 +71,9 @@ $jobs = 1..8 | ForEach-Object {
     $ok
   } -ArgumentList $Base
 }
-$null = Wait-Job $jobs -Timeout 180
+# no total timeout: every request has its own, and a deadline here would report a
+# busy machine as a failure
+$null = Wait-Job $jobs
 $parallelOk = @($jobs | Receive-Job) | Measure-Object -Sum
 $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
 Check 'every parallel poll answered' ($parallelOk.Sum -eq 96) "$($parallelOk.Sum)/96"
@@ -101,16 +103,32 @@ foreach ($route in 'refresh-server', 'remove-server', 'make-preset', 'add-server
 "== one server: refresh, remove, add back"
 $servers = (Call '/servers').json.servers
 Check 'at least one server is tracked' (@($servers).Count -ge 1)
-if (-not $NoServerRoundTrip -and @($servers).Count -ge 1) {
+if ($ServerRoundTrip -and @($servers).Count -ge 1) {
   $victim = @($servers)[-1]
   $before = @($servers).Count
-  $rf = Call "/refresh-server?id=$($victim.id)&t=$tok" 'POST'
-  Check 'Refresh on a server row answers' ($rf.code -eq 200 -or ($rf.json -and $rf.json.error)) "code $($rf.code)"
-  $rm = Call "/remove-server?id=$($victim.id)&t=$tok" 'POST'
-  Check 'Remove answers' ($rm.code -eq 200 -and $rm.json.ok -eq $true)
-  Check 'server is gone from the list' (@((Call '/servers').json.servers).Count -eq $before - 1)
-  $ad = Call "/add-server?id=$($victim.id)&t=$tok" 'POST'
-  Check 'it can be added back' (@((Call '/servers').json.servers).Count -eq $before) "msg: $($ad.json.msg)"
+  $srvFile = Join-Path $Data 'batch1-servers.json'
+  $srvBackup = if (Test-Path $srvFile) { Get-Content $srvFile -Raw } else { $null }
+  try {
+    $rf = Call "/refresh-server?id=$($victim.id)&t=$tok" 'POST'
+    Check 'Refresh on a server row answers' ($rf.code -eq 200 -or ($rf.json -and $rf.json.error)) "code $($rf.code)"
+    $rm = Call "/remove-server?id=$($victim.id)&t=$tok" 'POST'
+    Check 'Remove answers' ($rm.code -eq 200 -and $rm.json.ok -eq $true)
+    Check 'server is gone from the list' (@((Call '/servers').json.servers).Count -eq $before - 1)
+    $ad = Call "/add-server?id=$($victim.id)&t=$tok" 'POST'
+    Check 'it can be added back' (@((Call '/servers').json.servers).Count -eq $before) "msg: $($ad.json.msg)"
+  } finally {
+    # the list lives in the dashboard's memory, so only the endpoint can put the
+    # entry back; retry it, then restore the file for the next restart
+    $listed = { @((Call '/servers').json.servers | Where-Object { $_.id -eq $victim.id }).Count -gt 0 }
+    if (-not (& $listed)) {
+      foreach ($attempt in 1..3) {
+        $null = Call "/add-server?id=$($victim.id)&t=$tok" 'POST'
+        if (& $listed) { break }
+        Start-Sleep 2
+      }
+    }
+    if ($srvBackup -and -not (& $listed)) { Set-Content $srvFile $srvBackup -NoNewline }
+  }
 }
 
 "== state files survived"

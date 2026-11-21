@@ -1,249 +1,60 @@
 # Arma Reforger Mod Downloader
 
-**Download Arma Reforger Workshop mods on Windows.** Grab an entire server's mod
-list, or single mods found by name, author, or mod id. Dependencies come with
-them. Everything lands in your game's `addons` folder, ready for the launcher.
+Downloads a whole server's mods into your game's `addons` folder, with a local web
+page as the control panel. Windows 10/11, PowerShell 5.1, MIT.
 
-No Steam account. No game launch. One-click setup.
+## Quick start
 
-![The Arma Reforger mod downloader dashboard, showing server browser, individual mod search and the download queue](docs/screenshot.jpeg)
+1. Download the newest `.zip` from [Releases](../../releases/latest) and unpack it anywhere.
+2. Run `1 - Setup.cmd` once. It installs the free dedicated server (~12 GB) that does
+   the downloading. Keep ~20 GB free.
+3. Run `Start Mods Download.cmd`. The page opens at <http://localhost:8123>.
+4. Search for a server, press **Add server**, then **Start / Resume**.
 
-`Windows 10/11` · `Windows PowerShell 5.1` · `MIT` · [latest release](../../releases/latest)
+## The page
 
-![Platform: Windows 10 and 11](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4)
-![Requires Windows PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-5391FE)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Latest release](https://img.shields.io/github/v/release/goranbalsic/arma-reforger-mod-downloader)
-
-## Contents
-
-- [What it does](#what-it-does)
-- [Requirements](#requirements)
-- [Install](#install)
-- [Download a whole server's mods](#download-a-whole-servers-mods)
-- [Download individual mods](#download-individual-mods)
-- [Progress and file checks](#progress-and-file-checks)
-- [Launcher presets](#launcher-presets)
-- [Where your files go](#where-your-files-go)
-- [FAQ](#faq)
-- [Troubleshooting](#troubleshooting)
-- [Advanced settings](#advanced-settings)
-- [Uninstall](#uninstall)
-- [How it works](#how-it-works)
-
-## What it does
-
-- **A whole server at once.** Search the live server browser, press *Add server*,
-  and every mod that server runs is queued.
-- **Single mods.** Search the Workshop by mod name, author name, or the
-  16-character mod id, and add only what you want.
-- **Dependencies included.** If a mod needs other mods, they are queued with it
-  and marked as dependencies, so the size total is honest.
-- **Downloads straight to the game.** The engine writes into
-  `Documents\My Games\ArmaReforger\addons`, the folder the game reads, so every
-  mod is stored once instead of being downloaded and then copied.
-- **Verification.** Every mod is checked against the file list inside the mod
-  itself, so a half-finished download is never counted as installed.
-- **Launcher presets.** Write a preset for a server, containing exactly the mods
-  of that server you have installed.
-
-## Requirements
-
-- Windows 10 or 11.
-- Arma Reforger installed (the tool writes into its `addons` folder).
-- About 2 GB free for the download engine, plus room for the mods.
-- An internet connection.
-
-## Install
-
-1. Open [Releases](../../releases/latest) and download the newest `.zip`.
-2. Right-click the zip, choose **Extract All**, and put the folder anywhere
-   (Desktop is fine). Do not run it from inside the zip.
-3. Double-click **`1 - Setup.cmd`** and wait for `Ready.`
-4. Double-click **`Start Mods Download.cmd`**.
-
-A browser opens at `http://localhost:8123/`. Keep the window that opened next to
-it open while you download; that window is the program. Close it when you are
-done.
-
-If Windows shows *"Windows protected your PC"*, click **More info**, then **Run
-anyway**. That message appears because the files are new and unsigned.
-
-### What setup installs
-
-Setup downloads SteamCMD, then the free Arma Reforger dedicated server, about
-12 GB in total, once. The tool uses that server as its download engine.
-
-To get a newer version later, double-click **`2 - Update.cmd`**. It downloads the
-latest release over your folder and keeps the engine, SteamCMD and your queue.
-`Start Mods Download.cmd` also checks once at startup and tells you when an update
-is waiting.
-
-It needs an engine because **the Workshop has no public download link**. Mod files
-are served only to a signed-in game or to the dedicated server. The server
-installs with Steam's anonymous login, so no account is created or used.
-
-## Download a whole server's mods
-
-1. In **Server browser**, type part of a server name and press Enter.
-2. Press **Add server** on the one you want. Its mods are appended to the queue.
-3. Press **Start**.
-
-Each mod is downloaded straight into your addons folder, then checked file by
-file. Mods you already have are skipped.
-
-## Download individual mods
-
-1. In **Download individual mods**, type one of these and press Enter:
-
-   | Search by | Example |
-   | --- | --- |
-   | Mod name | `Project Redline` |
-   | Author name | `ekudmada` |
-   | Mod id (from a workshop link) | `5E0210B8D9ACE179` |
-
-2. Press **Add** on a result. The mod and its dependencies join the Queue above.
-3. Press **Start**.
-
-Results show the author, the version, and the download size. Mods you already
-installed are marked *installed* instead of offering an Add button.
-
-## Progress and file checks
-
-| On screen | Meaning |
+| Button / panel | What it does |
 | --- | --- |
-| `86.78 GB / 86.78 GB` | the size of the mods you picked, as they sit in your addons folder |
-| `in your addons folder: 86.9 GB` | the addons folder itself, measured on disk |
-| ⟳ on a queue row | that mod is downloading now |
-| `mods assembled` | mods that passed the file check |
+| Server browser | Search live servers, add one, its missing mods are queued |
+| Queue | Only mods still missing; row buttons: Queue first, Make preset, Refresh, Remove |
+| Downloading now | Per-mod progress and speed |
+| Completed | Every mod the tool has assembled |
+| Add individual mods | Workshop search by name, author, or mod id |
+| Start / Pause / Verify / Clear queue / Queue all missing | The main actions |
+| Make preset | Launcher preset with that server's installed mods; press again to update it |
+| Refresh (row or Refresh all) | Pull the modlist again, queue what is new, report a changed list |
+| Remove | Drops the server from the list only; mods stay on disk and in the queue |
 
-"Installed" means the addon's own file list matches the disk exactly. The tool
-also waits until a mod has stopped changing for two minutes, because the engine
-writes a mod's files at full size before it fills them.
-
-**Pause** stops the engine and keeps everything downloaded so far. **Start**
-continues. **Clear queue** empties the queue and never deletes files.
-**Verify mods** re-checks everything against the Workshop.
-
-## Launcher presets
-
-Press **Make preset** on a server row. The tool writes a launcher preset with
-that server's mods that you have installed, and verifies the result.
-
-Each server row also has **Refresh** (pull that server's modlist again and queue
-what is new) and **Remove** (drop the server from the list; its mods stay on disk
-and in the queue - nothing is deleted).
-
-Press it again for the same server after the server changes its modlist: the same
-preset is updated in place with the new list instead of failing as a duplicate.
-
-Close the game first: it rewrites its settings file on exit.
-
-## Where your files go
+## Where things go
 
 | What | Where |
 | --- | --- |
-| Mods (read by the game) | `Documents\My Games\ArmaReforger\addons` |
+| Mods (the game reads these) | `Documents\My Games\ArmaReforger\addons` |
 | Download engine | `armar-server\` in the tool's folder |
-| Engine output folder | `serverprofile\addons` - a link to the game's folder, not a copy |
-| Saved lists and sizes | `data\` in the tool's folder |
-| What you clicked, and when | `data\actions.log` - one line per button press |
+| Engine output folder | `serverprofile\addons` - a directory link to the game folder |
+| State (queue, sizes, servers) | `data\` |
 
-Deleting the tool's folder does not touch your installed mods.
+Each mod is stored once, straight in the folder the game reads.
 
-## FAQ
+## Updating
 
-**Do I need to own Arma Reforger?**
-Yes. The tool installs mods for a game you own; it does not include the game.
+`2 - Update.cmd` installs the newest release over the scripts. `Start Mods Download.cmd`
+checks once at startup. The engine, your queue and your mods are never touched.
 
-**Do I need a Steam account?**
-No. Setup uses Steam's anonymous login to fetch the free dedicated server.
+## Problems
 
-**Can I download Workshop mods without launching the game?**
-Yes. That is the point: download first, start the game afterwards.
-
-**Why does it install a server?**
-Because the Workshop does not offer direct file downloads. The dedicated server
-is the official way to fetch a mod's files without a signed-in game client.
-
-**Will it download the same mod twice?**
-No. A mod is skipped when its own file list already matches what is on disk.
-
-**Can I queue several servers?**
-Yes. *Add server* appends each server's missing mods. *Refresh all* re-reads every
-tracked server and queues what is new. When a server's modlist changed since the
-last refresh, the refresh says so and the server row is marked; **Make preset**
-then rebuilds that server's preset from the new list.
-
-**Does it work on Linux or macOS?**
-No. It is a Windows PowerShell tool and writes to the Windows game folder.
-
-**Where do I find a mod id?**
-Open the mod on the Workshop; the id is the 16 characters at the end of the link.
-
-## Troubleshooting
-
-**Setup fails.** Run `1 - Setup.cmd` again; the download resumes and it retries
-with a clean engine folder by itself. Check that you are online and have ~20 GB
-free. The exact SteamCMD error is in `steamcmd\logs\console_log.txt`.
-
-**Nothing opens in the browser.** Type `http://localhost:8123/` into the address
-bar.
-
-**A mod never finishes.** The Workshop sometimes refuses a single mod. The tool
-skips it after three refusals and names it on the page. Remove it and continue.
-
-**A mod does not show up in the game.** Open the addons folder and look for a
-folder ending in that mod's id. If it is missing, press Start again; only the
-missing mods are fetched.
-
-**Antivirus flags `Start Mods Download.cmd`.** It is a one-line file that starts
-PowerShell. Every `.ps1` file here can be opened in Notepad and read.
-
-## Advanced settings
-
-Two environment variables move the big folders (optional):
-
-```
-set RFMM_HOME=D:\reforger\home     REM engine + working copy
-set RFMM_DATA=D:\reforger\data     REM saved lists and sizes
-```
-
-Set them in the same window you start the tool from.
-
-## Uninstall
-
-Delete the tool's folder. That removes the engine and its working copy.
-
-Your mods stay in `Documents\My Games\ArmaReforger\addons`. Remove the folders
-you no longer want.
-
-## How it works
-
-The tool writes a config for the dedicated server that lists exactly the mods you
-picked, starts it headless, and watches its log and its output folder. The
-engine's output folder is a directory link to the game's addons folder, so the
-engine downloads each mod once, straight to where the game reads it.
-
-Search and sizes come from the public [reforgermods.net](https://reforgermods.net)
-API. Downloads come from the official Workshop through Steam. Nothing is
-re-hosted, and the tool has no server or telemetry of its own.
-
-## Related
-
-- Development source and history: [arma-reforger-ai-toolkit](https://github.com/goranbalsic/arma-reforger-ai-toolkit) — the same downloader plus the tooling used to work on Reforger mods (publish, deploy, previews).
-- Workshop search and sizes come from [reforgermods.net](https://reforgermods.net).
-- The engine is the free [Arma Reforger dedicated server](https://developer.valvesoftware.com/wiki/Arma_Reforger:_Dedicated_Server).
+- **Nothing downloads.** Another `ArmaReforgerServer.exe` is running; close it and press Start.
+- **A mod stays missing.** Press Refresh, then Start. A partial download the engine would
+  skip is deleted and fetched again.
+- **Make preset does nothing.** Close the game first - it rewrites its settings file on exit.
+- **The page will not open.** Something else uses port 8123, or the console window is closed.
 
 ## Tests
 
-Two scripts, no install needed:
-
-- `powershell -File test-units.ps1` - offline checks of the shared rules (completion
-  rule, config repair, preset writer, partial cleanup). A second is enough.
-- `powershell -File test-torture.ps1` - beats on a *running* dashboard: every route,
-  wrong ids, wrong token, parallel polling, a server remove/re-add round trip, then
-  checks the state files. It pauses and restarts your download on purpose.
+- `powershell -File test-units.ps1` - offline checks of the shared rules, about a second.
+- `powershell -File test-torture.ps1` - beats on a running dashboard: every route, wrong
+  ids, a wrong action token, parallel polling, state-file damage. Add `-ServerRoundTrip`
+  for the remove/re-add test (needs the Workshop API).
 
 ## License
 

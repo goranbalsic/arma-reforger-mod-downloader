@@ -487,7 +487,10 @@ function Get-PartialMods {
   # one mod that trim then removed - "resuming 1" followed by "nothing to download".
   $dirs = Get-DirMap
   @($dirs.GetEnumerator() | Where-Object {
-      $_.Value.bytes -gt 0 -and -not (Test-AddonComplete $_.Value.path $_.Value.mtime)
+      # only mods this install tracks: an untracked folder (a mod from a removed
+      # server, or one you half-deleted to save space) must not come back by itself
+      $sizeMap.ContainsKey($_.Key) -and $_.Value.bytes -gt 0 -and
+      -not (Test-AddonComplete $_.Value.path $_.Value.mtime)
     } | ForEach-Object { [PSCustomObject]@{ modId = $_.Key; name = $_.Value.name } })
 }
 
