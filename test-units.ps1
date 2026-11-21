@@ -430,6 +430,67 @@ Check 'the message says the dependency walk was cut' ($amsg -match 'limit')
 . "$PSScriptRoot\dashboard-core.ps1"
 . "$PSScriptRoot\state.ps1"
 
+Write-Host 'item 10: handler behaviour'
+function Get-HaveIds { @{} }
+function Get-DS { param([switch]$Fresh) ,@() }
+function Stop-DS { 'stopped' }
+function Start-DS { 'started' }
+function Invoke-RestMethod { param($Uri, $Headers, $Method, $Body, $ContentType, $TimeoutSec)
+  if ("$Uri" -match '/mods/([0-9A-Fa-f]{16})$') { return [pscustomobject]@{ mod = [pscustomobject]@{ id = $Matches[1].ToUpper(); name = 'Mod'; size = 10 } } }
+  return [pscustomobject]@{ data = @() } }
+function Get-ModDeps { param($Id) @() }
+
+Reset-State
+$null = Invoke-AddMod 'ABCDEF0123456789'
+Check 'add mod queues the mod once' (@((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods).Count -eq 1)
+$again = Invoke-AddMod 'ABCDEF0123456789'
+Check 'add mod short-circuits when already queued' ($again -match 'already queued')
+
+Reset-State
+function Get-HaveIds { @{ 'ABCDEF0123456789' = $true } }
+$inst = Invoke-AddMod 'ABCDEF0123456789'
+Check 'add mod short-circuits when already installed' ($inst -match 'already installed')
+
+Reset-State
+function Get-Detail { param($Id) [pscustomobject]@{ name = 'S'; passwordProtected = $false; mods = @(
+  [pscustomobject]@{ id = 'ABCDEF0123456789'; name = 'M'; size = 10; sizeKnown = $true }) } }
+$srvInst = Invoke-AddServer '55555555-5555-5555-5555-555555555555'
+Check 'add server still lists a server whose mods are installed' ($srvInst -match 'is in the list' -and @($serverList).Count -eq 1)
+Check 'that server added nothing to the queue' (@((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods).Count -eq 0)
+
+Reset-State
+$script:serverList = @([pscustomobject]@{ id = '66666666-6666-6666-6666-666666666666'; name = 'S'; mods = @(
+  [pscustomobject]@{ id = '0000000000000010'; name = 'm1'; e = 1 },
+  [pscustomobject]@{ id = '0000000000000011'; name = 'm2'; e = 1 }) })
+$script:sizeMap = @{ '0000000000000010' = @{ name = 'm1'; bytes = 1 }; '0000000000000011' = @{ name = 'm2'; bytes = 1 }; '0000000000000012' = @{ name = 'm3'; bytes = 1 } }
+function Get-HaveIds { @{ '0000000000000011' = $true } }
+$null = Invoke-QueueServer '66666666-6666-6666-6666-666666666666'
+$qmods = @((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods)
+Check 'queue first puts the missing server mods first, then the rest' ($qmods.Count -eq 2 -and $qmods[0].modId -eq '0000000000000010' -and $qmods[1].modId -eq '0000000000000012')
+
+Reset-State
+function Get-HaveIds { @{} }
+$null = Invoke-AddMod 'ABCDEF0123456789'
+$cmsg = Invoke-ClearQueue
+Check 'clear queue empties it' (@((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods).Count -eq 0 -and $cmsg -match 'queue cleared')
+
+Reset-State
+$script:sizeMap = @{}
+$want = [ordered]@{ '0000000000000020' = 'a'; '0000000000000021' = 'b' }
+Update-Cfg { param($cfg) $cfg.game.mods = @([pscustomobject]@{ modId = '0000000000000021'; name = 'b' }) } $Cfg | Out-Null
+$qres = Add-MissingToQueue $want
+$qafter = @((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods)
+Check 'add missing queues only what is missing' ($qres.count -eq 1 -and $qafter.Count -eq 2)
+
+Reset-State
+$depIds = @{ 'ABCDEF0123456789' = '0000000000000001'; '0000000000000001' = '0000000000000002'; '0000000000000002' = '0000000000000003'; '0000000000000003' = '0000000000000004' }
+function Get-ModDeps { param($Id) if ($depIds.ContainsKey($Id)) { @([pscustomobject]@{ id = $depIds[$Id]; name = 'd'; size = 1 }) } else { @() } }
+$null = Invoke-AddMod 'ABCDEF0123456789'
+$depthMods = @((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods | ForEach-Object { $_.modId })
+Check 'the dependency depth cap stops at three levels' ($depthMods.Count -eq 4 -and $depthMods -notcontains '0000000000000004')
+. "$PSScriptRoot\dashboard-core.ps1"
+. "$PSScriptRoot\state.ps1"
+
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)
