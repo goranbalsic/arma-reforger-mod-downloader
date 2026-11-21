@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.16
+
+- Queue trimming now holds the engine lock while reading and saving the queue, drops invalid mod IDs, and records the first retry for partial downloads.
+- Addon mirroring reports copy failures and handles lowercase IDs and bracketed folder names.
+
 ## 1.0.15
 
 - Adding a server lists it once (memory and `batch1-servers.json`), stops the engine
