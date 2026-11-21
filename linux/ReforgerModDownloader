@@ -47,12 +47,12 @@ BRIDGE = r"""
 class Worker:
     def __init__(self):
         DATA.mkdir(parents=True, exist_ok=True)
-        environment = dict(os.environ, RFMM_HOME=str(HOME), RFMM_DATA=str(DATA))
+        self.environment = dict(os.environ, RFMM_HOME=str(HOME), RFMM_DATA=str(DATA))
         self.log = (DATA / "desktop.log").open("a", encoding="utf-8")
         self.process = subprocess.Popen(
             ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(SOURCE / "download-web.ps1"), "-Desktop"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log,
-            text=True, encoding="utf-8", env=environment,
+            text=True, encoding="utf-8", env=self.environment,
         )
 
     def request(self, path, method="GET"):
@@ -64,6 +64,12 @@ class Worker:
             self.log.write(line)
             self.log.flush()
         raise RuntimeError(f"The downloader stopped. See {DATA / 'desktop.log'}.")
+
+    def stop_downloads(self):
+        subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(SOURCE / "download-web.ps1"), "-DesktopStop"],
+            stdout=self.log, stderr=self.log, env=self.environment, check=True,
+        )
 
     def close(self):
         self.process.stdin.close()
@@ -78,6 +84,7 @@ class Downloader(Gtk.Application):
         self.window = None
         self.worker = None
         self.installing = False
+        self.stopping_downloads = False
         self.view = None
 
     def do_activate(self):
@@ -86,7 +93,7 @@ class Downloader(Gtk.Application):
             return
         self.window = Gtk.ApplicationWindow(application=self, title="Arma Reforger Mod Downloader")
         self.window.set_default_size(1024, 740)
-        self.window.connect("delete-event", lambda *_: self.installing)
+        self.window.connect("delete-event", self.close_window)
         if not shutil.which("pwsh"):
             self.show_error("PowerShell 7 is required. Install pwsh and reopen the downloader.")
         elif ENGINE.is_file():
@@ -94,6 +101,32 @@ class Downloader(Gtk.Application):
         else:
             self.show_setup()
         self.window.show_all()
+
+    def close_window(self, _window, _event):
+        if self.installing or self.stopping_downloads:
+            return True
+        if not self.worker:
+            return False
+        self.stopping_downloads = True
+        self.window.set_sensitive(False)
+        self.pool.submit(self.worker.stop_downloads).add_done_callback(
+            lambda future: GLib.idle_add(self.finish_close, future)
+        )
+        return True
+
+    def finish_close(self, future):
+        try:
+            future.result()
+            self.window.destroy()
+        except Exception:
+            self.stopping_downloads = False
+            self.window.set_sensitive(True)
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window, modal=True, message_type=Gtk.MessageType.WARNING,
+                buttons=Gtk.ButtonsType.OK, text="Couldn’t stop the download engine. Try closing the app again.",
+            )
+            dialog.run()
+            dialog.destroy()
 
     def show_error(self, text):
         for child in self.window.get_children():
@@ -216,6 +249,8 @@ class Downloader(Gtk.Application):
         request.finish(Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(html)), len(html), "text/html")
 
     def handle_request(self, _manager, message):
+        if self.stopping_downloads:
+            return
         if self.view.get_uri().split("#", 1)[0] != ORIGIN:
             return
         args = json.loads(message.get_js_value().to_json(0))

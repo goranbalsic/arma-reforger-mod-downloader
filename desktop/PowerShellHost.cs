@@ -72,6 +72,20 @@ internal sealed class PowerShellHost : IDisposable
         }
     }
 
+    internal static async Task StopDownloadsAsync(string runtime, string root)
+    {
+        using (var shutdown = Process.Start(StartInfo(runtime, root, "download-web.ps1", "-DesktopStop")))
+        {
+            Task<string> output = shutdown.StandardOutput.ReadToEndAsync();
+            Task<string> errors = shutdown.StandardError.ReadToEndAsync();
+            await Task.Run(() => shutdown.WaitForExit());
+            await output;
+            string error = await errors;
+            if (shutdown.ExitCode != 0)
+                throw new IOException(String.IsNullOrWhiteSpace(error) ? "The downloader could not stop." : error.Trim());
+        }
+    }
+
     private async Task<Reply> ReadReplyAsync()
     {
         string line;

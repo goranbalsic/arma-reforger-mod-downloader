@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -41,6 +42,8 @@ internal static class AppUpdates
 
     private static HttpClient CreateClient()
     {
+        // This executable uses the .NET Framework compiler, whose legacy TLS defaults can reject GitHub.
+        ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
         var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
         client.Timeout = TimeSpan.FromSeconds(30);
         client.MaxResponseContentBufferSize = 16 * 1024 * 1024;

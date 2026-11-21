@@ -152,38 +152,56 @@ function Get-DirMap {
   $map
 }
 function Get-TransferSnapshot($Log, [datetime]$Now, [datetime]$StartedAt) {
-  $result = @{ mods = @{}; speedB = 0; speedAge = 999 }
+  $result = @{ mods = @{}; current = $null; speedB = 0; speedAge = 999 }
   if (!$Log) { return $result }
   $written = [IO.File]::GetLastWriteTimeUtc($Log.FullName)
   if ($written -lt $StartedAt.ToUniversalTime()) { return $result }
-  $cacheKey = "$($Log.FullName)|$($written.Ticks)"
+
+  $logRun = "$($Log.FullName)|$($StartedAt.Ticks)"
+  $cacheKey = "$logRun|$($written.Ticks)"
   if ($script:transferLogKey -ne $cacheKey) {
-    $script:transferLogKey = $cacheKey
-    $script:transferLogTail = @(Get-Content -LiteralPath $Log.FullName -Tail 160 -Encoding UTF8 -ErrorAction SilentlyContinue)
-  }
-  foreach ($line in $script:transferLogTail) {
-    $entry = [regex]::Match($line, '^\s*(\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+BACKEND\s*:\s*(.+)$')
-    if (!$entry.Success) { continue }
-    $elapsed = [timespan]::Zero
-    if (![timespan]::TryParse($entry.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture, [ref]$elapsed)) { continue }
-    $at = $Now.Date.Add($elapsed)
-    if ($at -gt $Now.AddSeconds(2)) { $at = $at.AddDays(-1) }
-    if ($at -lt $StartedAt) { continue }
-    $body = $entry.Groups[2].Value
-    $progress = [regex]::Match($body, '^(.+?):\s*\[[^\]]*\]\s*\d+%\s*(\d+(?:\.\d+)?)/(\d+(?:\.\d+)?) MB')
-    if ($progress.Success) {
-      $name = $progress.Groups[1].Value.Trim()
-      $total = [double]$progress.Groups[3].Value * 1MB
-      $done = [Math]::Min($total, [double]$progress.Groups[2].Value * 1MB)
-      $result.mods[$name] = @{ name = $name; b = $done; expB = $total; at = $at }
+    $cached = @{ mods = @{}; current = $null; speedAt = $null; speedB = 0 }
+    if ($script:transferLogRun -eq $logRun -and $script:transferLogMetrics) {
+      $cached.current = $script:transferLogMetrics.current
     }
-    $speed = [regex]::Match($body, '^Download speed ([0-9.]+) KB/s')
-    if ($speed.Success) {
-      $age = [Math]::Max(0, ($Now - $at).TotalSeconds)
-      if ($age -le 20) {
-        $result.speedB = [Math]::Round([double]$speed.Groups[1].Value * 1KB)
-        $result.speedAge = [Math]::Round($age)
+    foreach ($line in Get-Content -LiteralPath $Log.FullName -Tail 160 -Encoding UTF8 -ErrorAction SilentlyContinue) {
+      $entry = [regex]::Match($line, '^\s*(\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+BACKEND\s*:\s*(.+)$')
+      if (!$entry.Success) { continue }
+      $elapsed = [timespan]::Zero
+      if (![timespan]::TryParse($entry.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture, [ref]$elapsed)) { continue }
+      $at = $Now.Date.Add($elapsed)
+      if ($at -gt $Now.AddSeconds(2)) { $at = $at.AddDays(-1) }
+      if ($at -lt $StartedAt) { continue }
+      $body = $entry.Groups[2].Value
+      $start = [regex]::Match($body, '^Addon Download started ([a-fA-F0-9]{16}) - (.+)$')
+      if ($start.Success -and (!$cached.current -or $at -ge $cached.current.at)) {
+        $cached.current = @{ id = $start.Groups[1].Value; name = $start.Groups[2].Value.Trim(); at = $at }
       }
+      $progress = [regex]::Match($body, '^(.+?):\s*\[[^\]]*\]\s*\d+%\s*(\d+(?:\.\d+)?)/(\d+(?:\.\d+)?) MB')
+      if ($progress.Success) {
+        $name = $progress.Groups[1].Value.Trim()
+        $total = [double]$progress.Groups[3].Value * 1MB
+        $done = [Math]::Min($total, [double]$progress.Groups[2].Value * 1MB)
+        $cached.mods[$name] = @{ name = $name; b = $done; expB = $total; at = $at }
+      }
+      $speed = [regex]::Match($body, '^Download speed ([0-9.]+) KB/s')
+      if ($speed.Success) {
+        $cached.speedAt = $at
+        $cached.speedB = [Math]::Round([double]$speed.Groups[1].Value * 1KB)
+      }
+    }
+    $script:transferLogRun = $logRun
+    $script:transferLogKey = $cacheKey
+    $script:transferLogMetrics = $cached
+  }
+
+  $result.mods = $script:transferLogMetrics.mods
+  $result.current = $script:transferLogMetrics.current
+  if ($script:transferLogMetrics.speedAt) {
+    $age = [Math]::Max(0.0, ($Now - $script:transferLogMetrics.speedAt).TotalSeconds)
+    if ($age -le 30) {
+      $result.speedAge = [Math]::Round($age)
+      $result.speedB = $script:transferLogMetrics.speedB
     }
   }
   $result
@@ -194,7 +212,7 @@ function Get-Status {
   $engine = $engines | Select-Object -First 1
   $runningNow = [bool]$engine
   $now = Get-Date
-  $transfer = @{ mods = @{}; speedB = 0; speedAge = 999 }
+  $transfer = @{ mods = @{}; current = $null; speedB = 0; speedAge = 999 }
   if ($runningNow) {
     $transfer = Get-TransferSnapshot (Get-Log) $now $engine.StartTime
   }
@@ -205,24 +223,21 @@ function Get-Status {
   # The 3 marker files are only used when the size is unknown: many Workshop mods
   # ship without addon.gproj (8-file packs), and requiring it left them unfinished
   # forever - never synced, so the launcher showed them as missing.
-  $completed = @{}
-  foreach ($e in $dirs.GetEnumerator()) {
-    $d = $e.Value
-    if ($d.mtime -gt $now.AddMinutes(-2)) { continue }   # still being written
-    # the addon's own meta file list decides - the one rule (README), same as
-    # Get-HaveIds/verify/trim. The Workshop size in $sizeMap goes stale when a mod
-    # updates; SagesFramework sat at 203 MB there while 268 MB was on disk, so a
-    # finished mod stayed "missing" forever: it held the queue open, the DS saw it
-    # installed and served a world, and the watchdog restarted it every 5 min.
-    if (-not (Test-AddonComplete $d.path $d.mtime)) { continue }
-    $completed[$e.Key] = $true
+  if (![object]::ReferenceEquals($script:completedDirs, $dirs)) {
+    $completed = @{}
+    foreach ($e in $dirs.GetEnumerator()) {
+      $d = $e.Value
+      if ($d.mtime -gt $now.AddMinutes(-2)) { continue }
+      if (-not (Test-AddonComplete $d.path $d.mtime)) { continue }
+      $completed[$e.Key] = $true
+    }
+    $script:recentDownloads = @($dirs.GetEnumerator() | Where-Object { $completed.ContainsKey($_.Key) } |
+      Sort-Object { $_.Value.mtime } -Descending | ForEach-Object {
+        @{ id = $_.Key; name = $_.Value.name; b = [double]$_.Value.bytes }
+      })
+    $script:completedDirs = $dirs
   }
-  # all completed mods, newest first (full list - the page shows every one).
-  # ids go with them: sync-addons mirrors exactly this set (single completion rule)
-  $recent = @($dirs.GetEnumerator() | Where-Object { $completed.ContainsKey($_.Key) } |
-    Sort-Object { $_.Value.mtime } -Descending) | ForEach-Object {
-    @{ id = $_.Key; name = $_.Value.name; b = [double]$_.Value.bytes }
-  }
+  $recent = $script:recentDownloads
 
   $queued = @((Get-Cfg).game.mods)
   $batchBytes = [double]0
@@ -237,6 +252,10 @@ function Get-Status {
     $dir = $dirs[$id]
     $report = if ($mod.name) { $transfer.mods[[string]$mod.name] }
     if (!$report -and $dir.name) { $report = $transfer.mods[$dir.name] }
+    if ($transfer.current.id -eq $id) {
+      $report = $transfer.mods[$transfer.current.name]
+      if ($report -and $report.at -lt $transfer.current.at) { $report = $null }
+    }
     $expected = if ($report -and $report.expB -gt 0) { $report.expB } elseif ($mod.size) { [double]$mod.size } else { [double]$sizeMap[$id].bytes }
     $complete = if ($mod.version) {
       $dir -and (Get-InstalledVersion $dir.path) -eq $mod.version -and (Test-AddonComplete $dir.path $dir.mtime)
@@ -252,10 +271,13 @@ function Get-Status {
       elseif (!$report) { $estimatedSizes++ }
       if ($report) {
         $doneBytes += $report.b
-        if (($now - $report.at).TotalSeconds -le 25) {
+        if ($transfer.current.id -eq $id -or ($now - $report.at).TotalSeconds -le 25) {
           $active[$report.name] = @{ id = $id; name = $report.name; b = $report.b; expB = $report.expB
             pct = if ($report.expB) { [Math]::Round(100 * $report.b / $report.expB, 1) } else { 0 } }
         }
+      }
+      if (!$report -and $transfer.current.id -eq $id) {
+        $active[$transfer.current.name] = @{ id = $id; name = $transfer.current.name }
       }
       @{ id = $id; name = $mod.name; version = $mod.version }
     }
@@ -270,11 +292,20 @@ function Get-Status {
         pct = if ($report.expB) { [Math]::Round(100 * $report.b / $report.expB, 1) } else { 0 } }
     }
   }
+  if ($transfer.current -and !$active.ContainsKey($transfer.current.name)) {
+    $currentDir = $dirs[$transfer.current.id]
+    if (!$currentDir -or !(Test-AddonComplete $currentDir.path $currentDir.mtime)) {
+      $latest = $transfer.mods[$transfer.current.name]
+      $active[$transfer.current.name] = if ($latest -and $latest.at -ge $transfer.current.at) {
+        @{ id = $transfer.current.id; name = $latest.name; b = $latest.b; expB = $latest.expB
+          pct = if ($latest.expB) { [Math]::Round(100 * $latest.b / $latest.expB, 1) } else { 0 } }
+      } else { @{ id = $transfer.current.id; name = $transfer.current.name } }
+    }
+  }
   if (!$queueList.Count) {
     $batchBytes = $doneBytes = $doneCount = $unknownSizes = $estimatedSizes = 0
     $queued = @()
-    $active.Clear()
-    $transfer.speedB = 0
+    if (!$active.Count) { $transfer.speedB = 0 }
   }
   @{ running = $runningNow; paused = (Test-Path -LiteralPath (Join-Path $Data 'paused.flag'))
      speedB = $transfer.speedB; speedAge = $transfer.speedAge

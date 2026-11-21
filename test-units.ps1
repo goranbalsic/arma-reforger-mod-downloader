@@ -547,7 +547,7 @@ $stamp = $transferNow.ToString('HH:mm:ss.fff')
   "$stamp  BACKEND      : Download speed 7876.49 KB/s") | Set-Content -LiteralPath $transferLog
 $report = Get-TransferSnapshot (Get-Item -LiteralPath $transferLog) $transferNow $transferNow.AddMinutes(-1)
 Check 'reported bytes and speed come from the engine log' ($report.mods.Fixture.b -eq 8680MB -and $report.mods.Fixture.expB -eq 11000MB -and $report.speedB -eq [Math]::Round(7876.49 * 1KB))
-$staleReport = Get-TransferSnapshot (Get-Item -LiteralPath $transferLog) $transferNow.AddSeconds(30) $transferNow.AddMinutes(-1)
+$staleReport = Get-TransferSnapshot (Get-Item -LiteralPath $transferLog) $transferNow.AddSeconds(31) $transferNow.AddMinutes(-1)
 Check 'old speed is withheld rather than shown as current' ($staleReport.speedB -eq 0)
 & {
   function Get-DS { ,@([pscustomobject]@{ StartTime = $transferNow.AddMinutes(-1) }) }
@@ -555,6 +555,9 @@ Check 'old speed is withheld rather than shown as current' ($staleReport.speedB 
   Update-Cfg { param($cfg) $cfg.game.mods[0].name = 'Fixture' } $Cfg | Out-Null
   $large = Get-Status
   Check 'status supports downloads above the 32-bit byte limit' ($large.doneB -eq 8680MB -and $large.totalB -eq 11000MB -and $large.pctF -gt 78)
+  "$stamp BACKEND      : Addon Download started ABCDEF0123456789 - Active from log" | Set-Content -LiteralPath $transferLog
+  $started = Get-Status
+  Check 'active mod appears before the first byte report' ($started.active[0].id -eq 'ABCDEF0123456789' -and $started.active[0].name -eq 'Active from log' -and $null -eq $started.active[0].b)
 }
 $script:fixtureComplete = $true
 $status = Get-Status

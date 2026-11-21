@@ -30,6 +30,8 @@ internal sealed class DownloadWindow : Form
     private string root;
     private readonly string steamEngine;
     private bool installing;
+    private bool stoppingDownloads;
+    private bool downloadsStopped;
     private readonly MenuStrip menu = new MenuStrip();
     private readonly ToolStripMenuItem checkUpdates = new ToolStripMenuItem("Check for updates");
     private AppUpdates.Pending pendingAppUpdate;
@@ -80,8 +82,8 @@ internal sealed class DownloadWindow : Form
         }
         catch (Exception error)
         {
-            PowerShellHost.Log("App update check: " + error.Message);
-            if (manual && !IsDisposed) ShowUpdateMessage("Could not check for updates. " + error.Message);
+            PowerShellHost.Log("App update check: " + error);
+            if (manual && !IsDisposed) ShowUpdateMessage("Couldn’t reach GitHub. Try again later.");
         }
         finally
         {
@@ -385,7 +387,33 @@ internal sealed class DownloadWindow : Form
             MessageBox.Show(this, "Wait for the engine setup to finish before closing the downloader.",
                 Program.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
+        if (!args.Cancel && args.CloseReason == CloseReason.UserClosing && backend != null && !downloadsStopped)
+        {
+            args.Cancel = true;
+            StopDownloadsAndClose();
+        }
         base.OnFormClosing(args);
+    }
+
+    private async void StopDownloadsAndClose()
+    {
+        if (stoppingDownloads) return;
+        stoppingDownloads = true;
+        Enabled = false;
+        try
+        {
+            await PowerShellHost.StopDownloadsAsync(runtime, root);
+            downloadsStopped = true;
+            Close();
+        }
+        catch (Exception error)
+        {
+            PowerShellHost.Log("Closing downloader: " + error);
+            Enabled = true;
+            MessageBox.Show(this, "Couldn’t stop the download engine. Try closing the app again.",
+                Program.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally { stoppingDownloads = false; }
     }
 
     protected override void OnFormClosed(FormClosedEventArgs args)

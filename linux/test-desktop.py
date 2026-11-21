@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix="reforger-linux-") as fixture:
             state = json.loads(self.observed)
             if "Linux fixture" in state.get("queue", "") and not state.get("notice"):
                 self.passed = True
-                self.quit()
+                self.window.close()
 
     test = SmokeTest()
     app.GLib.timeout_add_seconds(50, lambda: (test.quit(), False)[1])
@@ -61,4 +61,6 @@ with tempfile.TemporaryDirectory(prefix="reforger-linux-") as fixture:
     if not test.passed:
         log = app.DATA / "desktop.log"
         raise SystemExit(f"Linux dashboard did not load: {test.observed}\n{log.read_text() if log.exists() else ''}")
-    print("Linux desktop window loaded the fixture queue.")
+    if not (app.DATA / "queue-revision.txt").exists():
+        raise SystemExit("Closing the Linux desktop did not pause the queue.")
+    print("Linux desktop loaded and paused the fixture queue.")

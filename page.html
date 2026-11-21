@@ -104,8 +104,8 @@ function renderActive(list,A){
   const shown=list.filter(a=>match(a.name,FILTER.act));
   document.getElementById('actcount').textContent=list.length?'('+list.length+')':'';
   el.innerHTML=shown.length
-   ?shown.map(a=>'<div class="row"><span>'+esc(a.name)+'</span><span class="dim">'+(a.expB>0?(sz(a.b)+' / '+sz(a.expB)):sz(a.b)+' (size unknown)')+'</span></div>'+
-     (a.expB>0?'<div class="bar amber"><div style="width:'+a.pct+'%"></div></div>':'')).join('')
+   ?shown.map(a=>'<div class="row"><span>'+esc(a.name)+'</span><span class="dim">'+(Number.isFinite(a.b)?(a.expB>0?sz(a.b)+' / '+sz(a.expB):sz(a.b)):'')+'</span></div>'+
+     (Number.isFinite(a.b)&&a.expB>0?'<div class="bar amber"><div style="width:'+a.pct+'%"></div></div>':'')).join('')
    :(list.length?'<span class="dim">no download matches the filter</span>':'<span class="dim">No active downloads</span>');
 }
 function renderQueue(queue,A){
@@ -299,7 +299,7 @@ async function tick(){
   bar.style.width=progress+'%';
   if(totalKnown||!hasQueue)bar.parentElement.setAttribute('aria-valuenow',progress);
   else bar.parentElement.removeAttribute('aria-valuenow');
-  document.getElementById('spd').textContent=s.running&&hasQueue?(s.speedB>0?sz(s.speedB)+'/s':'Waiting for speed data'):'';
+  document.getElementById('spd').textContent=s.running&&(hasQueue||s.active.length)&&s.speedB>0?sz(s.speedB)+'/s':'';
   document.getElementById('cnt').textContent=hasQueue?(s.doneCount+' of '+s.totalMods+' mods complete'):'';
   const eta=s.running&&totalKnown&&s.speedB>0?left((s.totalB-s.doneB)/s.speedB):'';
   document.getElementById('etabox').textContent=eta?'~'+eta+' left':'';
@@ -465,7 +465,7 @@ loadSrv();   // self-gated (5 s); tick retries it too, so this is the only call 
 (async function loop(){
  // one request in flight. A /status build costs ~0.3 s of one core, so polling at
  // 400 ms (measured: 97% of one core) is not worth it; 1 s is still live enough.
- const ms = document.hidden ? 4000 : (LAST && LAST.running ? 800 : 2000);
+ const ms = document.hidden ? 4000 : (LAST && LAST.running ? 500 : 2000);
  await tick();
  setTimeout(loop, ms);
 })();

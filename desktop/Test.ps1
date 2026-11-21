@@ -87,7 +87,24 @@ try {
       $afterCancel.queueRevision -eq $updating.queueRevision -or !(Test-Path $partial)) {
     throw "Cancelling updates changed unrelated downloads, removed files, or left the batch active: $($cancelled.body)"
   }
-  'Desktop transport and queue checks passed.'
+  Remove-Item -LiteralPath (Join-Path $data 'paused.flag')
+  $shutdownInfo = [Diagnostics.ProcessStartInfo]::new()
+  $shutdownInfo.FileName = $info.FileName
+  $shutdownInfo.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}\download-web.ps1" -DesktopStop' -f $source
+  $shutdownInfo.UseShellExecute = $false
+  $shutdownInfo.CreateNoWindow = $true
+  foreach ($key in 'RFMM_HOME','RFMM_DATA','USERPROFILE') {
+    $shutdownInfo.EnvironmentVariables[$key] = $info.EnvironmentVariables[$key]
+  }
+  $shutdown = [Diagnostics.Process]::Start($shutdownInfo)
+  try {
+    if (!$shutdown.WaitForExit(15000) -or $shutdown.ExitCode -ne 0) { throw 'Closing the desktop did not stop its engine.' }
+    $onClose = (Send-Request '/status').body | ConvertFrom-Json
+    if (!$onClose.paused -or $onClose.queue.Count -ne 1 -or !(Test-Path -LiteralPath $partial)) {
+      throw 'Closing the desktop did not pause and preserve the queue.'
+    }
+  } finally { $shutdown.Dispose() }
+  'Desktop transport, queue, and shutdown checks passed.'
 } finally {
   $backend.StandardInput.Close()
   if (!$backend.WaitForExit(5000)) { $backend.Kill() }

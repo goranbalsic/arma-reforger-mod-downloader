@@ -1,4 +1,4 @@
-param([switch]$Check, [switch]$Desktop)
+param([switch]$Check, [switch]$Desktop, [switch]$DesktopStop)
 # Arma Reforger mod manager - local web dashboard: batch downloader, live server
 # browser, per-server queue-first, launcher presets, client addon sync.
 # double-click the .cmd: serves http://localhost:8123 and opens your browser.
@@ -24,6 +24,11 @@ $Url     = 'http://localhost:8123/'
 . "$PSScriptRoot\dashboard-core.ps1"
 $Exe = Get-EngineExecutable $Root
 $ClientAddons = Get-ClientAddons $DsProfile
+
+if ($DesktopStop) {
+  if (Test-Path -LiteralPath $Data) { Invoke-PauseQueue | Out-Null }
+  exit 0
+}
 
 # first run on any machine: create empty state files instead of failing
 if (-not (Test-Path $Data)) { New-Item -ItemType Directory -Force $Data | Out-Null }
