@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.22
+
+- Make preset checks local mission resources and restores missing scenario metadata from the matching published revision. Repeated clicks reuse preset IDs saved by the game.
+
 ## 1.0.21
 
 - Write launcher presets inside the storage body, recover truncated storage IDs from profile backups, and show action results in Library.

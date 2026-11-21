@@ -18,6 +18,7 @@ $ErrorActionPreference = 'Stop'
 $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
 # the completion rule (meta lists every file with its exact size) - one copy
 . "$PSScriptRoot\state.ps1"
+. "$PSScriptRoot\preset-scenarios.ps1"
 
 $conf = if ($ConfPath) { $ConfPath } else {
   # newest wins: several profile folders (one per Steam/user) each hold a copy,
@@ -101,11 +102,13 @@ $presetName = ($presetName -replace '"', "'") -replace '[\x00-\x1F]', ' '
 # launcher reads it) AND must match the files on disk - same completion rule as the
 # downloader and verify, so a half-downloaded mod never ends up in a preset.
 $installed = @{}
+$directories = @{}
 Get-ChildItem $clAddons -Directory |
   Where-Object { $_.Name -match '_([0-9A-F]{16})$' -and (Test-Path (Join-Path $_.FullName 'meta')) } |
   ForEach-Object {
     if (Test-AddonComplete $_.FullName $_.LastWriteTime) {
       $id = [regex]::Match($_.Name, '_([0-9A-F]{16})$').Groups[1].Value
+      $directories[$id] = $_.FullName
       $installed[$id] = ($_.Name -replace '_[0-9A-F]{16}$', '')
     }
   }
@@ -128,6 +131,10 @@ function Get-Hash16([string]$s) {
   ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($s))) -replace '-', '').Substring(0, 16)
 }
 $presetGuid = (Get-Hash16 "preset:$($srv.id):$presetName").ToUpper()
+# Reforger regenerates object IDs when saving settings. Reuse the saved ID
+# for this named preset so the next click updates the same entry.
+$existing = [regex]::Match($storage, 'SCR_WorkshopAddonPreset "\{([0-9A-Fa-f]{16})\}"\s*\{\s*m_sName "' + [regex]::Escape($presetName) + '"')
+if ($existing.Success) { $presetGuid = $existing.Groups[1].Value }
 $metas = foreach ($m in $mods) {
   $g = (Get-Hash16 "meta:$($m.id)").ToUpper()
   # quotes, control characters and braces: a brace in m_sName unbalanced the
@@ -188,3 +195,10 @@ Get-ChildItem (Split-Path $conf -Parent) -Filter "$([IO.Path]::GetFileName($conf
   Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 |
   Remove-Item -Force -ErrorAction SilentlyContinue
 "OK - preset '$presetName' $action with $($mods.Count) installed mods"
+
+$scenarioCount = 0
+foreach ($mod in $mods) {
+  try { $scenarioCount += Sync-PresetScenarios $directories[$mod.id] $mod.id }
+  catch { "Scenario check incomplete for $($mod.name): $($_.Exception.Message)" }
+}
+"Local scenarios confirmed: $scenarioCount"
