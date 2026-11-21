@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -18,7 +20,10 @@ internal sealed class DownloadWindow : Form
     private readonly Label location = new Label { AutoSize = true, MaximumSize = new Size(720, 0) };
     private readonly Button install = new Button { AutoSize = true, Text = "Install engine" };
     private readonly Button browse = new Button { AutoSize = true, Text = "Choose folder…" };
-    private readonly RichTextBox setupOutput = new RichTextBox { ReadOnly = true, Dock = DockStyle.Fill, Visible = false };
+    private readonly ProgressBar setupProgress = new ProgressBar { Dock = DockStyle.Top, Height = 16, Visible = false, Style = ProgressBarStyle.Marquee };
+    private readonly Label setupStatus = new Label { AutoSize = true, Visible = false, MaximumSize = new Size(720, 0) };
+    private readonly LinkLabel setupDetails = new LinkLabel { Text = "Open setup log", AutoSize = true, Visible = false };
+    private DateTime setupStarted;
     private TableLayoutPanel setup;
     private WebView2 view;
     private PowerShellHost backend;
@@ -96,7 +101,18 @@ internal sealed class DownloadWindow : Form
         buttons.Controls.Add(install);
         buttons.Controls.Add(browse);
         setup.Controls.Add(buttons);
-        setup.Controls.Add(setupOutput);
+        var progressPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        progressPanel.Controls.Add(setupStatus);
+        setupDetails.LinkClicked += (sender, args) =>
+        {
+            string log = Path.Combine(Program.LocalFolder, "desktop.log");
+            if (File.Exists(log)) Process.Start(new ProcessStartInfo(log) { UseShellExecute = true });
+        };
+        progressPanel.Controls.Add(setupDetails);
+        var progressArea = new Panel { Dock = DockStyle.Top, Height = 85 };
+        progressArea.Controls.Add(progressPanel);
+        progressArea.Controls.Add(setupProgress);
+        setup.Controls.Add(progressArea);
         Controls.Add(setup);
         RefreshSetupLocation();
         browse.Click += (sender, args) =>
@@ -127,44 +143,90 @@ internal sealed class DownloadWindow : Form
         installing = true;
         install.Enabled = browse.Enabled = false;
         install.Text = "Installing…";
-        setupOutput.Clear();
-        setupOutput.Visible = true;
+        setupDetails.Hide();
+        setupProgress.Value = 0;
+        setupProgress.Style = ProgressBarStyle.Marquee;
+        setupProgress.Show();
+        setupStatus.Text = "Preparing the download…";
+        setupStatus.Show();
+        setupStarted = DateTime.UtcNow;
+        using (var timer = new Timer { Interval = 1000 })
+        {
+            timer.Tick += (sender, args) => RefreshSetupProgress();
+            try
+            {
+                Directory.CreateDirectory(root);
+                RememberLocation();
+                using (var engineSetup = new Process { StartInfo = PowerShellHost.StartInfo(runtime, root, "Setup.ps1", "") })
+                {
+                    engineSetup.OutputDataReceived += (sender, args) => PowerShellHost.Log(args.Data);
+                    engineSetup.ErrorDataReceived += (sender, args) => PowerShellHost.Log(args.Data);
+                    engineSetup.Start();
+                    engineSetup.BeginOutputReadLine();
+                    engineSetup.BeginErrorReadLine();
+                    timer.Start();
+                    await Task.Run(() => engineSetup.WaitForExit());
+                    timer.Stop();
+                    if (engineSetup.ExitCode != 0 || !EngineInstalled())
+                        throw new IOException("Engine installation failed. Try again or open the setup log.");
+                }
+                await OpenDashboardAsync();
+            }
+            catch (Exception error)
+            {
+                ShowSetupError(error.Message);
+            }
+            finally
+            {
+                installing = false;
+                install.Enabled = browse.Enabled = true;
+                RefreshSetupLocation();
+            }
+        }
+    }
+
+    private void RefreshSetupProgress()
+    {
+        string path = Path.Combine(root, "steamcmd", "logs", "console_log.txt");
         try
         {
-            Directory.CreateDirectory(root);
-            RememberLocation();
-            using (var engineSetup = new Process { StartInfo = PowerShellHost.StartInfo(runtime, root, "Setup.ps1", "") })
+            if (File.GetLastWriteTimeUtc(path) < setupStarted) return;
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             {
-                engineSetup.OutputDataReceived += (sender, args) => ShowSetupLine(args.Data);
-                engineSetup.ErrorDataReceived += (sender, args) => ShowSetupLine(args.Data);
-                engineSetup.Start();
-                engineSetup.BeginOutputReadLine();
-                engineSetup.BeginErrorReadLine();
-                await Task.Run(() => engineSetup.WaitForExit());
-                if (engineSetup.ExitCode != 0 || !EngineInstalled())
-                    throw new IOException("Setup did not finish. Review the output above, then try again.");
+                stream.Seek(Math.Max(0, stream.Length - 16384), SeekOrigin.Begin);
+                using (var reader = new StreamReader(stream))
+                {
+                    var progress = Regex.Matches(reader.ReadToEnd(), @"Update state \([^)]+\)\s+([^,\r\n]+),\s*progress:\s*([0-9.]+)");
+                    if (progress.Count == 0) return;
+                    Match latest = progress[progress.Count - 1];
+                    double percentage;
+                    if (latest.Groups[1].Value.IndexOf("downloading", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        Double.TryParse(latest.Groups[2].Value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out percentage))
+                    {
+                        setupProgress.Style = ProgressBarStyle.Continuous;
+                        setupProgress.Value = Math.Max(setupProgress.Value, (int)Math.Min(99, percentage));
+                        setupStatus.Text = "Downloading engine… " + setupProgress.Value + "%";
+                    }
+                    else if (setupProgress.Style == ProgressBarStyle.Continuous)
+                    {
+                        setupProgress.Style = ProgressBarStyle.Marquee;
+                        setupStatus.Text = "Finishing installation…";
+                    }
+                }
             }
-            await OpenDashboardAsync();
         }
-        catch (Exception error)
-        {
-            ShowSetupLine(error.Message);
-        }
-        finally
-        {
-            installing = false;
-            install.Enabled = browse.Enabled = true;
-            RefreshSetupLocation();
-        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
-    private void ShowSetupLine(string line)
+    private void ShowSetupError(string message)
     {
-        if (line == null) return;
-        PowerShellHost.Log(line);
-        BeginInvoke((Action)(() => setupOutput.AppendText(line + Environment.NewLine)));
+        PowerShellHost.Log(message);
+        setupProgress.Hide();
+        setupStatus.Text = message;
+        setupStatus.Show();
+        setupDetails.Show();
     }
-
     private async Task OpenDashboardAsync()
     {
         install.Enabled = browse.Enabled = false;
@@ -205,11 +267,10 @@ internal sealed class DownloadWindow : Form
             view.Dispose();
             setup.Show();
             install.Enabled = browse.Enabled = true;
-            setupOutput.Visible = true;
             string guidance = error is WebView2RuntimeNotFoundException
                 ? "Install Microsoft Edge WebView2 Runtime, then reopen the downloader."
                 : "The downloader could not open. " + error.Message;
-            ShowSetupLine(guidance);
+            ShowSetupError(guidance);
         }
     }
 
