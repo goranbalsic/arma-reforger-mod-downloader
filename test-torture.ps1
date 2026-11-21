@@ -27,14 +27,14 @@ function Call([string]$Path, [string]$Method = 'GET', $Body = $null) {
     if ($Body) { $p.Body = $Body; $p.ContentType = 'application/json' }
     $r = Invoke-WebRequest @p
     $j = $null; try { $j = $r.Content | ConvertFrom-Json } catch { }
-    @{ code = [int]$r.StatusCode; json = $j; content = $r.Content }
+    @{ code = [int]$r.StatusCode; json = $j; content = $r.Content; headers = $r.Headers }
   } catch {
     $code = 0
     try { $code = [int]$_.Exception.Response.StatusCode } catch { }
     $body = ''
     try { $body = (New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd() } catch { }
     $j = $null; try { $j = $body | ConvertFrom-Json } catch { }
-    @{ code = $code; json = $j; content = $body }
+    @{ code = $code; json = $j; content = $body; headers = @{} }
   }
 }
 function Status {
@@ -55,6 +55,12 @@ Check 'status carries the action token' ([bool]$tok)
 
 "== wrong things are refused"
 Check 'unknown route is 404'  ((Call '/definitely-not-a-route').code -eq 404)
+$getMut = Call "/start?t=$tok" 'GET'
+Check 'GET on a mutating route is 405' ($getMut.code -eq 405) "code $($getMut.code)"
+$pageResp = Call '/'
+Check 'responses carry X-Frame-Options DENY' ($pageResp.headers['X-Frame-Options'] -eq 'DENY')
+Check 'responses carry nosniff' ($pageResp.headers['X-Content-Type-Options'] -eq 'nosniff')
+Check 'responses carry the CSP' ([string]$pageResp.headers['Content-Security-Policy'] -match "frame-ancestors 'none'")
 $noTok = Call '/start' 'POST'
 Check 'POST without the token is 403' ($noTok.code -eq 403)
 $badTok = Call '/start?t=deadbeef' 'POST'

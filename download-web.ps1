@@ -146,6 +146,19 @@ while ($l.IsListening) {
     $jobId = $null
     $path = $ctx.Request.Url.AbsolutePath
     $ctx.Response.Headers.Add('Cache-Control', 'no-store')
+    $ctx.Response.Headers.Add('X-Frame-Options', 'DENY')
+    $ctx.Response.Headers.Add('X-Content-Type-Options', 'nosniff')
+    $ctx.Response.Headers.Add('Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+    # every mutating route is POST-only: a GET can be triggered by an <img> tag or a
+    # link, and answering it with 200 made that possible even with a leaked token
+    if ($path -in $mutating -and $ctx.Request.HttpMethod -ne 'POST') {
+      $ctx.Response.StatusCode = 405
+      $b = [Text.Encoding]::UTF8.GetBytes('{"error":"use POST"}')
+      $ctx.Response.ContentType = 'application/json'
+      $ctx.Response.OutputStream.Write($b, 0, $b.Length)
+      continue
+    }
     if ($path -in $mutating -and $ctx.Request.QueryString['t'] -ne $token) {
       $ctx.Response.StatusCode = 403
       $b = [Text.Encoding]::UTF8.GetBytes('{"error":"bad or missing token"}')
