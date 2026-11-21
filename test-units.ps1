@@ -218,6 +218,59 @@ $handle.Close()
 Check 'keeps the old folder when a move fails' ((-not $migBad) -and (Test-Path (Join-Path $mp2 'Locked_EEEEFFFF00001111\meta')))
 Check 'leaves no empty copy in the game folder' (-not (Test-Path (Join-Path $game2 'Locked_EEEEFFFF00001111')))
 
+Write-Host 'dashboard handlers (stubbed API and engine)'
+$hd = Join-Path $tmp 'handlers'
+New-Item -ItemType Directory -Force (Join-Path $hd 'data') | Out-Null
+$Root = $hd
+$Data = Join-Path $hd 'data'
+$Cfg = Join-Path $Data 'batch1-serverconfig.json'
+$Sizes = Join-Path $Data 'batch1-sizes.json'
+$ServersPath = Join-Path $Data 'batch1-servers.json'
+$Addons = Join-Path $hd 'serverprofile\addons'
+$sizeMap = @{}
+$serverList = @()
+$script:calls = @()
+. "$PSScriptRoot\dashboard-core.ps1"
+function Reset-State {
+  '{"game":{"name":"n","scenarioId":"s","mods":[]}}' | Set-Content $Cfg
+  '{"totalBytes":0,"mods":{}}' | Set-Content $Sizes
+  '{"servers":[]}' | Set-Content $ServersPath
+  $script:sizeMap = @{}
+  $script:serverList = @()
+  $script:calls = @()
+  $script:haveAt = (Get-Date).AddMinutes(-10)
+}
+function Get-HaveIds { @{} }
+function Get-DS { param([switch]$Fresh) @() }
+function Stop-DS { $script:calls += 'stop'; 'stopped' }
+function Start-DS { $script:calls += 'start'; 'started' }
+function Invoke-RestMethod {
+  param($Uri, $Headers, $Method, $Body, $ContentType, $TimeoutSec)
+  $script:apiCalls += [string]$Uri
+  if ("$Uri" -match '/mods/([0-9A-F]{16})$') {
+    return [pscustomobject]@{ mod = [pscustomobject]@{ id = $Matches[1]; name = 'Mod ' + $Matches[1]; size = 10 } }
+  }
+  if ("$Uri" -match '/dependencies') { return [pscustomobject]@{ data = [pscustomobject]@{ dependencies = @() } } }
+  return [pscustomobject]@{ data = @() }
+}
+function Get-Detail {
+  param($Id)
+  [pscustomobject]@{ name = 'Srv'; passwordProtected = $false; mods = @(
+    [pscustomobject]@{ id = 'AAAABBBBCCCCDDDD'; name = 'Mod A'; size = 10; sizeKnown = $true }) }
+}
+
+Reset-State
+# the config is empty on every call, so both calls see the mod as missing and the
+# second call would hit the old duplicate-append path
+function Get-Cfg { $CfgStub | ConvertFrom-Json }
+$null = Invoke-AddServer '11111111-1111-1111-1111-111111111111'
+$null = Invoke-AddServer '11111111-1111-1111-1111-111111111111'
+$inMem = @($serverList).Count
+$onDisk = @((Get-Content $ServersPath -Raw | ConvertFrom-Json).servers).Count
+Check 'adding the same server twice keeps one entry in memory' ($inMem -eq 1)
+Check 'adding the same server twice keeps one entry on disk'   ($onDisk -eq 1)
+. "$PSScriptRoot\dashboard-core.ps1"   # restore the real Get-Cfg for the next blocks
+
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)

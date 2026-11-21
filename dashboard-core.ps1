@@ -571,11 +571,9 @@ function Invoke-AddServer([string]$Id) {
   $sz.totalBytes = [double]$script:TotalBytes
   Save-Json $sz $Sizes 4
 
-  # show the new server in the Servers card immediately, and remember it
-  $script:serverList = @($serverList) + @([PSCustomObject]@{ id = $Id; name = $s.name; mods = @($s.mods | ForEach-Object {
-    [PSCustomObject]@{ id = $_.id; name = $_.name; e = [double]$_.size } }) })
-  Save-Json @{ servers = $serverList } $ServersPath 6
-
+  # show the new server in the Servers card immediately, and remember it.
+  # (one assignment only: the list is replaced above, so a second append here put
+  # the same server in memory and in batch1-servers.json twice)
   $gb = [Math]::Round(($new | ForEach-Object { [double]$_.size } | Measure-Object -Sum).Sum / 1GB, 2)
   Stop-DS | Out-Null
   $r = Start-DS
