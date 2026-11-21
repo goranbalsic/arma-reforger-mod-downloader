@@ -9,39 +9,6 @@ $cfgPath = "$Data\batch1-serverconfig.json"
 $addons  = "$Root\serverprofile\addons"
 
 
-$raw = Get-Content $cfgPath -Raw -ErrorAction SilentlyContinue
-$j = Read-Json $cfgPath ($CfgStub | ConvertFrom-Json)
-if (-not $raw) { "config was empty or unreadable - recreated" }
-# adds name/scenarioId (the engine refuses a config without them) and repairs
-# "mods": null, which the DS writes on shutdown
-$j = Repair-Cfg $j
-
-$done = @{}
-# only the queued mods are checked: the engine's folder is linked into the game
-# folder and holds the whole library, and parsing 1000 meta files before every
-# engine start made the watchdog crawl. Same completion rule as Get-HaveIds.
-foreach ($m in @($j.game.mods)) {
-  $mid = Test-ModId $m.modId
-  if (-not $mid) { "skipping a queued entry with an invalid mod id: $($m.modId)"; continue }
-  if ($done.ContainsKey($mid)) { continue }
-  $d = Get-ChildItem $addons -Directory -Filter "*_$mid" -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($d -and (Test-AddonComplete $d.FullName $d.LastWriteTime)) { $done[$mid] = $true }
-}
-"assembled on disk: $($done.Count)"
-
-$left = @($j.game.mods | Where-Object { -not $done.ContainsKey($_.modId) })
-"config: $(@($j.game.mods).Count) -> remaining: $($left.Count)"
-
-# A partial download with addon.gproj/meta/rdb on disk looks installed to the DS,
-# so it is skipped forever and the queue never drains. A folder WITHOUT those
-# markers is re-fetched by the DS by itself, so only the installed-looking ones
-# are deleted. The whole tail - check, delete, config write - runs under the engine
-# mutex: the watchdog starts the DS from another process, and it must not start
-# while files are being removed or the config is half-written.
-$j.game.mods = $left
-$reFile = "$Data\redownload.json"
-$re = Read-Json $reFile @{}
-$now = Get-Date
 $ctl = Lock-Engine
 if (-not $ctl) {
   "another start/stop is in progress - config and partial folders left alone"
@@ -57,12 +24,45 @@ try {
     "engine is running - config and partial folders left alone"
     exit 1
   }
+  $raw = Get-Content $cfgPath -Raw -ErrorAction SilentlyContinue
+  $j = Read-Json $cfgPath ($CfgStub | ConvertFrom-Json)
+  if (-not $raw) { "config was empty or unreadable - recreated" }
+  # adds name/scenarioId (the engine refuses a config without them) and repairs
+  # "mods": null, which the DS writes on shutdown
+  $j = Repair-Cfg $j
+
+  $done = @{}
+  # only the queued mods are checked: the engine's folder is linked into the game
+  # folder and holds the whole library, and parsing 1000 meta files before every
+  # engine start made the watchdog crawl. Same completion rule as Get-HaveIds.
+  foreach ($m in @($j.game.mods)) {
+    $mid = Test-ModId $m.modId
+    if (-not $mid) { "skipping a queued entry with an invalid mod id: $($m.modId)"; continue }
+    if ($done.ContainsKey($mid)) { continue }
+    $d = Get-ChildItem $addons -Directory -Filter "*_$mid" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($d -and (Test-AddonComplete $d.FullName $d.LastWriteTime)) { $done[$mid] = $true }
+  }
+  "assembled on disk: $($done.Count)"
+
+  $left = @($j.game.mods | Where-Object { (Test-ModId $_.modId) -and -not $done.ContainsKey($_.modId) })
+  "config: $(@($j.game.mods).Count) -> remaining: $($left.Count)"
+
+  # A partial download with addon.gproj/meta/rdb on disk looks installed to the DS,
+  # so it is skipped forever and the queue never drains. A folder WITHOUT those
+  # markers is re-fetched by the DS by itself, so only the installed-looking ones
+  # are deleted. The whole tail - check, delete, config write - runs under the engine
+  # mutex: the watchdog starts the DS from another process, and it must not start
+  # while files are being removed or the config is half-written.
+  $j.game.mods = $left
+  $reFile = "$Data\redownload.json"
+  $re = Read-Json $reFile ([pscustomobject]@{})
+  $now = Get-Date
   foreach ($m in $left) {
     $mid = Test-ModId $m.modId
     if (-not $mid) { "skipping a queued entry with an invalid mod id: $($m.modId)"; continue }
     $d = Get-ChildItem $addons -Directory -Filter "*_$mid" -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $d) { continue }
-    if (-not (Test-Path (Join-Path $d.FullName 'addon.gproj'))) { continue }
+    if (-not (Test-Path -LiteralPath (Join-Path $d.FullName 'addon.gproj'))) { continue }
     # one attempt per 30 min: a mod the DS can never finish would otherwise be
     # deleted and downloaded again on every restart, forever
     $last = $re.PSObject.Properties[$mid]
@@ -73,8 +73,8 @@ try {
         continue
       }
     }
-    Remove-Item $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
-    if (-not (Test-Path $d.FullName)) {
+    Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $d.FullName)) {
       $re | Add-Member -NotePropertyName $mid -NotePropertyValue ($now.ToString('s')) -Force
       "deleted unusable partial (the engine would have skipped it): $($d.Name)"
     }
