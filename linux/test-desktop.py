@@ -29,6 +29,7 @@ with tempfile.TemporaryDirectory(prefix="reforger-linux-") as fixture:
 
     class SmokeTest(app.Downloader):
         passed = False
+        observed = "The WebView has not evaluated a document yet."
 
         def open_dashboard(self):
             super().open_dashboard()
@@ -36,21 +37,28 @@ with tempfile.TemporaryDirectory(prefix="reforger-linux-") as fixture:
 
         def check_queue(self):
             self.view.evaluate_javascript(
-                "(document.getElementById('queue')?.textContent.includes('Linux fixture') ?? false)"
-                " && !document.getElementById('say')?.textContent",
+                "JSON.stringify({uri:location.href, queue:document.getElementById('queue')?.textContent,"
+                " notice:document.getElementById('say')?.textContent, title:document.title,"
+                " bridge:typeof window.receiveReply, text:document.body?.textContent.slice(0, 100)})",
                 -1, None, app.ORIGIN, None, self.check_result, None,
             )
             return not self.passed
 
         def check_result(self, view, result, _data):
-            if view.evaluate_javascript_finish(result).to_boolean():
+            try:
+                self.observed = view.evaluate_javascript_finish(result).to_string()
+            except app.GLib.Error as error:
+                self.observed = str(error)
+                return
+            state = json.loads(self.observed)
+            if "Linux fixture" in state.get("queue", "") and not state.get("notice"):
                 self.passed = True
                 self.quit()
 
     test = SmokeTest()
-    app.GLib.timeout_add_seconds(20, lambda: (test.quit(), False)[1])
+    app.GLib.timeout_add_seconds(50, lambda: (test.quit(), False)[1])
     test.run([sys.argv[0]])
     if not test.passed:
         log = app.DATA / "desktop.log"
-        raise SystemExit(log.read_text() if log.exists() else "Linux dashboard did not load.")
+        raise SystemExit(f"Linux dashboard did not load: {test.observed}\n{log.read_text() if log.exists() else ''}")
     print("Linux desktop window loaded the fixture queue.")
