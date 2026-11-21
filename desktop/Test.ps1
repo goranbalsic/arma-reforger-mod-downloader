@@ -64,6 +64,16 @@ try {
   if ($after.queue.Count -or $after.totalB -or $after.doneB -or $after.pct -or !(Test-Path $partial)) {
     throw 'The queue or progress did not reset, or the partial files were removed.'
   }
+  $verified = Send-Request "/verify?t=$($before.tok)" 'POST'
+  $repairOptions = (Send-Request '/status').body | ConvertFrom-Json
+  if ($verified.status -ne 200 -or $repairOptions.verify.suspects[0].id -ne 'ABCDEF0123456789') {
+    throw 'Verify did not offer the incomplete download.'
+  }
+  $repair = Send-Request "/requeue-partial-mod?id=ABCDEF0123456789&t=$($before.tok)" 'POST'
+  $repairStatus = (Send-Request '/status').body | ConvertFrom-Json
+  if ($repair.status -ne 200 -or $repairStatus.queue.Count -ne 1 -or !$repairStatus.paused -or !(Test-Path $partial)) {
+    throw 'Requeue did not preserve the partial download or wait for Start.'
+  }
   '{"game":{"name":"Test","scenarioId":"fixture","mods":[{"modId":"ABCDEF0123456789","name":"Sample","version":"2.0.0"},{"modId":"0011223344556677","name":"Other"}]}}' |
     Set-Content -LiteralPath $cfg -Encoding UTF8
   '{"updates":[{"modId":"ABCDEF0123456789","version":"2.0.0"}]}' |

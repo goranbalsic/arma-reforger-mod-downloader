@@ -30,6 +30,9 @@ internal sealed class DownloadWindow : Form
     private string root;
     private readonly string steamEngine;
     private bool installing;
+    private readonly MenuStrip menu = new MenuStrip();
+    private readonly ToolStripMenuItem checkUpdates = new ToolStripMenuItem("Check for updates");
+    private AppUpdates.Pending pendingAppUpdate;
 
     internal DownloadWindow(string runtimePath)
     {
@@ -43,11 +46,52 @@ internal sealed class DownloadWindow : Form
         MinimumSize = new Size(610, 460);
         ClientSize = new Size(1024, 740);
         ShowSetup();
+        menu.Items.Add(checkUpdates);
+        checkUpdates.Click += (sender, args) => CheckForAppUpdates(true);
+        MainMenuStrip = menu;
+        Controls.Add(menu);
+        menu.BringToFront();
         Shown += async (sender, args) =>
         {
+            CheckForAppUpdates(false);
             if (File.Exists(EnginePath(root)) || (steamEngine != null && File.Exists(Path.Combine(root, "data", "batch1-serverconfig.json"))))
                 await OpenDashboardAsync();
         };
+    }
+
+    private async void CheckForAppUpdates(bool manual)
+    {
+        if (!checkUpdates.Enabled) return;
+        if (pendingAppUpdate != null)
+        {
+            if (manual) ShowUpdateMessage("The update is ready and will install when you close the app.");
+            return;
+        }
+        checkUpdates.Enabled = false;
+        try
+        {
+            pendingAppUpdate = await AppUpdates.CheckAsync();
+            if (IsDisposed) return;
+            if (pendingAppUpdate != null)
+                checkUpdates.Text = "Update " + pendingAppUpdate.Version.ToString(3) + " ready";
+            if (manual)
+                ShowUpdateMessage(pendingAppUpdate == null ? "You are up to date." :
+                    "The update is ready and will install when you close the app.");
+        }
+        catch (Exception error)
+        {
+            PowerShellHost.Log("App update check: " + error.Message);
+            if (manual && !IsDisposed) ShowUpdateMessage("Could not check for updates. " + error.Message);
+        }
+        finally
+        {
+            if (!IsDisposed) checkUpdates.Enabled = true;
+        }
+    }
+
+    private void ShowUpdateMessage(string message)
+    {
+        MessageBox.Show(this, message, "App updates", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private string FindDownloadFolder()
@@ -245,6 +289,7 @@ internal sealed class DownloadWindow : Form
         view = new WebView2 { Dock = DockStyle.Fill };
         Controls.Add(view);
         view.BringToFront();
+        menu.BringToFront();
         try
         {
             Directory.CreateDirectory(root);
@@ -346,6 +391,11 @@ internal sealed class DownloadWindow : Form
     protected override void OnFormClosed(FormClosedEventArgs args)
     {
         if (backend != null) backend.Dispose();
+        if (pendingAppUpdate != null)
+        {
+            try { AppUpdates.ApplyWhenClosed(runtime, pendingAppUpdate); }
+            catch (Exception error) { PowerShellHost.Log("Could not schedule app update: " + error.Message); }
+        }
         base.OnFormClosed(args);
     }
 }

@@ -1,6 +1,6 @@
 # Dashboard functions. Dot-sourced by download-web.ps1; no top-level side effects.
 function Get-Cfg {
-  Repair-Cfg (Read-Json $Cfg ($CfgStub | ConvertFrom-Json))
+  Read-EngineConfig $Cfg
 }
 function Get-QueueRevision {
   $path = Join-Path $Data 'queue-revision.txt'
@@ -60,7 +60,7 @@ function Get-DS([switch]$Fresh) {
   # "nothing running" made add-mod / refresh-servers append while the engine was
   # running, and the engine rewrites that file on exit, so the append vanished.
   # Empty array = none. $null = the query failed - not the same thing.
-  if (-not (Get-Process -Name $(if ($IsLinux) { 'ArmaReforgerSer*' } else { 'ArmaReforgerServer' }) -ErrorAction SilentlyContinue)) { return ,@() }
+  if (-not (Get-EngineProcesses)) { return ,@() }
   if (-not $Fresh -and $script:dsAt -and ((Get-Date) - $script:dsAt).TotalSeconds -lt 2) {
     if ($null -eq $script:dsCache) { return $null }
     return ,$script:dsCache
@@ -151,51 +151,53 @@ function Get-DirMap {
   $script:dirCache = $map; $script:dirCacheAt = Get-Date
   $map
 }
-function Get-GlobalSpeed {
-  # the DS prints its own "Download speed" once per mod (measured 30 s+ apart)
-  # and preallocated chunk files make a disk-byte delta useless (0 B growth while
-  # downloading) - so return the number WITH its age and let the page say how old
-  # it is. Cached 3 s: this runs on every /status poll (~0.4 s apart) and reading
-  # 200 log lines each time cost ~80 ms of the single listener thread.
-  if (((Get-Date) - $script:speedCacheAt).TotalSeconds -lt 3) { return $script:speedCache }
-  $res = @{ b = 0; age = 999 }
-  $lg = Get-Log
-  if ($lg -and $lg.LastWriteTime -ge (Get-Date).AddMinutes(-2)) {
-    $line = Get-Content $lg.FullName -Tail 200 | Select-String 'Download speed ([0-9.]+) KB/s' | Select-Object -Last 1
-    if ($line) {
-      $b = [Math]::Round([double]$line.Matches[0].Groups[1].Value * 1024)
-      $age = 999
-      try {
-        $ts = [datetime]::ParseExact($line.Line.Substring(0, 8), 'HH:mm:ss', $null)
-        if ($ts -gt (Get-Date).AddMinutes(1)) { $ts = $ts.AddDays(-1) }   # log line from before midnight
-        $age = [Math]::Round(((Get-Date) - $ts).TotalSeconds)
-      } catch { }
-      $res = @{ b = $b; age = $age }
+function Get-TransferSnapshot($Log, [datetime]$Now, [datetime]$StartedAt) {
+  $result = @{ mods = @{}; speedB = 0; speedAge = 999 }
+  if (!$Log) { return $result }
+  $written = [IO.File]::GetLastWriteTimeUtc($Log.FullName)
+  if ($written -lt $StartedAt.ToUniversalTime()) { return $result }
+  $cacheKey = "$($Log.FullName)|$($written.Ticks)"
+  if ($script:transferLogKey -ne $cacheKey) {
+    $script:transferLogKey = $cacheKey
+    $script:transferLogTail = @(Get-Content -LiteralPath $Log.FullName -Tail 160 -Encoding UTF8 -ErrorAction SilentlyContinue)
+  }
+  foreach ($line in $script:transferLogTail) {
+    $entry = [regex]::Match($line, '^\s*(\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+BACKEND\s*:\s*(.+)$')
+    if (!$entry.Success) { continue }
+    $elapsed = [timespan]::Zero
+    if (![timespan]::TryParse($entry.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture, [ref]$elapsed)) { continue }
+    $at = $Now.Date.Add($elapsed)
+    if ($at -gt $Now.AddSeconds(2)) { $at = $at.AddDays(-1) }
+    if ($at -lt $StartedAt) { continue }
+    $body = $entry.Groups[2].Value
+    $progress = [regex]::Match($body, '^(.+?):\s*\[[^\]]*\]\s*\d+%\s*(\d+(?:\.\d+)?)/(\d+(?:\.\d+)?) MB')
+    if ($progress.Success) {
+      $name = $progress.Groups[1].Value.Trim()
+      $total = [double]$progress.Groups[3].Value * 1MB
+      $done = [Math]::Min($total, [double]$progress.Groups[2].Value * 1MB)
+      $result.mods[$name] = @{ name = $name; b = $done; expB = $total; at = $at }
+    }
+    $speed = [regex]::Match($body, '^Download speed ([0-9.]+) KB/s')
+    if ($speed.Success) {
+      $age = [Math]::Max(0, ($Now - $at).TotalSeconds)
+      if ($age -le 20) {
+        $result.speedB = [Math]::Round([double]$speed.Groups[1].Value * 1KB)
+        $result.speedAge = [Math]::Round($age)
+      }
     }
   }
-  $script:speedCache = $res; $script:speedCacheAt = Get-Date
-  $res
+  $result
 }
 function Get-Status {
   $dirs = Get-DirMap
-  $runningNow = [bool](Get-DS)
-  $sp = Get-GlobalSpeed
-  # live rate from the bytes actually landing on disk: the DS's own log line
-  # appears once per mod (up to 30 s old). The DS writes in ~3 MB fragments, so a
-  # short window is mostly empty - average over 60 s to show real throughput.
-  $diskTotal = [double]0
-  foreach ($e in $dirs.Values) { $diskTotal += [double]$e.bytes }
-  $nowRate = Get-Date
-  $script:rateSamples = @(@($script:rateSamples) + @(, @{ t = $nowRate; b = $diskTotal }) |
-    Where-Object { ($nowRate - $_.t).TotalSeconds -le 60 })
-  $rate = 0
-  if ($script:rateSamples.Count -ge 2) {
-    $first = $script:rateSamples[0]; $last = $script:rateSamples[-1]
-    $dt = ($last.t - $first.t).TotalSeconds
-    if ($dt -ge 5) { $rate = [Math]::Round([Math]::Max(0, $last.b - $first.b) / $dt) }
+  $engines = Get-DS
+  $engine = $engines | Select-Object -First 1
+  $runningNow = [bool]$engine
+  $now = Get-Date
+  $transfer = @{ mods = @{}; speedB = 0; speedAge = 999 }
+  if ($runningNow) {
+    $transfer = Get-TransferSnapshot (Get-Log) $now $engine.StartTime
   }
-  if ($rate -gt 0) { $sp = @{ b = $rate; age = 0 } }
-  elseif ($sp.age -gt 20) { $sp = @{ b = 0; age = 999 } }   # no movement and an old log line = idle
   $clIds = Get-ClientIds
   $clSet = @{}
   foreach ($i in $clIds) { $clSet[$i] = $true }
@@ -203,7 +205,6 @@ function Get-Status {
   # The 3 marker files are only used when the size is unknown: many Workshop mods
   # ship without addon.gproj (8-file packs), and requiring it left them unfinished
   # forever - never synced, so the launcher showed them as missing.
-  $now = Get-Date
   $completed = @{}
   foreach ($e in $dirs.GetEnumerator()) {
     $d = $e.Value
@@ -216,38 +217,6 @@ function Get-Status {
     if (-not (Test-AddonComplete $d.path $d.mtime)) { continue }
     $completed[$e.Key] = $true
   }
-  # active = every folder currently being written (no cap: the page shows all).
-  # Only when the downloader is actually running: a stopped process leaves
-  # partial folders behind and they used to appear as "downloading".
-  $logProgress = @{}
-  $lgNow = Get-Log
-  if ($lgNow) {
-    foreach ($ln in @(Get-Content $lgNow.FullName -Tail 40 -ErrorAction SilentlyContinue)) {
-      $pm = [regex]::Match($ln, '([^:]+):\s*\[[^\]]*\]\s*\d+%\s*(\d+)/(\d+) MB')
-      if ($pm.Success) { $logProgress[$pm.Groups[1].Value.Trim()] = [double]$pm.Groups[2].Value * 1MB }
-    }
-  }
-  $active = @($dirs.GetEnumerator() |
-    Where-Object { $runningNow -and $_.Value.bytes -gt 0 -and $_.Value.mtime -gt $now.AddMinutes(-5) -and
-                   -not $completed.ContainsKey($_.Key) -and
-                   # already complete = finished, even if its files were touched a
-                   # moment ago: the 2-minute quiet rule kept 16 finished mods in
-                   # "Downloading now" and it read as if nothing was moving
-                   -not (Test-AddonComplete $_.Value.path $_.Value.mtime) } |
-    Sort-Object { $_.Value.mtime } -Descending) | ForEach-Object {
-    $sm = $sizeMap[$_.Key]; $exp = if ($sm) { [double]$sm.bytes } else { 0 }
-    $b = [double]$_.Value.bytes
-    if ($logProgress.ContainsKey($_.Value.name) -and $logProgress[$_.Value.name] -gt $b) { $b = $logProgress[$_.Value.name] }
-    if ($script:activeMax.ContainsKey($_.Key) -and $script:activeMax[$_.Key] -gt $b) { $b = $script:activeMax[$_.Key] }
-    $script:activeMax[$_.Key] = $b
-    @{ id = $_.Key; name = $_.Value.name; b = $b; expB = $exp
-       pct = if ($exp) { [Math]::Min(100, [Math]::Round(100 * $b / $exp, 1)) } else { 0 } }
-  }
-  # forget high-water marks of mods that are no longer downloading
-  foreach ($k in @($script:activeMax.Keys)) {
-    if (-not ($active | Where-Object { $_.id -eq $k })) { $script:activeMax.Remove($k) }
-  }
-
   # all completed mods, newest first (full list - the page shows every one).
   # ids go with them: sync-addons mirrors exactly this set (single completion rule)
   $recent = @($dirs.GetEnumerator() | Where-Object { $completed.ContainsKey($_.Key) } |
@@ -259,12 +228,16 @@ function Get-Status {
   $batchBytes = [double]0
   $doneBytes = [double]0
   $doneCount = 0
+  $unknownSizes = 0
+  $estimatedSizes = 0
+  $active = @{}
   $queueList = @(foreach ($mod in $queued) {
     $id = Test-ModId $mod.modId
     if (!$id) { continue }
     $dir = $dirs[$id]
-    $expected = if ($mod.size) { [double]$mod.size } else { [double]$sizeMap[$id].bytes }
-    $batchBytes += $expected
+    $report = if ($mod.name) { $transfer.mods[[string]$mod.name] }
+    if (!$report -and $dir.name) { $report = $transfer.mods[$dir.name] }
+    $expected = if ($report -and $report.expB -gt 0) { $report.expB } elseif ($mod.size) { [double]$mod.size } else { [double]$sizeMap[$id].bytes }
     $complete = if ($mod.version) {
       $dir -and (Get-InstalledVersion $dir.path) -eq $mod.version -and (Test-AddonComplete $dir.path $dir.mtime)
     } else {
@@ -272,37 +245,45 @@ function Get-Status {
     }
     if ($complete) {
       $doneCount++
+      if ($dir -and !$report) { $expected = [double]$dir.bytes }
       $doneBytes += $expected
     } else {
-      if ($dir -and !$mod.version) { $doneBytes += [Math]::Min([double]$dir.bytes, $expected) }
+      if ($expected -le 0) { $unknownSizes++ }
+      elseif (!$report) { $estimatedSizes++ }
+      if ($report) {
+        $doneBytes += $report.b
+        if (($now - $report.at).TotalSeconds -le 25) {
+          $active[$report.name] = @{ id = $id; name = $report.name; b = $report.b; expB = $report.expB
+            pct = if ($report.expB) { [Math]::Round(100 * $report.b / $report.expB, 1) } else { 0 } }
+        }
+      }
       @{ id = $id; name = $mod.name; version = $mod.version }
     }
+    $batchBytes += $expected
   })
-  # Temporary fragments disappear during assembly, so keep a high-water mark
-  # only until the batch changes or finishes.
-  $batch = ($queued | ForEach-Object { "$($_.modId):$($_.version)" }) -join ','
+  # Steam can fetch dependencies which are absent from the configured mod list.
+  foreach ($entry in $dirs.GetEnumerator()) {
+    $report = $transfer.mods[[string]$entry.Value.name]
+    if ($report -and !$active.ContainsKey($report.name) -and
+        ($now - $report.at).TotalSeconds -le 25 -and !(Test-AddonComplete $entry.Value.path $entry.Value.mtime)) {
+      $active[$report.name] = @{ id = $entry.Key; name = $report.name; b = $report.b; expB = $report.expB
+        pct = if ($report.expB) { [Math]::Round(100 * $report.b / $report.expB, 1) } else { 0 } }
+    }
+  }
   if (!$queueList.Count) {
-    $batch = ''
-    $batchBytes = $doneBytes = $doneCount = 0
+    $batchBytes = $doneBytes = $doneCount = $unknownSizes = $estimatedSizes = 0
     $queued = @()
-    $active = @()
-    $sp = @{ b = 0; age = 999 }
-    $script:rateSamples = @()
+    $active.Clear()
+    $transfer.speedB = 0
   }
-  if ($script:progressBatch -ne $batch) {
-    $script:progressBatch = $batch
-    $script:maxDone = [double]0
-  }
-  $script:maxDone = [Math]::Max([double]$script:maxDone, $doneBytes)
-  $doneBytes = [Math]::Min($script:maxDone, $batchBytes)
   @{ running = $runningNow; paused = (Test-Path -LiteralPath (Join-Path $Data 'paused.flag'))
-     speedB = $sp.b; speedAge = $sp.age
-     doneB = $doneBytes; totalB = $batchBytes
-     pct = if ($batchBytes -gt 0) { [int](100 * $doneBytes / $batchBytes) } else { 0 }
-     pctF = if ($batchBytes -gt 0) { [Math]::Round(100 * $doneBytes / $batchBytes, 2) } else { 0 }
+     speedB = $transfer.speedB; speedAge = $transfer.speedAge
+     doneB = $doneBytes; totalB = $batchBytes; unknownSizes = $unknownSizes; estimatedSizes = $estimatedSizes
+     pct = if ($batchBytes -gt 0 -and !$unknownSizes) { [int](100 * $doneBytes / $batchBytes) } else { 0 }
+     pctF = if ($batchBytes -gt 0 -and !$unknownSizes) { [Math]::Round(100 * $doneBytes / $batchBytes, 2) } else { 0 }
      doneCount = $doneCount; totalMods = $queued.Count
      addonsB = (Get-AddonsBytes)
-     active = @($active); recent = @($recent); cl = $clIds; failed = (Get-SkippedNames)
+     active = @($active.Values); recent = @($recent); cl = $clIds; failed = (Get-SkippedNames)
      queue = @($queueList); queueRevision = (Get-QueueRevision); tok = $token; verify = $verify }
 }
 function Start-DS {
@@ -315,12 +296,13 @@ function Start-DS {
     if (@($mine).Count) { return 'already running' }
     # a server we did not start shares the profile folder the engine writes to:
     # refuse instead of running two of them (and never stop theirs on Pause)
-    if (Get-Process -Name $(if ($IsLinux) { 'ArmaReforgerSer*' } else { 'ArmaReforgerServer' }) -ErrorAction SilentlyContinue) {
+    if (Get-EngineProcesses) {
       return 'another ArmaReforgerServer is already running - close it, then press Start'
     }
     # the 1 MB download-list trap: trimming is lossless (the DS skips done mods
     # anyway); skipping it makes the DS insta-crash ~30 s after a false "started"
-    & "$PSScriptRoot\trim-config.ps1" | Out-Null
+    $trim = & "$PSScriptRoot\trim-config.ps1"
+    if ($LASTEXITCODE -ne 0) { throw "Could not prepare the download queue: $($trim -join ' ')" }
     # nothing left after the trim: starting the DS here leaves a game server
     # running a world forever, doing no work
     $left = @((Get-Cfg).game.mods).Count
@@ -329,7 +311,7 @@ function Start-DS {
     Start-DownloadEngine
     # no 25 s sleep here: it froze the only HTTP thread (and the mirror with it).
     # The watchdog restarts a DS that dies within ~20 s, and /status shows the truth.
-    'started - progress is on the page (a failed start is retried by the watchdog)'
+    'Downloads started.'
   } finally { $ctl.ReleaseMutex() }
 }
 function Stop-DS {
@@ -347,7 +329,7 @@ function Stop-DS {
     # Start-DS would then see the dying process and report "already running"
     foreach ($i in 1..20) {
       $remaining = Get-DS -Fresh
-      if ($null -ne $remaining -and !@($remaining).Count) { return 'paused - progress kept' }
+      if ($null -ne $remaining -and !@($remaining).Count) { return 'Downloads paused.' }
       Start-Sleep -Milliseconds 500
     }
     throw 'could not confirm the downloader stopped'
@@ -371,11 +353,24 @@ function Invoke-Verify {
     if (-not $d) { $pending++; continue }
     $partial++
     # a mod that is still queued is downloading, not a re-download candidate
-    if ($exp -and -not $queued.ContainsKey($id)) { $suspects += @{ name = $d.name; expB = [double]$exp; actB = [double]$d.bytes } }
+    if (-not $queued.ContainsKey($id)) { $suspects += @{ id = $id; name = $d.name; expB = [double]$exp; actB = [double]$d.bytes } }
   }
-  $script:verify = @{ at = (Get-Date -f 'HH:mm:ss'); ok = $ok; partial = $partial
+  $script:verify = @{ id = [guid]::NewGuid().ToString('N'); at = (Get-Date -f 'HH:mm:ss'); ok = $ok; partial = $partial
                       pending = $pending; suspects = $suspects }
   "verify: $ok ok, $partial partial, $pending pending, $($suspects.Count) suspects"
+}
+function Invoke-RequeuePartialMod([string]$Id) {
+  $Id = Test-ModId $Id
+  if (!$Id -or !$sizeMap.ContainsKey($Id)) { throw 'Unknown mod ID.' }
+  $script:dirCacheAt = (Get-Date).AddMinutes(-10)
+  $dir = (Get-DirMap)[$Id]
+  if (!$dir -or (Test-AddonComplete $dir.path $dir.mtime) -or $Id -in (Get-ClientIds)) {
+    throw 'This mod no longer has an incomplete download.'
+  }
+  $queued = Add-QueuedMods @([pscustomobject]@{ modId = $Id; name = $dir.name })
+  Invoke-Verify | Out-Null
+  if (!$queued.count) { return "'$($dir.name)' is already queued." }
+  "Queued '$($dir.name)'$($queued.note)."
 }
 function Get-HaveIds {
   # on disk = COMPLETED in the DS profile, or present in the client addons folder,
@@ -443,14 +438,49 @@ function Invoke-PauseQueue {
   } finally { $ctl.ReleaseMutex() }
 }
 function Invoke-MakePreset([string]$Id) {
-  $out = & "$PSScriptRoot\make-preset.ps1" -ServerId $Id
+  $out = & "$PSScriptRoot\make-preset.ps1" -ServerId $Id -Summary
+  Clear-PresetChangedMarker $Id
+  ($out | Out-String).Trim()
+}
+function Start-PresetJob([string]$Id) {
+  if ($script:presetJob) {
+    if ($script:presetJob.job.State -in 'Running','NotStarted') { throw 'A preset is already being saved.' }
+    $null = Complete-PresetJob $script:presetJob.id
+  }
+  $server = $serverList | Where-Object id -eq $Id | Select-Object -First 1
+  if (!$server) { throw 'Server not found.' }
+  $jobId = 'preset-' + [guid]::NewGuid().ToString('N')
+  $job = Start-Job -ArgumentList (Join-Path $PSScriptRoot 'make-preset.ps1'),$Id,$Data -ScriptBlock {
+    param($path,$id,$dataDir)
+    $env:RFMM_DATA = $dataDir
+    & $path -ServerId $id -Summary
+  }
+  $script:presetJob = @{ id = $jobId; job = $job; serverId = $Id; modIds = ($server.mods.id -join ',') }
+  @{ job = $jobId; msg = 'Saving preset…' }
+}
+function Complete-PresetJob([string]$Id) {
+  $entry = $script:presetJob
+  if (!$entry -or $entry.id -ne $Id) { return @{ state = 'failed'; error = 'Preset job not found.' } }
+  if ($entry.job.State -in 'Running','NotStarted') { return @{ state = 'running' } }
+  try {
+    if ($entry.job.State -ne 'Completed') {
+      $reason = $entry.job.ChildJobs[0].JobStateInfo.Reason
+      return @{ state = 'failed'; error = if ($reason) { $reason.Message } else { 'Could not save the preset.' } }
+    }
+    $message = (Receive-Job $entry.job -ErrorAction Stop | Out-String).Trim()
+    $server = $serverList | Where-Object id -eq $entry.serverId | Select-Object -First 1
+    if ($server -and ($server.mods.id -join ',') -eq $entry.modIds) { Clear-PresetChangedMarker $entry.serverId }
+    @{ state = 'done'; msg = $message }
+  } catch { @{ state = 'failed'; error = $_.Exception.Message } }
+  finally { Remove-Job $entry.job -Force; $script:presetJob = $null }
+}
+function Clear-PresetChangedMarker([string]$Id) {
   # the preset now matches the fresh list: the "modlist changed" marker is done
   $sv = @($serverList | Where-Object { $_.id -eq $Id })[0]
   if ($sv -and $sv.PSObject.Properties['changed'] -and $sv.changed) {
     $sv | Add-Member -NotePropertyName changed -NotePropertyValue $null -Force
     try { Save-Json @{ servers = $serverList } $ServersPath 6 } catch { }
   }
-  ($out | Out-String).Trim()
 }
 function Search-Mods([string]$q, [int]$page) {
   # live Workshop search: the same keys the workshop site uses - name, author, or
@@ -459,7 +489,7 @@ function Search-Mods([string]$q, [int]$page) {
   if ($q -match '^[0-9A-Fa-f]{16}$') {
     $key = "id:$($q.ToUpper())"
     if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 60) { return $script:bCache[$key] }
-    $m = (Invoke-RestMethod -Uri "$ApiBase/mods/$($q.ToUpper())" -Headers $ApiH -TimeoutSec 10).mod
+    $m = (Invoke-WorkshopApi -Uri "$ApiBase/mods/$($q.ToUpper())" -Headers $ApiH -TimeoutSec 10).mod
     $r = @{ total = 1; page = 1; pages = 1; mods = @($m) }
     $script:bCache[$key] = $r; $script:bCacheAt[$key] = Get-Date
     return $r
@@ -468,7 +498,7 @@ function Search-Mods([string]$q, [int]$page) {
   if ($page -lt 1) { $page = 1 }
   $key = "s:$($q.ToLower()):$page"
   if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 15) { return $script:bCache[$key] }
-  $r = Invoke-RestMethod -Uri "$ApiBase/mods?search=$([uri]::EscapeDataString($q))&limit=24&page=$page" -Headers $ApiH -TimeoutSec 10
+  $r = Invoke-WorkshopApi -Uri "$ApiBase/mods?search=$([uri]::EscapeDataString($q))&limit=24&page=$page" -Headers $ApiH -TimeoutSec 10
   $res = @{ total = [int]$r.meta.totalMods; page = $page
             pages = $(if ($r.meta.totalPages) { [int]$r.meta.totalPages } else { 1 })
             mods = @($r.data) }
@@ -478,7 +508,7 @@ function Search-Mods([string]$q, [int]$page) {
 function Get-ModDeps([string]$Id) {
   # dependencies of one mod (ids, names, sizes). The DS pulls them by itself, but
   # then the queue and the total size would hide them.
-  try { @((Invoke-RestMethod -Uri "$ApiBase/mods/$Id/dependencies" -Headers $ApiH -TimeoutSec 10).data.dependencies) }
+  try { @((Invoke-WorkshopApi -Uri "$ApiBase/mods/$Id/dependencies" -Headers $ApiH -TimeoutSec 10).data.dependencies) }
   catch { @() }
 }
 function Add-QueuedMods($Mods) {
@@ -522,7 +552,7 @@ function Invoke-AddMod([string]$Id) {
   $queued = @{}
   foreach ($m in $j.game.mods) { $queued[$m.modId] = $true }
   if ($queued.ContainsKey($Id) -or $have.ContainsKey($Id)) { return "already $(if ($have.ContainsKey($Id)) { 'installed' } else { 'queued' }) - nothing to add" }
-  $m = (Invoke-RestMethod -Uri "$ApiBase/mods/$Id" -Headers $ApiH -TimeoutSec 10).mod
+  $m = (Invoke-WorkshopApi -Uri "$ApiBase/mods/$Id" -Headers $ApiH -TimeoutSec 10).mod
   $add = @([PSCustomObject]@{ modId = $Id; name = [string]$m.name; size = [double]$m.size })
   $depNames = @()
   $seen = @{}; $seen[$Id] = $true
@@ -560,9 +590,9 @@ function Invoke-AddMod([string]$Id) {
   $script:TotalBytes = ($script:sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
   $sz.totalBytes = [double]$script:TotalBytes
   Save-Json $sz $Sizes 4
-  $msg = "queued '$($m.name)' ($([Math]::Round([double]$m.size / 1GB, 2)) GB)"
-  if ($depNames.Count) { $msg += " + $($depNames.Count) dependency mod(s): $($depNames -join ', ')" }
-  if ($cut) { $msg += " - dependency walk stopped at the 20 s / $cap mod limit; press Add again for the rest" }
+  $msg = "Queued '$($m.name)'"
+  if ($depNames.Count) { $msg += " and $($depNames.Count) dependencies" }
+  if ($cut) { $msg += '. Dependency search reached its limit' }
   $msg + $queueChange.note
 }
 function Get-Browse([string]$q) {
@@ -571,7 +601,7 @@ function Get-Browse([string]$q) {
   if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 15) { return $script:bCache[$key] }
   $u = "$ApiBase/servers?includeOffline=true"
   if ($q) { $u += "&search=$([uri]::EscapeDataString($q))" }
-  $r = Invoke-RestMethod -Uri $u -Headers $ApiH -TimeoutSec 10
+  $r = Invoke-WorkshopApi -Uri $u -Headers $ApiH -TimeoutSec 10
   $list = @($r.data | Sort-Object online, players -Descending |
     Select-Object -First 60 | ForEach-Object {
       [PSCustomObject]@{ id = $_.id; name = $_.name; players = $_.players; maxPlayers = $_.maxPlayers
@@ -586,7 +616,7 @@ function Get-Detail([string]$Id) {
   # from the page cannot steer it at another endpoint
   if ($Id -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') { throw 'bad server id' }
   if ($script:dCache[$Id] -and ((Get-Date) - $script:dCacheAt[$Id]).TotalSeconds -lt 30) { return $script:dCache[$Id] }
-  $d = Invoke-RestMethod -Uri "$ApiBase/servers/$Id" -Headers $ApiH -TimeoutSec 10
+  $d = Invoke-WorkshopApi -Uri "$ApiBase/servers/$Id" -Headers $ApiH -TimeoutSec 10
   if (-not $d.server -or -not @($d.server.mods).Count) { throw 'server has no modlist (offline or password protected)' }
   $script:dCache[$Id] = $d.server; $script:dCacheAt[$Id] = Get-Date
   $d.server
@@ -632,7 +662,7 @@ function Invoke-AddServer([string]$Id) {
   # (one assignment only: the list is replaced above, so a second append here put
   # the same server in memory and in batch1-servers.json twice)
   $gb = [Math]::Round(($new | ForEach-Object { [double]$_.size } | Measure-Object -Sum).Sum / 1GB, 2)
-  "added '$name': $($new.Count) new mods (~$gb GB) queued at the end, $(@($want).Count - $new.Count) already on disk$($queueChange.note)"
+  "Queued $($new.Count) mods for '$name' (~$gb GB)$($queueChange.note)."
 }
 function Merge-ServerMods($sv, $mods, $sz) {
   # apply a modlist that a background job fetched: sizes, then the "changed"
@@ -673,7 +703,7 @@ function Start-RefreshJob([string[]]$Ids) {
   if ($script:refreshJob) {
     $state = [string]$script:refreshJob.job.State
     if ($state -eq 'Running' -or $state -eq 'NotStarted') {
-      return @{ job = $script:refreshJob.id; msg = "a refresh is already running (job $($script:refreshJob.id))" }
+      return @{ job = $script:refreshJob.id; msg = "Servers are already refreshing." }
     }
     # finished but never collected: discard it and start clean
     Remove-Job $script:refreshJob.job -Force -ErrorAction SilentlyContinue
@@ -683,14 +713,15 @@ function Start-RefreshJob([string[]]$Ids) {
   $id = [guid]::NewGuid().ToString('N').Substring(0, 8)
   $out = Join-Path $Data "job-$id.json"
   $known = @($sizeMap.Keys)
-  $job = Start-Job -ArgumentList $id, $ids, $out, $ApiBase, $known, $UserAgent -ScriptBlock {
-    param($jobId, $serverIds, $out, $base, $known, $ua)
+  $job = Start-Job -ArgumentList $id, $ids, $out, $ApiBase, $known, $UserAgent, (Join-Path $PSScriptRoot 'workshop-api.ps1') -ScriptBlock {
+    param($jobId, $serverIds, $out, $base, $known, $ua, $stateScript)
+    . $stateScript
     $h = @{ 'User-Agent' = $ua }
     $servers = @()
     $need = @{}
     foreach ($sid in $serverIds) {
       try {
-        $d = Invoke-RestMethod -Uri "$base/servers/$sid" -Headers $h -TimeoutSec 30
+        $d = Invoke-WorkshopApi -Uri "$base/servers/$sid" -Headers $h -TimeoutSec 30
         if (-not $d.server -or -not @($d.server.mods).Count) { throw 'no modlist (offline or password protected)' }
         $mods = @()
         foreach ($m in @($d.server.mods)) {
@@ -706,14 +737,14 @@ function Start-RefreshJob([string[]]$Ids) {
     if ($need.Count) {
       try {
         $body = @{ mode = 'replace'; desired = @($need.Keys | ForEach-Object { @{ id = $_ } }) } | ConvertTo-Json -Depth 5
-        $plan = Invoke-RestMethod -Uri "$base/tools/storage-plan" -Method Post -Body $body -Headers $h -ContentType 'application/json' -TimeoutSec 120
+        $plan = Invoke-WorkshopApi -Uri "$base/tools/storage-plan" -Method Post -Body $body -Headers $h -ContentType 'application/json' -TimeoutSec 120
         foreach ($x in $plan.data.downloads) { $sizes[$x.id] = @{ bytes = [double]$x.bytes; exact = [bool]$x.exact } }
       } catch { }
     }
-    @{ servers = $servers; sizes = $sizes } | ConvertTo-Json -Depth 8 | Set-Content $out
+    @{ servers = $servers; sizes = $sizes } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $out -Encoding UTF8
   }
   $script:refreshJob = @{ id = $id; out = $out; job = $job; queueRevision = (Get-QueueRevision) }
-  @{ job = $id; msg = "refreshing $($ids.Count) server(s) in the background (job $id)..." }
+  @{ job = $id; msg = "Refreshing $($ids.Count) servers." }
 }
 function Complete-RefreshJob([string]$Id) {
   # Called by /job. Returns { state = running|done|failed }; applies the result
@@ -757,13 +788,14 @@ function Complete-RefreshJob([string]$Id) {
         $sv = @($serverList | Where-Object { $_.id -eq $sp.id })[0]
         if (-not $sv) { continue }            # removed while the job was running
         if ($sp.PSObject.Properties['error'] -and $sp.error) { $fail++; continue }
+        if ($sp.name) { $sv.name = $sp.name }
         $previous = @($sv.mods.id)
         Merge-ServerMods $sv @($sp.mods) $sz
         foreach ($mod in $sv.mods) {
           if ($mod.id -notin $previous) { $want[$mod.id] = $mod.name }
         }
         $c = $sv.PSObject.Properties['changed']
-        if ($c -and $c.Value) { $changed += "$($sv.name): +$($c.Value.added) -$($c.Value.removed)" }
+        if ($c -and $c.Value) { $changed += $sv.id }
         $ok++
       }
       $script:TotalBytes = ($sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
@@ -772,7 +804,10 @@ function Complete-RefreshJob([string]$Id) {
       Save-Json @{ servers = $serverList } $ServersPath 6
       $q = if ($rj.queueRevision -eq (Get-QueueRevision)) { Add-MissingToQueue $want }
         else { @{ count = 0; note = ' - queue changed during refresh' } }
-      $result = @{ state = 'done'; msg = "refreshed $ok/$(@($payload.servers).Count) servers$(if ($fail) { " ($fail unreachable)" }): $($sizeMap.Count) mods tracked, $($q.count) new mods queued$(if (@($changed).Count) { " - modlist changed: $($changed -join '; ')" })$($q.note)" }
+      $summary = "Refreshed $ok of $(@($payload.servers).Count) servers."
+      if ($q.count) { $summary += " Queued $($q.count) mods$($q.note)." }
+      if ($changed.Count) { $summary += " $($changed.Count) mod lists changed." }
+      $result = @{ state = 'done'; msg = $summary }
     }
   } catch {
     $result = @{ state = 'failed'; error = $_.Exception.Message }
@@ -800,7 +835,7 @@ function Invoke-RemoveServer([string]$Id) {
   if (-not $sv) { throw 'server is not in the list' }
   $script:serverList = @($serverList | Where-Object { $_.id -ne $Id })
   Save-Json @{ servers = $serverList } $ServersPath 6
-  "removed '$($sv.name)' from the list - its mods stay on disk and in the queue, nothing was deleted"
+  "Removed '$($sv.name)' from tracked servers."
 }
 function Invoke-RemoveQueuedMod([string]$Id) {
   $Id = Test-ModId $Id
@@ -836,6 +871,91 @@ function Invoke-ClearQueue {
     } $Cfg
     Reset-QueueRevision
     "queue cleared ($n mods removed)"
+  } finally { $ctl.ReleaseMutex() }
+}
+function Test-PartialDeleteTree([IO.DirectoryInfo]$Directory) {
+  if ($Directory.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+  foreach ($child in $Directory.EnumerateFileSystemInfos()) {
+    if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+    if ($child -is [IO.DirectoryInfo] -and !(Test-PartialDeleteTree $child)) { return $false }
+  }
+  $true
+}
+
+function Invoke-CancelDownloads {
+  $ctl = Lock-Engine
+  if (!$ctl) { throw 'The downloader is busy. Try cancelling again.' }
+  try {
+    $tracked = @{}
+    $preservePackages = @{}
+    foreach ($id in $sizeMap.Keys) { $tracked[$id] = $true }
+    foreach ($mod in (Get-Cfg).game.mods) {
+      $id = Test-ModId $mod.modId
+      if (!$id) { continue }
+      $tracked[$id] = $true
+      if ($mod.version) { $preservePackages[$id] = $true }
+    }
+    $updates = Read-Json (Join-Path $Data 'mod-update-batch.json') $null
+    foreach ($update in $updates.updates) {
+      $id = Test-ModId $update.modId
+      if ($id) { $tracked[$id] = $true; $preservePackages[$id] = $true }
+    }
+
+    # The game and the downloader may share the same addons directory.
+    $game = Get-Process -Name 'ArmaReforger*' -ErrorAction SilentlyContinue |
+      Where-Object { $_.ProcessName -notlike 'ArmaReforgerSer*' }
+    if ($game) { throw 'Close Arma Reforger before deleting partial downloads.' }
+    Stop-DS | Out-Null
+    if (Get-EngineProcesses) { throw 'Close the other dedicated server before deleting partial downloads.' }
+
+    Update-Cfg { param($cfg) $cfg.game.mods = @() } $Cfg | Out-Null
+    Reset-QueueRevision
+    $root = Get-Item -LiteralPath $Addons -Force -ErrorAction SilentlyContinue
+    if (!$root) { return 'Downloads cancelled.' }
+    if ($root.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+      $client = Get-ClientAddons $DsProfile
+      $target = $root.Target | Select-Object -First 1
+      if (!$target -or ![IO.Path]::IsPathRooted($target) -or
+          [IO.Path]::GetFullPath($target) -ne [IO.Path]::GetFullPath($client)) {
+        return 'Downloads cancelled. Partial files stayed on disk because the addons folder is linked elsewhere.'
+      }
+      $root = Get-Item -LiteralPath $target -Force -ErrorAction Stop
+      if ($root.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        return 'Downloads cancelled. Partial files stayed on disk because the addons folder is linked elsewhere.'
+      }
+    }
+    $removed = 0
+    $failed = 0
+    $script:exactCache = @{}
+    foreach ($folder in Get-ChildItem -LiteralPath $root.FullName -Directory -Force) {
+      if ($folder.Name -notmatch '_([a-fA-F0-9]{16})$') { continue }
+      $id = $Matches[1]
+      if (!$tracked.ContainsKey($id) -or $folder.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+      $keepPackage = $preservePackages.ContainsKey($id) -or (Test-AddonComplete $folder.FullName $folder.LastWriteTime)
+      $metadata = Join-Path $folder.FullName 'meta'
+      if (!$keepPackage -and (Test-Path -LiteralPath $metadata)) {
+        try {
+          $previous = Get-Content -LiteralPath $metadata -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+          $keepPackage = !$previous.meta -or @($previous.meta.versions).Count -gt 1
+        } catch { $keepPackage = $true }
+      }
+      $candidate = if ($keepPackage) { Get-Item -LiteralPath (Join-Path $folder.FullName 'temp') -Force -ErrorAction SilentlyContinue } else { $folder }
+      if ($candidate -isnot [IO.DirectoryInfo]) { continue }
+      try {
+        if (($candidate.Parent.FullName -ne $root.FullName -and $candidate.Parent.FullName -ne $folder.FullName) -or
+            !(Test-PartialDeleteTree $candidate)) { throw 'The partial download contains a link.' }
+        Remove-Item -LiteralPath $candidate.FullName -Recurse -Force -ErrorAction Stop
+        $removed++
+      } catch { $failed++ }
+    }
+    $script:dirCacheAt = (Get-Date).AddMinutes(-10)
+    $script:haveAt = (Get-Date).AddMinutes(-10)
+    $script:clCacheAt = (Get-Date).AddMinutes(-10)
+    $script:clBytesAt = (Get-Date).AddMinutes(-10)
+    $script:verify = $null
+    $message = if ($removed) { "Downloads cancelled. Removed $removed partial downloads." } else { 'Downloads cancelled.' }
+    if ($failed) { $message += " Couldn't remove $failed partial downloads." }
+    $message
   } finally { $ctl.ReleaseMutex() }
 }
 function Invoke-ResumeAll {

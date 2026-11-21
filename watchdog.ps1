@@ -32,7 +32,7 @@ function Start-EngineLocked {
     if ((Test-Path -LiteralPath $PauseFlag) -or !((Get-Queued $Cfg).Count)) { return $false }
     $cur = Get-OwnEngine $Cfg
     if ($null -eq $cur) { return $false }   # cannot ask: do not risk a second engine
-    if ($cur) { return $false }
+    if ($cur -or (Get-EngineProcesses)) { return $false }
     Start-DownloadEngine
     return $true
   } finally { $ctl.ReleaseMutex() }
@@ -133,7 +133,10 @@ while ($true) {
       }
     }
 
-    try { & "$PSScriptRoot\trim-config.ps1" | Out-Null }
+    try {
+      $trim = & "$PSScriptRoot\trim-config.ps1"
+      if ($LASTEXITCODE -ne 0) { throw ($trim -join ' ') }
+    }
     catch { Write-Wd "trim failed: $($_.Exception.Message)"; continue }   # never start an untrimmed list (1 MB trap)
     $queued = Get-Queued $Cfg
     if ($null -eq $queued) {
@@ -168,8 +171,11 @@ while ($true) {
       Start-Sleep 2
       # trim before restarting: a finished mod left in the list pushes the download
       # request over the DS's ~1 MB limit, and the restart would insta-crash
-      try { & "$PSScriptRoot\trim-config.ps1" | Out-Null }
-      catch { Write-Wd "trim failed: $($_.Exception.Message)" }
+      try {
+        $trim = & "$PSScriptRoot\trim-config.ps1"
+        if ($LASTEXITCODE -ne 0) { throw ($trim -join ' ') }
+      }
+      catch { Write-Wd "trim failed: $($_.Exception.Message)"; continue }
       $null = Start-EngineLocked
     }
     continue

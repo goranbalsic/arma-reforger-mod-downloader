@@ -24,12 +24,7 @@ try {
     "engine is running - config and partial folders left alone"
     exit 1
   }
-  $raw = Get-Content $cfgPath -Raw -ErrorAction SilentlyContinue
-  $j = Read-Json $cfgPath ($CfgStub | ConvertFrom-Json)
-  if (-not $raw) { "config was empty or unreadable - recreated" }
-  # adds name/scenarioId (the engine refuses a config without them) and repairs
-  # "mods": null, which the DS writes on shutdown
-  $j = Repair-Cfg $j
+  $j = Read-EngineConfig $cfgPath
 
   $done = @{}
   # only the queued mods are checked: the engine's folder is linked into the game
@@ -89,3 +84,4 @@ try {
   Save-Json $j $cfgPath
   "saved"
 } finally { $ctl.ReleaseMutex() }
+exit 0

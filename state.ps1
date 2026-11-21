@@ -47,6 +47,18 @@ function Start-DownloadEngine {
     Start-Process -FilePath $Exe -ArgumentList ('-config "{0}" -profile "{1}"' -f $Cfg,$DsProfile) -WorkingDirectory (Split-Path $Exe -Parent) -WindowStyle Hidden
   }
 }
+function Get-EngineProcesses {
+  $name = if ($IsLinux) { 'ArmaReforgerSer*' } else { 'ArmaReforgerServer' }
+  Get-Process -Name $name -ErrorAction SilentlyContinue
+}
+
+function Test-EngineCommandLine([string]$CommandLine, [string]$ConfigPath) {
+  $tokens = @([regex]::Matches($CommandLine, '"[^"]*"|[^\s"]+') | ForEach-Object { $_.Value.Trim('"') })
+  $positions = @(for ($i = 1; $i -lt $tokens.Count; $i++) { if ($tokens[$i] -eq '-config') { $i } })
+  $positions.Count -eq 1 -and $positions[0] + 1 -lt $tokens.Count -and
+    $tokens[$positions[0] + 1] -eq $ConfigPath
+}
+
 function Get-OwnEngine([string]$ConfigPath) {
   # ONLY an engine this tool launched: its command line must carry our config path.
   # Matching the process name alone killed a community server the user runs
@@ -75,7 +87,7 @@ function Get-OwnEngine([string]$ConfigPath) {
     try {
       $found = @(Get-CimInstance Win32_Process -Filter "Name='ArmaReforgerServer.exe'" `
         -OperationTimeoutSec 5 -ErrorAction Stop |
-        Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($ConfigPath, [StringComparison]::OrdinalIgnoreCase) -ge 0 } |
+        Where-Object { $_.CommandLine -and (Test-EngineCommandLine $_.CommandLine $ConfigPath) } |
         ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue })
       return ,$found   # the comma keeps an empty result an array, not $null
     } catch {
@@ -129,6 +141,17 @@ function Read-Json([string]$Path, $Default) {
   }
 }
 
+function Read-EngineConfig([string]$Path) {
+  try {
+    $json = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    if ($json -isnot [pscustomobject] -or $json.game -isnot [pscustomobject]) { throw 'Missing game configuration.' }
+    if ($null -ne $json.game.mods -and $json.game.mods -isnot [array]) { throw 'The mod list is not an array.' }
+    Repair-Cfg $json
+  } catch {
+    throw "Could not read the download queue at '$Path': $($_.Exception.Message)"
+  }
+}
+
 function Update-Cfg([scriptblock]$Change, [string]$ConfigPath, [int]$LockMs = 20000) {
   # Serialised read-modify-write of the engine config. $Change receives the parsed
   # config, may mutate it, and its output is returned. Throws when the engine lock
@@ -139,7 +162,7 @@ function Update-Cfg([scriptblock]$Change, [string]$ConfigPath, [int]$LockMs = 20
   $ctl = Lock-Engine $LockMs
   if (-not $ctl) { throw 'another start/stop is in progress - the queue was not changed' }
   try {
-    $j = Repair-Cfg (Read-Json $ConfigPath ($CfgStub | ConvertFrom-Json))
+    $j = Read-EngineConfig $ConfigPath
     $out = & $Change $j
     Save-Json $j $ConfigPath
     $out
@@ -209,14 +232,14 @@ function Test-AddonComplete([string]$Path, $Mtime) {
   # The cache also keys on the folder's own write time: removing a file changes
   # that, while the newest-file time (Mtime) stays the same - so a mod that lost
   # an old file kept its cached "complete".
-  $dirTime = (Get-Item $Path -Force -ErrorAction SilentlyContinue).LastWriteTimeUtc.Ticks
+  $dirTime = (Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue).LastWriteTimeUtc.Ticks
   $c = $script:exactCache[$Path]
   if ($c -and $c.mtime -eq $Mtime -and $c.dir -eq $dirTime) { return $c.ok }
   $ok = $false
   $metaPath = Join-Path $Path 'meta'
-  if (Test-Path $metaPath) {
+  if (Test-Path -LiteralPath $metaPath) {
     try {
-      $j = Get-Content $metaPath -Raw -ErrorAction Stop | ConvertFrom-Json
+      $j = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
       $versions = @($j.meta.versions)
       $files = @()
       $selected = [int]$j.meta.selectedRev
@@ -233,8 +256,8 @@ function Test-AddonComplete([string]$Path, $Mtime) {
           $segments = @($f.name -split '[\\/]')
           if ([IO.Path]::IsPathRooted($f.name) -or $f.name -match ':' -or ($segments -contains '..')) { $ok = $false; break }
           $p = Join-Path $Path $f.name
-          if (-not (Test-Path $p)) { $ok = $false; break }
-          if ((Get-Item $p).Length -ne [long]$f.size) { $ok = $false; break }
+          if (-not (Test-Path -LiteralPath $p)) { $ok = $false; break }
+          if ((Get-Item -LiteralPath $p).Length -ne [long]$f.size) { $ok = $false; break }
         }
       }
     } catch { $ok = $false }

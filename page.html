@@ -32,7 +32,7 @@ details.card{border-top:1px solid var(--line);padding-top:12px}
 dialog{width:min(490px,calc(100% - 28px));border:1px solid var(--line);border-radius:8px;padding:24px;background:#fff;color:var(--ink)}dialog::backdrop{background:#20272988}dialog p{margin:12px 0 20px}dialog form{display:flex;justify-content:flex-end;gap:8px}.notice{display:flex;align-items:start;justify-content:space-between;gap:12px}.notice[hidden]{display:none}.notice button{margin:0}.notice + .notice{margin-top:6px}summary{cursor:pointer}summary h2{display:inline;font-size:17px;margin:0}
 ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#bs details{border-bottom:1px solid #e1e5e4;padding:5px 0}
 #queue,#srv,#rec,#act{max-height:360px;overflow:auto}
-#qpreview,details[open]>summary #qpreview,#say:empty{display:none}details:not([open])>summary #qpreview{display:inline}
+#say:empty{display:none}
 .dim{color:var(--muted)}.ok{color:#286345}.warn{color:#83540a}.bad{color:#a33731}
 :focus-visible{outline:2px solid #2468a0;outline-offset:3px}
 @media(min-width:820px){#downloads{grid-template-columns:1fr 1fr}#downloads>h2,#downloads>.overview{grid-column:1/-1}}
@@ -48,6 +48,7 @@ ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#
   <button id="bresumeall" onclick="act('resume-all',this)">Queue missing server mods</button>
   <button id="bpause" class="grey" onclick="act('pause',this)">Pause</button>
   <button id="bclear" class="grey" onclick="act('clear-queue',this)">Clear queue</button>
+  <button id="bcancel" class="grey" onclick="act('cancel-downloads')">Cancel downloads</button>
   <button id="bverify" class="amber" onclick="act('verify',this)">Verify mods</button>
  </div>
  <div id="vresNotice" class="notice card" style="margin-top:14px" hidden><div id="vres" role="status"></div><button class="mini" type="button" onclick="dismissNotice('vres')">Dismiss</button></div>
@@ -58,7 +59,7 @@ ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#
   <button class="mini" type="button" onclick="dismissNotice('failed')">Dismiss</button>
  </div>
 </div>
-<details class="card" open><summary><h2 style="font-size:18px">Queue <span id="qcount" class="dim"></span> <span id="qpreview" class="dim" style="font-size:13px"></span></h2></summary>
+<details class="card" open><summary><h2 style="font-size:18px">Queue <span id="qcount" class="dim"></span></h2></summary>
   <input class="f" id="fq" aria-label="Filter queue" placeholder="Filter queue" oninput="FILTER.queue=this.value;renderAll()">
   <div id="queue" class="dim">-</div></details>
  <details class="card" open><summary><h2 style="font-size:18px">Downloading now <span id="actcount" class="dim"></span></h2></summary>
@@ -94,7 +95,7 @@ function esc(x){return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function escAttr(x){return esc(x).replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function jsArg(x){return escAttr(JSON.stringify(String(x)))}
 function sz(b){return b>=1073741824?(b/1073741824).toFixed(b>=107374182400?2:3)+' GB':b>=1048576?(b/1048576).toFixed(1)+' MB':b>=1024?(b/1024).toFixed(1)+' KB':Math.round(b)+' B'}
-function left(sec){ if(!isFinite(sec)||sec<=0) return '--'; const h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); return h>0?(h+'h '+m+'m'):(m+' min'); }
+function left(sec){ if(!Number.isFinite(sec)||sec<=0)return ''; if(sec<60)return Math.ceil(sec)+' sec'; const minutes=Math.ceil(sec/60); return minutes>=60?Math.floor(minutes/60)+'h '+minutes%60+'m':minutes+' min'; }
 let SRV=null,BR=null,lastKey='';
 let FILTER={queue:'',act:'',rec:''},LAST=null;
 function match(name,q){ return !q || String(name).toLowerCase().indexOf(q.toLowerCase())>=0; }
@@ -110,8 +111,7 @@ function renderActive(list,A){
 function renderQueue(queue,A){
   const el=document.getElementById('queue'); if(!el)return;
   document.getElementById('qcount').textContent='('+queue.length+')';
-  const qp=document.getElementById('qpreview');
-  if(qp)qp.textContent=queue.length?(' - '+queue.slice(0,3).map(q=>q.name).join(' | ')+(queue.length>3?' ...':'')):'';
+
   const shown=queue.filter(q=>match(q.name,FILTER.queue));
   el.innerHTML=shown.length
    ?'<ol>'+shown.map(q=>'<li>'+(A[q.id]?'<span class="warn">&#10227;</span> ':'')+esc(q.name)+' <button type="button" class="mini grey" aria-label="Remove '+escAttr(q.name)+' from queue" data-id="'+escAttr(q.id)+'" onclick="removeQueuedMod(this)">Remove</button></li>').join('')+'</ol>'
@@ -263,7 +263,7 @@ async function addMod(id,button){
 async function addSrv(id,ev){
  ev.stopPropagation();
  const b=ev.target; b.disabled=true; b.textContent='adding...';
- say('adding server - its missing mods go to the end of the queue...');
+ say('Adding server…');
  await post('add-server?id='+id);
  b.disabled=false; b.textContent='Add server';
  loadSrv();
@@ -289,15 +289,20 @@ async function tick(){
   const status=s.running?'Downloading':!hasQueue?'Idle':s.paused?'Paused':'Waiting for downloader';
   document.getElementById('st').textContent=status;
   document.getElementById('st').className=s.running?'ok':'dim';
-  document.getElementById('gbtxt').textContent=hasQueue?(s.totalB?sz(s.doneB)+' / '+sz(s.totalB):'Size unknown'):'No downloads queued';
+  const totalKnown=s.totalB>0&&!s.unknownSizes;
+  const totalLabel=(s.estimatedSizes?'~':'')+sz(s.totalB);
+  document.getElementById('gbtxt').textContent=hasQueue
+    ?(totalKnown?sz(s.doneB)+' / '+totalLabel:sz(s.doneB)+' transferred · total unknown')
+    :'No downloads queued';
   const bar=document.getElementById('tbar');
   const progress=s.pctF??s.pct;
   bar.style.width=progress+'%';
-  bar.parentElement.setAttribute('aria-valuenow',progress);
-  document.getElementById('spd').textContent=s.running&&s.speedB>0?sz(s.speedB)+'/s':'';
+  if(totalKnown||!hasQueue)bar.parentElement.setAttribute('aria-valuenow',progress);
+  else bar.parentElement.removeAttribute('aria-valuenow');
+  document.getElementById('spd').textContent=s.running&&hasQueue?(s.speedB>0?sz(s.speedB)+'/s':'Waiting for speed data'):'';
   document.getElementById('cnt').textContent=hasQueue?(s.doneCount+' of '+s.totalMods+' mods complete'):'';
-  const eta=s.running&&s.speedB>51200?left((s.totalB-s.doneB)/s.speedB):'--';
-  document.getElementById('etabox').textContent=eta==='--'?'':eta+' left';
+  const eta=s.running&&totalKnown&&s.speedB>0?left((s.totalB-s.doneB)/s.speedB):'';
+  document.getElementById('etabox').textContent=eta?'~'+eta+' left':'';
   queueControls(s);
   const D={},A={},B={};
   s.recent.forEach(r=>{D[r.id]=1;B[r.id]=r.b});
@@ -316,29 +321,32 @@ async function tick(){
   const al=document.getElementById('addonsline');
   if(al)al.textContent='in your addons folder: '+sz(s.addonsB||0);
   const v=document.getElementById('vres');
-  if(s.verify&&verifyAt!==s.verify.at){const x=s.verify;
-   verifyAt=x.at;
+  if(!s.verify){verifyAt=null;document.getElementById('vresNotice').hidden=true;}
+  if(s.verify&&verifyAt!==(s.verify.id||s.verify.at)){const x=s.verify;
+   verifyAt=x.id||x.at;
    document.getElementById('vresNotice').hidden=false;
    let t='<b>Verify '+x.at+'</b> - <span class="ok">'+x.ok+' ok</span>, '+x.partial+' partial, '+x.pending+' pending';
-   if(x.suspects&&x.suspects.length){t+='<br><span class="bad">Size mismatch (re-download candidates):</span><ul>'+
-     x.suspects.map(z=>'<li class="bad">'+esc(z.name)+' - expected '+sz(z.expB)+', on disk '+sz(z.actB)+'</li>').join('')+'</ul>';}
-   else t+='<br><span class="ok">No size mismatches - installed mods look intact.</span>';
+   if(x.suspects&&x.suspects.length){t+='<br><span class="bad">Incomplete downloads you can put back in the queue</span><ul>'+
+     x.suspects.map(z=>'<li>'+esc(z.name)+' · '+sz(z.actB)+' on disk'+
+       (z.expB?' · about '+sz(z.expB)+' total':'')+
+       ' <button class="mini" data-id="'+escAttr(z.id)+'" onclick="requeuePartial(this)">Put back in queue</button></li>').join('')+'</ul>';}
+   else t+='<br><span class="ok">No unqueued partial downloads.</span>';
    v.innerHTML=t;}
- }catch(e){say('status error: '+((e&&e.message)||e),false);}
+ }catch(e){say('Could not refresh downloads. See the app log.',false);}
 }
 async function post(w){
  try{
   const r=await fetch('/'+w+(w.indexOf('?')>=0?'&':'?')+'t='+T,{method:'POST'});
   const j=await r.json();
-  if(j.error)say('failed: '+j.error,false);
+  if(j.error)say(String(j.error).split(/\r?\n/)[0],false);
   else if(j.msg)say(String(j.msg),true);
   await tick();
   return j;
- }catch(e){say('failed: '+e,false); await tick(); return null;}
+ }catch(e){say('Could not reach the downloader.',false); return null;}
 }
 async function jobPoll(id){
  // a refresh runs in one background job; this asks until it is finished
- for(let i=0;i<200;i++){
+ while(true){
   try{
    const r=await fetch('/job?id='+encodeURIComponent(id)+'&t='+T,{method:'POST'});
    const j=await r.json();
@@ -346,7 +354,6 @@ async function jobPoll(id){
   }catch(e){return {state:'failed',error:String(e)};}
   await new Promise(r=>setTimeout(r,700));
  }
- return {state:'failed',error:'the refresh did not finish in time'};
 }
 async function updateMods(scope,id,event){
  event.preventDefault();
@@ -361,15 +368,20 @@ async function cancelModUpdates(button){
 async function queueSrv(id,ev){
  ev.stopPropagation();
  const b=ev.target; b.disabled=true; b.textContent='queuing...';
- say('reordering the queue...');
+ say('Reordering queue…');
  await post('queue-server?id='+id);
  b.disabled=false; b.textContent='Queue first';
 }
 async function presetSrv(id,ev){
  ev.stopPropagation();
  const b=ev.target; b.disabled=true; b.textContent='building...';
- say('building launcher preset...');
- await post('make-preset?id='+id);
+ say('Saving preset…');
+ const response=await post('make-preset?id='+encodeURIComponent(id)+'&background=1');
+ if(response?.job){
+  const result=await jobPoll(response.job);
+  if(result.state==='done')say(result.msg,true);
+  else say(result.error||'Could not save the preset.',false);
+ }
  b.disabled=false; b.textContent='Make preset';
 }
 async function refreshSrv(ev){
@@ -378,7 +390,7 @@ async function refreshSrv(ev){
  const r=await post('refresh-servers');
  b.disabled=false; b.textContent='Refresh all';
  if(!r||!r.job)return;
- say('refreshing in the background (job '+r.job+')...');
+ say('Refreshing servers…');
  const j=await jobPoll(r.job);
  if(j.state==='done')say(j.msg||'refresh done',true);
  else say('refresh failed: '+(j.error||'unknown'),false);
@@ -392,7 +404,7 @@ async function refreshOne(id,ev){
  const r=await post('refresh-server?id='+encodeURIComponent(id));
  b.disabled=false; b.textContent='Refresh';
  if(!r||!r.job)return;
- say('refreshing in the background (job '+r.job+')...');
+ say('Refreshing server…');
  const j=await jobPoll(r.job);
  if(j.state==='done')say(j.msg||'refresh done',true);
  else say('refresh failed: '+(j.error||'unknown'),false);
@@ -407,6 +419,11 @@ async function removeSrv(id,ev){
  await post('remove-server?id='+id);
  SRV=null; SRVAt=0; await loadSrv();
  if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+}
+async function requeuePartial(button){
+ button.disabled=true;
+ try{await post('requeue-partial-mod?id='+encodeURIComponent(button.dataset.id));}
+ finally{button.disabled=false;}
 }
 async function removeQueuedMod(button){
  button.disabled=true;
@@ -430,10 +447,12 @@ function queueControls(status){
  document.getElementById('bclear').disabled=busyAction||!status||(!status.queue.length&&!status.modUpdateRunning);
  document.getElementById('bresumeall').disabled=busyAction;
  document.getElementById('bverify').disabled=busyAction;
+ document.getElementById('bcancel').disabled=busyAction||!status;
 }
-const actionLabels={start:'Starting downloads…',pause:'Pausing…','clear-queue':'Clearing queue…','resume-all':'Queueing missing server mods…',verify:'Verifying mods…'};
+const actionLabels={start:'Starting downloads…',pause:'Pausing…','clear-queue':'Clearing queue…','resume-all':'Queueing missing server mods…',verify:'Verifying mods…','cancel-downloads':'Cancelling downloads…'};
 async function act(w){
  if(w==='clear-queue'&&!await confirmAction('Clear download queue?', 'Partial files and installed mods stay on disk.', 'Clear queue'))return;
+ if(w==='cancel-downloads'&&!await confirmAction('Cancel downloads?', 'This clears the queue and deletes partial downloads. Installed mods stay on disk.', 'Cancel downloads'))return;
  busyAction=true;
  queueControls(queueStatus);
  say(actionLabels[w]);
@@ -446,7 +465,7 @@ loadSrv();   // self-gated (5 s); tick retries it too, so this is the only call 
 (async function loop(){
  // one request in flight. A /status build costs ~0.3 s of one core, so polling at
  // 400 ms (measured: 97% of one core) is not worth it; 1 s is still live enough.
- const ms = document.hidden ? 4000 : (LAST && LAST.running ? 1000 : 2000);
+ const ms = document.hidden ? 4000 : (LAST && LAST.running ? 800 : 2000);
  await tick();
  setTimeout(loop, ms);
 })();

@@ -42,6 +42,9 @@ jobs:
       - name: Test the desktop transport
         shell: powershell
         run: .\desktop\Test.ps1
+      - name: Test the Windows app updater
+        shell: powershell
+        run: .\desktop\Test-AppUpdates.ps1
       - name: Attest the executable built on main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/attest-build-provenance@v3

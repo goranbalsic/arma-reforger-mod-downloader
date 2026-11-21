@@ -28,16 +28,16 @@ $loader = Join-Path $sdk 'runtimes\win-x64\native\WebView2Loader.dll'
 $files = @(
   'dashboard-core.ps1', 'download-web.ps1', 'make-preset.ps1', 'page.html',
   'preset-scenarios.ps1', 'Setup.ps1', 'state.ps1', 'sync-addons.ps1',
-  'trim-config.ps1', 'update-mods.ps1', 'version.txt', 'watchdog.ps1', 'LICENSE', 'NOTICE'
+  'trim-config.ps1', 'update-mods.ps1', 'version.txt', 'watchdog.ps1', 'workshop-api.ps1', 'LICENSE', 'NOTICE'
 )
 foreach ($name in $files) {
   Copy-Item -LiteralPath (Join-Path $source $name) -Destination $payload -Force
 }
-Copy-Item -LiteralPath $core,$forms,$loader -Destination $payload -Force
+Copy-Item -LiteralPath $core,$forms,$loader,(Join-Path $PSScriptRoot 'Apply-AppUpdate.ps1') -Destination $payload -Force
 Copy-Item -LiteralPath (Join-Path $sdk 'LICENSE.txt') -Destination (Join-Path $payload 'WebView2-LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $sdk 'NOTICE.txt') -Destination (Join-Path $payload 'WebView2-NOTICE.txt') -Force
 $bundle = Join-Path $work 'payload.zip'
-$payloadFiles = @($files + 'WebView2-LICENSE.txt' + 'WebView2-NOTICE.txt' +
+$payloadFiles = @($files + 'Apply-AppUpdate.ps1' + 'WebView2-LICENSE.txt' + 'WebView2-NOTICE.txt' +
   'Microsoft.Web.WebView2.Core.dll' + 'Microsoft.Web.WebView2.WinForms.dll' + 'WebView2Loader.dll' |
   ForEach-Object { Join-Path $payload $_ })
 Compress-Archive -LiteralPath $payloadFiles -DestinationPath $bundle -Force
@@ -58,7 +58,7 @@ $sources = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.cs' | ForEach-O
 & $compiler /nologo /target:winexe /platform:x64 /codepage:65001 /optimize+ "/out:$output" "/resource:$bundle,Payload.zip" `
   "/win32icon:$(Join-Path $PSScriptRoot 'app.ico')" `
   /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll `
-  /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll `
+  /reference:System.Net.Http.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll `
   "/reference:$core" "/reference:$forms" $metadata @sources
 if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed.' }
 $output

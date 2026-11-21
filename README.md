@@ -28,7 +28,7 @@ For a full mod list, open **Find mods → Find a server**, then select **Add ser
 
 ## Pause, resume, and update mods
 
-**Download status** shows progress for the current batch and resets when it finishes. **Downloading now** shows which files are coming in, and **Queue** shows what’s left. Use **Pause** to take a break and **Start / Resume** to pick up again. Use **Remove** next to a mod or **Clear queue** to cancel queued downloads and keep any files already on disk.
+**Download status** shows progress for the current batch and resets when it finishes. **Downloading now** shows which files are coming in, and **Queue** shows what’s left. Use **Pause** to take a break and **Start / Resume** to pick up again. Use **Remove** or **Clear queue** to keep partial files. **Cancel downloads** clears the queue and deletes tracked partial files after confirmation. To resume one cleared mod, open **Verify mods**, select **Put back in queue**, then **Start / Resume**.
 
 Under **Tracked servers**, use **Queue first** to put a server’s missing mods at the front of the queue. **Refresh** queues mods that were added to the server since your last refresh. **Remove** takes the server off your list and keeps its queued and installed mods.
 
@@ -56,7 +56,7 @@ Yes. After the downloads finish, close the game and select **Make preset** next 
 
 On Windows, your mods live in `Documents\My Games\ArmaReforger\addons`. The download engine and queue are saved in the folder selected during setup. The default is `%LOCALAPPDATA%\Reforger Mod Downloader\downloads`.
 
-To use an existing installation, close its legacy dashboard and put the executable next to its `armar-server` and `data` folders. To update the desktop app, close it and replace the executable. Your queue, engine, and installed mods carry over.
+To use an existing installation, close its legacy dashboard and put the executable next to its `armar-server` and `data` folders. The Windows app checks for new GitHub Releases on startup. Use **Check for updates** for a manual check. It verifies the release asset’s SHA-256 digest and installs a verified update when you close the app. Your queue, engine, and installed mods carry over.
 
 Active downloads can finish in the background after you close the app. To stop them first, select **Pause** and then close the window.
 

@@ -12,7 +12,8 @@ param(
   [string]$ConfPath,
   [string]$Name,                 # preset name (default: the server's short name)
   [string[]]$Exclude = @(),      # regex patterns: mods whose name matches are left out
-  [string]$AddonsDir             # client addons folder (default: the game's)
+  [string]$AddonsDir,            # client addons folder (default: the game's)
+  [switch]$Summary
 )
 $ErrorActionPreference = 'Stop'
 $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
@@ -120,10 +121,10 @@ $dropped = @()
 if ($Exclude.Count) {
   $dropped = @($mods | Where-Object { $n = $_.name; @($Exclude | Where-Object { $n -match $_ }).Count -gt 0 })
   $mods = @($mods | Where-Object { $n = $_.name; @($Exclude | Where-Object { $n -match $_ }).Count -eq 0 })
-  "excluded for this preset: $($dropped.Count) mod(s): $(($dropped | ForEach-Object { $_.name }) -join ', ')"
+  if (!$Summary) { "excluded for this preset: $($dropped.Count) mod(s): $(($dropped | ForEach-Object { $_.name }) -join ', ')" }
 }
-"server: $($srv.name)  mods=$(@($srv.mods).Count)  installed here: $installedCount  in this preset: $($mods.Count)"
-if ($installedCount -lt @($srv.mods).Count) {
+if (!$Summary) { "server: $($srv.name)  mods=$(@($srv.mods).Count)  installed here: $installedCount  in this preset: $($mods.Count)" }
+if (!$Summary -and $installedCount -lt @($srv.mods).Count) {
   "note: $(@($srv.mods).Count - $installedCount) mod(s) not installed yet - re-run this after the batch finishes"
 }
 if (-not $mods) { throw 'no installed mods for this preset yet' }
@@ -185,7 +186,7 @@ $presets = ([regex]::Matches($check.Substring($check.IndexOf('SCR_WorkshopAddonM
 $mpAfter = $check.IndexOf('m_aPresets', $check.IndexOf('SCR_WorkshopAddonManagerPresetStorage'))
 $newAt = $check.IndexOf('SCR_WorkshopAddonPreset "{' + $presetGuid + '}"')
 $inside = $mpAfter -ge 0 -and $newAt -gt $mpAfter
-"verification: presets=$presets (expected $expected) inside m_aPresets=$inside meta=$($mods.Count) braces=$open/$close"
+if (!$Summary) { "verification: presets=$presets (expected $expected) inside m_aPresets=$inside meta=$($mods.Count) braces=$open/$close" }
 if ($presets -ne $expected -or $open -ne $close -or -not $inside) { throw 'verification failed - the settings file was not changed' }
 
 # atomic: a temp file beside it, then a swap that also keeps the previous version
@@ -196,11 +197,22 @@ $tmpConf = "$conf.tmp"
 Get-ChildItem (Split-Path $conf -Parent) -Filter "$([IO.Path]::GetFileName($conf)).bak-*" -ErrorAction SilentlyContinue |
   Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 |
   Remove-Item -Force -ErrorAction SilentlyContinue
-"OK - preset '$presetName' $action with $($mods.Count) installed mods"
+if (!$Summary) { "OK - preset '$presetName' $action with $($mods.Count) installed mods" }
 
 $scenarioCount = 0
+$scenarioFailures = 0
 foreach ($mod in $mods) {
   try { $scenarioCount += Sync-PresetScenarios $directories[$mod.id] $mod.id }
-  catch { "Scenario check incomplete for $($mod.name): $($_.Exception.Message)" }
+  catch {
+    $scenarioFailures++
+    $details = "Scenario check incomplete for $($mod.name): $($_.Exception.Message)"
+    if ($Summary) { Add-Content -LiteralPath (Join-Path $Data 'preset-scenarios.log') -Value $details -Encoding UTF8 -ErrorAction SilentlyContinue }
+    else { $details }
+  }
 }
-"Local scenarios confirmed: $scenarioCount"
+if ($Summary) {
+  $message = "Preset '$presetName' $action ($($mods.Count) mods)."
+  if ($installedCount -lt @($srv.mods).Count) { $message += " $(@($srv.mods).Count - $installedCount) mods are still missing." }
+  if ($scenarioFailures) { $message += " Couldn't check scenarios for $scenarioFailures mods." }
+  $message
+} else { "Local scenarios confirmed: $scenarioCount" }

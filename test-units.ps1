@@ -245,7 +245,7 @@ function Get-HaveIds { @{} }
 function Get-DS { param([switch]$Fresh) ,@() }   # comma: an empty array must not unroll to $null
 function Stop-DS { $script:calls += 'stop'; 'stopped' }
 function Start-DS { $script:calls += 'start'; 'started' }
-function Invoke-RestMethod {
+function Invoke-WorkshopApi {
   param($Uri, $Headers, $Method, $Body, $ContentType, $TimeoutSec)
   $script:apiCalls += [string]$Uri
   if ("$Uri" -match '/mods/([0-9A-F]{16})$') {
@@ -398,6 +398,15 @@ $uout = Update-Cfg { param($cfg) $cfg.game.mods = @([pscustomobject]@{ modId = '
 $usaved = Get-Content $Cfg -Raw | ConvertFrom-Json
 Check 'Update-Cfg saves the change' (@($usaved.game.mods).Count -eq 1)
 Check 'Update-Cfg returns the block output' ($uout -eq 'done')
+$malformedCfg = Join-Path $tmp 'malformed-engine.json'
+'{"game":' | Set-Content -LiteralPath $malformedCfg
+$malformedBefore = Get-Content -LiteralPath $malformedCfg -Raw
+$writeError = $null
+try { Update-Cfg { param($cfg) $cfg.game.mods = @() } $malformedCfg | Out-Null } catch { $writeError = $_ }
+Check 'a queue mutation preserves a malformed config' ($writeError -and (Get-Content -LiteralPath $malformedCfg -Raw) -eq $malformedBefore)
+Check 'an exact config argument identifies the engine' (Test-EngineCommandLine '"ArmaReforgerServer.exe" -config "C:/My Mods/queue.json"' 'C:/My Mods/queue.json')
+Check 'another engine with a similarly named config is ignored' (!(Test-EngineCommandLine '"ArmaReforgerServer.exe" -config "C:/My Mods/queue.json.bak"' 'C:/My Mods/queue.json'))
+Check 'the config path in an unrelated argument is ignored' (!(Test-EngineCommandLine '"ArmaReforgerServer.exe" -profile "C:/My Mods/queue.json"' 'C:/My Mods/queue.json'))
 
 $hold2 = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)
@@ -415,6 +424,18 @@ Check 'Update-Cfg refuses while another process holds the lock' ($null -ne $uerr
 Check 'Update-Cfg wrote nothing without the lock' ((Get-Content $Cfg -Raw) -eq $beforeCfg)
 $null = Wait-Job $hold2 -Timeout 20000
 Remove-Job $hold2 -Force -ErrorAction SilentlyContinue
+
+Write-Host 'UTF-8 Workshop responses'
+& {
+  . "$PSScriptRoot\workshop-api.ps1"
+  $name = ([string][char]0x65E5) + [char]0x672C + ' ' + [char]0x00D7
+  function Invoke-WebRequest {
+    $json = '{"name":"' + $name + '"}'
+    [pscustomobject]@{ RawContentStream = [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($json)) }
+  }
+  $reply = Invoke-WorkshopApi -Uri 'https://example.invalid'
+  Check 'server names preserve their UTF-8 characters' ($reply.name -ceq $name)
+}
 
 Write-Host 'item 8: the dependency crawl is bounded'
 Reset-State
@@ -436,7 +457,7 @@ function Get-HaveIds { @{} }
 function Get-DS { param([switch]$Fresh) ,@() }
 function Stop-DS { 'stopped' }
 function Start-DS { 'started' }
-function Invoke-RestMethod { param($Uri, $Headers, $Method, $Body, $ContentType, $TimeoutSec)
+function Invoke-WorkshopApi { param($Uri, $Headers, $Method, $Body, $ContentType, $TimeoutSec)
   if ("$Uri" -match '/mods/([0-9A-Fa-f]{16})$') { return [pscustomobject]@{ mod = [pscustomobject]@{ id = $Matches[1].ToUpper(); name = 'Mod'; size = 10 } } }
   return [pscustomobject]@{ data = @() } }
 function Get-ModDeps { param($Id) @() }
@@ -507,7 +528,6 @@ Write-Host 'download progress uses the current batch'
 Reset-State
 . "$PSScriptRoot\dashboard-core.ps1"
 function Get-DS { param([switch]$Fresh) ,@() }
-function Get-GlobalSpeed { @{ b = 0; age = 0 } }
 function Get-Log { }
 function Get-ClientIds { @() }
 function Get-AddonsBytes { 9999 }
@@ -516,12 +536,26 @@ function Get-DirMap { $script:fixtureDirs }
 function Test-AddonComplete { param($Directory, $Modified) $script:fixtureComplete }
 $script:fixtureComplete = $false
 $script:fixtureDirs = @{ 'ABCDEF0123456789' = @{ bytes = 5; mtime = Get-Date; path = 'fixture' } }
-$script:rateSamples = @()
-$script:activeMax = @{}
 $script:sizeMap = @{ 'ABCDEF0123456789' = @{ bytes = 10 }; '0000000000000020' = @{ bytes = 9999 } }
 Update-Cfg { param($cfg) $cfg.game.mods = @([pscustomobject]@{ modId = 'ABCDEF0123456789'; name = 'Active' }) } $Cfg | Out-Null
 $status = Get-Status
-Check 'progress excludes the historical library' ($status.totalB -eq 10 -and $status.doneB -eq 5 -and $status.pct -eq 50)
+Check 'progress ignores allocated files and the historical library' ($status.totalB -eq 10 -and $status.doneB -eq 0 -and $status.pct -eq 0)
+$transferLog = Join-Path $tmp 'transfer.log'
+$transferNow = Get-Date
+$stamp = $transferNow.ToString('HH:mm:ss.fff')
+@("$stamp  BACKEND      : Fixture: [======>_____________] 79% 8680/11000 MB",
+  "$stamp  BACKEND      : Download speed 7876.49 KB/s") | Set-Content -LiteralPath $transferLog
+$report = Get-TransferSnapshot (Get-Item -LiteralPath $transferLog) $transferNow $transferNow.AddMinutes(-1)
+Check 'reported bytes and speed come from the engine log' ($report.mods.Fixture.b -eq 8680MB -and $report.mods.Fixture.expB -eq 11000MB -and $report.speedB -eq [Math]::Round(7876.49 * 1KB))
+$staleReport = Get-TransferSnapshot (Get-Item -LiteralPath $transferLog) $transferNow.AddSeconds(30) $transferNow.AddMinutes(-1)
+Check 'old speed is withheld rather than shown as current' ($staleReport.speedB -eq 0)
+& {
+  function Get-DS { ,@([pscustomobject]@{ StartTime = $transferNow.AddMinutes(-1) }) }
+  function Get-Log { Get-Item -LiteralPath $transferLog }
+  Update-Cfg { param($cfg) $cfg.game.mods[0].name = 'Fixture' } $Cfg | Out-Null
+  $large = Get-Status
+  Check 'status supports downloads above the 32-bit byte limit' ($large.doneB -eq 8680MB -and $large.totalB -eq 11000MB -and $large.pctF -gt 78)
+}
 $script:fixtureComplete = $true
 $status = Get-Status
 Check 'progress resets when the last queued mod completes' ($status.totalB -eq 0 -and $status.doneB -eq 0 -and $status.pct -eq 0 -and !$status.queue.Count)
@@ -530,6 +564,41 @@ $null = Invoke-ClearQueue
 $start = Invoke-StartQueue
 Check 'Start leaves a cleared queue empty even when the partial still exists' ($start -match 'queue is empty' -and !@((Get-Cfg).game.mods).Count)
 . "$PSScriptRoot\state.ps1"
+
+Write-Host 'cancel removes tracked partials and preserves installed packages'
+& {
+  $cancelRoot = Join-Path $tmp 'cancel-fixture'
+  $Data = Join-Path $cancelRoot 'data'
+  $DsProfile = Join-Path $cancelRoot 'serverprofile'
+  $Addons = Join-Path $DsProfile 'addons'
+  $Cfg = Join-Path $Data 'batch1-serverconfig.json'
+  New-Item -ItemType Directory -Path $Data,$Addons -Force | Out-Null
+  $partial = Join-Path $Addons 'Incomplete_AAAABBBBCCCCDDDD'
+  $installed = Join-Path $Addons 'Installed_EEEEFFFF00001111'
+  $external = Join-Path $Addons 'Untracked_1111222233334444'
+  $patch = Join-Path $Addons 'Updating_2222333344445555'
+  $patchTemp = Join-Path $patch 'temp'
+  New-Item -ItemType Directory -Path $partial,$installed,$external,$patchTemp -Force | Out-Null
+  'half' | Set-Content -LiteralPath (Join-Path $partial 'partial.pak')
+  'local' | Set-Content -LiteralPath (Join-Path $external 'partial.pak')
+  'chunk' | Set-Content -LiteralPath (Join-Path $patchTemp 'chunk.pak')
+  [IO.File]::WriteAllText((Join-Path $installed 'data.pak'), 'data')
+  [IO.File]::WriteAllText((Join-Path $patch 'older.pak'), 'keep')
+  '{"meta":{"selectedRev":0,"versions":[{"package":{"files":[{"name":"data.pak","size":4}]}}]}}' |
+    Set-Content -LiteralPath (Join-Path $installed 'meta')
+  '{"game":{"name":"Cancel","scenarioId":"fixture","mods":[{"modId":"2222333344445555","name":"Updating","version":"2.0"}]}}' |
+    Set-Content -LiteralPath $Cfg
+  $sizeMap = @{ AAAABBBBCCCCDDDD = @{}; EEEEFFFF00001111 = @{} }
+  function Stop-DS { 'paused' }
+  function Get-Process {}
+  function Get-EngineProcesses {}
+  $result = Invoke-CancelDownloads
+  Check 'cancel clears the queue and deletes finished transfer fragments only' (
+    $result -match 'Removed 2 partial downloads' -and !@((Get-Cfg).game.mods).Count -and
+    !(Test-Path $partial) -and !(Test-Path $patchTemp) -and
+    (Test-Path (Join-Path $patch 'older.pak')) -and (Test-Path (Join-Path $installed 'data.pak')) -and
+    (Test-Path (Join-Path $external 'partial.pak')))
+}
 
 Write-Host 'item 13: braces in a mod name do not block the preset'
 $bd = Join-Path $tmp 'preset-braces'

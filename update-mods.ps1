@@ -5,6 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\state.ps1"
+. "$PSScriptRoot\workshop-api.ps1"
 . "$PSScriptRoot\dashboard-core.ps1"
 $env:RFMM_HOME = $Root
 $env:RFMM_DATA = $Data
@@ -29,7 +30,7 @@ foreach ($id in $installed.Keys) {
   try {
     $local = Get-InstalledVersion $installed[$id]
     if (!$local) { throw 'unreadable installed version' }
-    $remote = (Invoke-RestMethod "$ApiBase/mods/$id" -UserAgent $UserAgent -TimeoutSec 12).mod
+    $remote = (Invoke-WorkshopApi "$ApiBase/mods/$id" -UserAgent $UserAgent -TimeoutSec 12).mod
     if ($remote.id -ne $id -or !$remote.version) { throw 'missing Workshop version' }
     if ([version]$remote.version -gt [version]$local) {
       $updates[$id] = [pscustomobject]@{ modId=$id; name=$remote.name; version=$remote.version; size=[double]$remote.size }
@@ -40,7 +41,7 @@ foreach ($id in $installed.Keys) {
   if ($checked -lt $installed.Count) { Start-Sleep -Milliseconds 1050 }
 }
 $result = "Checked $checked installed mods. $($updates.Count) newer versions."
-if ($failed.Count) { $result += " Could not check $($failed.Count): $($failed -join ', ')." }
+if ($failed.Count) { $result += " Could not check $($failed.Count) mods." }
 if ($updates.Count) {
   $lock = Lock-Engine
   if (!$lock) { throw 'Engine busy. Retry the update check.' }
@@ -59,6 +60,7 @@ if ($updates.Count) {
     $engine = Get-DS -Fresh
     if ($null -eq $engine) { throw 'Cannot inspect the download engine.' }
     if (@($engine).Count) { Stop-DS | Out-Null }
+    New-Item -ItemType File -Force (Join-Path $Data 'paused.flag') | Out-Null
     Save-Json @{ updates = @($updates.Values) } (Join-Path $Data 'mod-update-batch.json')
     Update-Cfg {
       param($cfg)

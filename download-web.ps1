@@ -19,6 +19,7 @@ $Url     = 'http://localhost:8123/'
 # shared helpers (Save-Json, Read-Json, Test-AddonComplete): one copy for every
 # script, so the completion rule cannot drift between the app, the trim and the test
 . "$PSScriptRoot\state.ps1"
+. "$PSScriptRoot\workshop-api.ps1"
 
 . "$PSScriptRoot\dashboard-core.ps1"
 $Exe = Get-EngineExecutable $Root
@@ -101,7 +102,7 @@ if ($Check) {
 # per-run token: the 13 state-changing endpoints only answer requests that carry
 # it, so another website open in the browser cannot drive this server (CSRF)
 $token = [guid]::NewGuid().ToString('N')
-$mutating = '/update-mods','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/remove-queued-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
+$mutating = '/update-mods','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/cancel-downloads','/remove-queued-mod','/requeue-partial-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
 $script:modUpdateJob = $null
 
 function Start-DownloadHelpers {
@@ -118,6 +119,13 @@ function Start-DownloadHelpers {
     Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}\sync-addons.ps1" -Loop' -f $PSScriptRoot)
   }
   Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}\watchdog.ps1"' -f $PSScriptRoot)
+}
+function Stop-ModUpdateCheck {
+  if ($modUpdateJob) {
+    Stop-Job $modUpdateJob -ErrorAction SilentlyContinue
+    Remove-Job $modUpdateJob -Force
+    $script:modUpdateJob = $null
+  }
 }
 function Invoke-DashboardRequest($ctx) {
   try {
@@ -215,12 +223,19 @@ function Invoke-DashboardRequest($ctx) {
       }
       '/start'  { $msg = Invoke-StartQueue;  Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/pause'  { $msg = Invoke-PauseQueue; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
-      '/verify' { $msg = Invoke-Verify;   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan }
+      '/verify' { Write-Host (Invoke-Verify); $msg = 'Mods checked.' }
       '/queue-server' { $msg = Invoke-QueueServer $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/resume-all'   { $msg = Invoke-ResumeAll;   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/clear-queue'  { $msg = Invoke-ClearQueue;  Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
       '/remove-queued-mod' { $msg = Invoke-RemoveQueuedMod $ctx.Request.QueryString['id'] }
-      '/make-preset'  { $msg = Invoke-MakePreset $ctx.Request.QueryString['id'];  Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan }
+      '/requeue-partial-mod' { $msg = Invoke-RequeuePartialMod $ctx.Request.QueryString['id'] }
+      '/make-preset' {
+        $id = $ctx.Request.QueryString['id']
+        if ($ctx.Request.QueryString['background'] -eq '1') {
+          $r = Start-PresetJob $id
+          $msg = $r.msg; $jobId = $r.job
+        } else { $msg = Invoke-MakePreset $id }
+      }
       '/search-mods' {
         $r = Search-Mods ([string]$ctx.Request.QueryString['q']) ([int]$ctx.Request.QueryString['page'])
         $mods = @($r.mods | ForEach-Object {
@@ -233,14 +248,13 @@ function Invoke-DashboardRequest($ctx) {
       }
       '/add-mod' { $msg = Invoke-AddMod $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/add-server'   { $msg = Invoke-AddServer $ctx.Request.QueryString['id'];   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
+      '/cancel-downloads' {
+        $msg = Invoke-CancelDownloads
+        Stop-ModUpdateCheck
+      }
       '/cancel-mod-updates' {
         $msg = Invoke-CancelModUpdates
-        if ($modUpdateJob) {
-          # The queue change is complete and the worker's revision is invalidated.
-          Stop-Job $modUpdateJob -ErrorAction SilentlyContinue
-          Remove-Job $modUpdateJob -Force
-          $script:modUpdateJob = $null
-        }
+        Stop-ModUpdateCheck
       }
       '/update-mods' {
         $scope = [string]$ctx.Request.QueryString['scope']
@@ -281,7 +295,8 @@ function Invoke-DashboardRequest($ctx) {
       }
       '/job' {
         # collects a background refresh: applies the result once, then reports it
-        $r = Complete-RefreshJob ([string]$ctx.Request.QueryString['id'])
+        $id = [string]$ctx.Request.QueryString['id']
+        $r = if ($id.StartsWith('preset-')) { Complete-PresetJob $id } else { Complete-RefreshJob $id }
         $b = [Text.Encoding]::UTF8.GetBytes(($r | ConvertTo-Json -Compress))
         $ctx.Response.ContentType = 'application/json'
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
