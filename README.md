@@ -130,6 +130,10 @@ continues. **Clear queue** empties the queue and never deletes files.
 Press **Make preset** on a server row. The tool writes a launcher preset with
 that server's mods that you have installed, and verifies the result.
 
+Each server row also has **Refresh** (pull that server's modlist again and queue
+what is new) and **Remove** (drop the server from the list; its mods stay on disk
+and in the queue - nothing is deleted).
+
 Press it again for the same server after the server changes its modlist: the same
 preset is updated in place with the new list instead of failing as a duplicate.
 

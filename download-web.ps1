@@ -299,7 +299,12 @@ function Get-Status {
     }
   }
   $active = @($dirs.GetEnumerator() |
-    Where-Object { $runningNow -and -not $completed.ContainsKey($_.Key) -and $_.Value.bytes -gt 0 -and $_.Value.mtime -gt $now.AddMinutes(-5) } |
+    Where-Object { $runningNow -and $_.Value.bytes -gt 0 -and $_.Value.mtime -gt $now.AddMinutes(-5) -and
+                   -not $completed.ContainsKey($_.Key) -and
+                   # already complete = finished, even if its files were touched a
+                   # moment ago: the 2-minute quiet rule kept 16 finished mods in
+                   # "Downloading now" and it read as if nothing was moving
+                   -not (Test-AddonComplete $_.Value.path $_.Value.mtime) } |
     Sort-Object { $_.Value.mtime } -Descending) | ForEach-Object {
     $sm = $sizeMap[$_.Key]; $exp = if ($sm) { [double]$sm.bytes } else { 0 }
     $b = [double]$_.Value.bytes
@@ -639,8 +644,18 @@ function Invoke-AddServer([string]$Id) {
   if ($name.Length -gt 60) { $name = $name.Substring(0, 60).Trim() }
   $have = Get-HaveIds
   foreach ($m in (Get-Cfg).game.mods) { $have[$m.modId] = $true }
-  $new = @($s.mods | Where-Object { -not $have.ContainsKey($_.id) })
-  if (-not $new) { return "nothing to add - all $(@($s.mods).Count) mods of '$name' are on disk or queued" }
+  $want = @($s.mods | ForEach-Object {
+    [PSCustomObject]@{ id = $_.id; name = $_.name; size = [double]$_.size; sizeKnown = [bool]$_.sizeKnown }
+  })
+  $new = @($want | Where-Object { -not $have.ContainsKey($_.id) })
+
+  # list the server first: re-adding a removed server must work even when every
+  # mod is already on disk, and an existing entry is replaced with the fresh list
+  $script:serverList = @($serverList | Where-Object { $_.id -ne $Id }) + @([PSCustomObject]@{
+    id = $Id; name = $s.name; mods = @($want | ForEach-Object {
+      [PSCustomObject]@{ id = $_.id; name = $_.name; e = [double]$_.size } }) })
+  Save-Json @{ servers = $serverList } $ServersPath 6
+  if (-not $new) { return "'$name' is in the list - all $(@($want).Count) mods are on disk or queued, nothing to download" }
 
   $j = Get-Cfg
   $j.game.mods = @($j.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_.id; name = $_.name } })
@@ -669,94 +684,140 @@ function Invoke-AddServer([string]$Id) {
   "added '$name': $($new.Count) new mods (~$gb GB) queued at the end, $(@($s.mods).Count - $new.Count) already on disk ($r)"
 }
 
+function Resolve-Sizes($ids, $sz) {
+  # name + size for mods never seen before, 400 per call (free tier limit)
+  $ids = @($ids)
+  for ($i = 0; $i -lt $ids.Count; $i += 400) {
+    $chunk = @($ids[$i..([Math]::Min($i + 399, $ids.Count - 1))])
+    try {
+      $body = @{ mode = 'replace'; desired = @($chunk | ForEach-Object { @{ id = $_ } }) } | ConvertTo-Json -Depth 5
+      $plan = Invoke-RestMethod -Uri "$ApiBase/tools/storage-plan" -Method Post -Body $body -Headers $ApiH -ContentType 'application/json' -TimeoutSec 120
+      foreach ($x in $plan.data.downloads) {
+        $sizeMap[$x.id] = @{ name = $x.name; bytes = [double]$x.bytes; exact = [bool]$x.exact }
+        $sz.mods | Add-Member -NotePropertyName $x.id -NotePropertyValue ([PSCustomObject]@{ name = $x.name; bytes = [double]$x.bytes; exact = [bool]$x.exact }) -Force
+      }
+    } catch { }
+  }
+}
+
+function Sync-Server($sv, $sz) {
+  # fresh modlist for ONE server, sizes for new mods, and the "changed" marker.
+  # $false = the list could not be read (offline, empty, or password protected).
+  $d = Invoke-RestMethod -Uri "$ApiBase/servers/$($sv.id)" -Headers $ApiH -TimeoutSec 30
+  if (-not $d.server -or -not @($d.server.mods).Count) { return $false }
+  $oldIds = @($sv.mods | ForEach-Object { $_.id })
+  $need = [Collections.Generic.List[string]]::new()
+  $sv.mods = @($d.server.mods | ForEach-Object {
+    $m = $_
+    if (-not $sizeMap.ContainsKey($m.id)) {
+      if ($m.sizeKnown -and $m.size) {
+        $sizeMap[$m.id] = @{ name = $m.name; bytes = [double]$m.size; exact = $true }
+        $sz.mods | Add-Member -NotePropertyName $m.id -NotePropertyValue ([PSCustomObject]@{ name = $m.name; bytes = [double]$m.size; exact = $true }) -Force
+      } else { $need.Add($m.id) }
+    }
+    $e = if ($sizeMap[$m.id]) { [double]$sizeMap[$m.id].bytes } else { [double]0 }
+    [PSCustomObject]@{ id = $m.id; name = $m.name; e = $e }
+  })
+  if ($need.Count) {
+    Resolve-Sizes $need $sz
+    foreach ($m in $sv.mods) { if (-not $m.e -and $sizeMap.ContainsKey($m.id)) { $m.e = [double]$sizeMap[$m.id].bytes } }
+  }
+  # did the server change its modlist since the last refresh? The page shows it,
+  # and Make preset then rebuilds the preset from the new list
+  $newIds = @($sv.mods | ForEach-Object { $_.id })
+  $addN = @($newIds | Where-Object { $oldIds -notcontains $_ }).Count
+  $remN = @($oldIds | Where-Object { $newIds -notcontains $_ }).Count
+  if ($oldIds.Count -and ($addN + $remN)) {
+    $sv | Add-Member -NotePropertyName changed -NotePropertyValue ([PSCustomObject]@{ added = $addN; removed = $remN; at = (Get-Date -f 'yyyy-MM-dd HH:mm') }) -Force
+  } elseif ($oldIds.Count) {
+    $sv | Add-Member -NotePropertyName changed -NotePropertyValue $null -Force
+  }
+  $true
+}
+
+function Queue-Missing($want) {
+  # $want: ordered id -> name. Append only: installed and already-queued mods are
+  # never downloaded twice. Returns @{ count; note }.
+  $have = Get-HaveIds
+  $j = Get-Cfg
+  $queued = @{}
+  foreach ($m in $j.game.mods) { $queued[$m.modId] = $true }
+  $new = @($want.Keys | Where-Object { -not $have.ContainsKey($_) -and -not $queued.ContainsKey($_) })
+  $note = ''
+  if ($new.Count) {
+    # the DS rewrites the config on exit, so an append made while it runs is
+    # discarded: stop it first, like every other handler that writes the queue.
+    # -Fresh: the cache can say "nothing running" for 2 s after a watchdog start.
+    $engine = Get-DS -Fresh
+    if ($null -eq $engine) { throw 'cannot read the process list right now - the new mods were not queued, try again in a moment' }
+    $restart = @($engine).Count -gt 0
+    if ($restart) { Stop-DS | Out-Null }
+    $j = Get-Cfg   # after the stop: the engine's own copy is now on disk
+    $j.game.mods = @($j.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$want[$_] } })
+    Save-Json $j $Cfg
+    if ($restart) { $note = "; downloader restarted for the new mods ($(Start-DS))" }
+  }
+  @{ count = $new.Count; note = $note }
+}
+
 function Invoke-RefreshServers {
   # global refresh: re-read local state, pull a fresh modlist for every tracked
   # server, resolve sizes for mods we have never seen, and queue the new ones
-  # (appended - installed and already-queued mods are never downloaded twice)
   $script:bCache = @{}; $script:bCacheAt = @{}
   $script:dCache = @{}; $script:dCacheAt = @{}
   $script:dirCacheAt = (Get-Date).AddMinutes(-10)   # force a disk rescan
   $script:clCacheAt = (Get-Date).AddMinutes(-10)
   $sz = Read-Json $Sizes $j
   foreach ($p in $sz.mods.PSObject.Properties) { $sizeMap[$p.Name] = $p.Value }
-  $ok = 0; $fail = 0
-  $changed = @()
-  $needSize = [ordered]@{}
+  $ok = 0; $fail = 0; $changed = @()
   foreach ($sv in $serverList) {
-    try {
-      $d = Invoke-RestMethod -Uri "$ApiBase/servers/$($sv.id)" -Headers $ApiH -TimeoutSec 30
-      if (-not $d.server -or -not @($d.server.mods).Count) { $fail++; continue }
-      $oldIds = @($sv.mods | ForEach-Object { $_.id })
-      $sv.mods = @($d.server.mods | ForEach-Object {
-        $m = $_
-        if (-not $sizeMap.ContainsKey($m.id)) {
-          if ($m.sizeKnown -and $m.size) {
-            $sizeMap[$m.id] = @{ name = $m.name; bytes = [double]$m.size; exact = $true }
-            $sz.mods | Add-Member -NotePropertyName $m.id -NotePropertyValue ([PSCustomObject]@{ name = $m.name; bytes = [double]$m.size; exact = $true }) -Force
-          } else { $needSize[$m.id] = $m.name }
-        }
-        $e = if ($sizeMap[$m.id]) { [double]$sizeMap[$m.id].bytes } else { [double]0 }
-        [PSCustomObject]@{ id = $m.id; name = $m.name; e = $e }
-      })
-      # did the server change its modlist since the last refresh? The page shows it,
-      # and Make preset then rebuilds the preset from the new list
-      $newIds = @($sv.mods | ForEach-Object { $_.id })
-      $addN = @($newIds | Where-Object { $oldIds -notcontains $_ }).Count
-      $remN = @($oldIds | Where-Object { $newIds -notcontains $_ }).Count
-      if ($oldIds.Count -and ($addN + $remN)) {
-        $changed += "$($sv.name): +$addN -$remN"
-        $sv | Add-Member -NotePropertyName changed -NotePropertyValue ([PSCustomObject]@{ added = $addN; removed = $remN; at = (Get-Date -f 'yyyy-MM-dd HH:mm') }) -Force
-      } elseif ($oldIds.Count) {
-        $sv | Add-Member -NotePropertyName changed -NotePropertyValue $null -Force
-      }
-      $ok++
-    } catch { $fail++ }
+    try { if (Sync-Server $sv $sz) { $ok++ } else { $fail++ } } catch { $fail++ }
     # pacing for the free tier (60 requests/minute); a short list needs no pause
     if (@($serverList).Count -gt 20) { Start-Sleep -Milliseconds 300 }
-  }
-  if ($needSize.Count) {
-    $ids = @($needSize.Keys)
-    for ($i = 0; $i -lt $ids.Count; $i += 400) {
-      $chunk = @($ids[$i..([Math]::Min($i + 399, $ids.Count - 1))])
-      try {
-        $body = @{ mode = 'replace'; desired = @($chunk | ForEach-Object { @{ id = $_ } }) } | ConvertTo-Json -Depth 5
-        $plan = Invoke-RestMethod -Uri "$ApiBase/tools/storage-plan" -Method Post -Body $body -Headers $ApiH -ContentType 'application/json' -TimeoutSec 120
-        foreach ($x in $plan.data.downloads) {
-          $sizeMap[$x.id] = @{ name = $x.name; bytes = [double]$x.bytes; exact = [bool]$x.exact }
-          $sz.mods | Add-Member -NotePropertyName $x.id -NotePropertyValue ([PSCustomObject]@{ name = $x.name; bytes = [double]$x.bytes; exact = [bool]$x.exact }) -Force
-        }
-      } catch { }
-    }
+    $c = $sv.PSObject.Properties['changed']
+    if ($c -and $c.Value) { $changed += "$($sv.name): +$($c.Value.added) -$($c.Value.removed)" }
   }
   $script:TotalBytes = ($sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
   $sz.totalBytes = [double]$script:TotalBytes
   Save-Json $sz $Sizes 4
   Save-Json @{ servers = $serverList } $ServersPath 6
 
-  # queue what the servers run today and we do not have yet (append only)
-  $have = Get-HaveIds
-  $j = Get-Cfg
-  $queued = @{}
-  foreach ($m in $j.game.mods) { $queued[$m.modId] = $true }
   $want = [ordered]@{}
   foreach ($sv in $serverList) { foreach ($m in $sv.mods) { $want[$m.id] = $m.name } }
-  $new = @($want.Keys | Where-Object { -not $have.ContainsKey($_) -and -not $queued.ContainsKey($_) })
-  if ($new.Count) {
-    # the DS rewrites the config on exit, so an append made while it runs is
-    # discarded: stop it first, like every other handler that writes the queue.
-    # -Fresh: the cache can say "nothing running" for 2 s after a watchdog start.
-    $engine = Get-DS -Fresh
-    if ($null -eq $engine) { throw 'cannot read the process list right now - the new mods were not queued, run Refresh again in a moment' }
-    $restart = @($engine).Count -gt 0
-    if ($restart) { Stop-DS | Out-Null }
-    $j = Get-Cfg   # after the stop: the engine's own copy is now on disk
-    $j.game.mods = @($j.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$want[$_] } })
-    Save-Json $j $Cfg
-    if ($restart) { $r = Start-DS; "downloader restarted for the new mods ($r)" }
-  }
+  $q = Queue-Missing $want
+  $have = Get-HaveIds
   $onDisk = 0
   foreach ($sv in $serverList) { $onDisk += @($sv.mods | Where-Object { $have.ContainsKey($_.id) }).Count }
-  "refreshed $ok/$(@($serverList).Count) servers$(if ($fail) { " ($fail unreachable)" }): $($sizeMap.Count) mods tracked, $onDisk server mod slots installed, $($new.Count) new mods queued$(if (@($changed).Count) { " - modlist changed: $($changed -join '; ')" })"
+  "refreshed $ok/$(@($serverList).Count) servers$(if ($fail) { " ($fail unreachable)" }): $($sizeMap.Count) mods tracked, $onDisk server mod slots installed, $($q.count) new mods queued$(if (@($changed).Count) { " - modlist changed: $($changed -join '; ')" })$($q.note)"
+}
+
+function Invoke-RefreshServer([string]$Id) {
+  # one server only - same rules as Refresh all, so the two can never disagree
+  $sv = @($serverList | Where-Object { $_.id -eq $Id })[0]
+  if (-not $sv) { throw 'server is not in the list' }
+  $sz = Read-Json $Sizes $j
+  foreach ($p in $sz.mods.PSObject.Properties) { $sizeMap[$p.Name] = $p.Value }
+  if (-not (Sync-Server $sv $sz)) { throw "could not read the modlist of '$($sv.name)' - it may be offline or password protected" }
+  $script:TotalBytes = ($sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
+  $sz.totalBytes = [double]$script:TotalBytes
+  Save-Json $sz $Sizes 4
+  Save-Json @{ servers = $serverList } $ServersPath 6
+  $want = [ordered]@{}
+  foreach ($m in $sv.mods) { $want[$m.id] = $m.name }
+  $q = Queue-Missing $want
+  $chg = ''
+  $c = $sv.PSObject.Properties['changed']
+  if ($c -and $c.Value) { $chg = " - modlist changed: +$($c.Value.added) -$($c.Value.removed), Make preset rebuilds it" }
+  "refreshed '$($sv.name)': $(@($sv.mods).Count) mods, $($q.count) new mods queued$chg$($q.note)"
+}
+
+function Invoke-RemoveServer([string]$Id) {
+  # drop the server from the list only: its mods stay on disk and in the queue
+  $sv = @($serverList | Where-Object { $_.id -eq $Id })[0]
+  if (-not $sv) { throw 'server is not in the list' }
+  $script:serverList = @($serverList | Where-Object { $_.id -ne $Id })
+  Save-Json @{ servers = $serverList } $ServersPath 6
+  "removed '$($sv.name)' from the list - its mods stay on disk and in the queue, nothing was deleted"
 }
 
 function Invoke-ClearQueue {
@@ -791,7 +852,7 @@ function Invoke-ResumeAll {
 # per-run token: the six state-changing endpoints only answer requests that carry
 # it, so another website open in the browser cannot drive this server (CSRF)
 $token = [guid]::NewGuid().ToString('N')
-$mutating = '/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/make-preset','/add-server','/refresh-servers','/add-mod'
+$mutating = '/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/make-preset','/add-server','/refresh-servers','/refresh-server','/remove-server','/add-mod'
 
 $html = @'
 <!doctype html><html><head><meta charset="utf-8"><title>Reforger Mods Download</title>
@@ -928,7 +989,9 @@ function renderSrv(D,A,B){
   return '<details><summary>'+esc(v.name)+' <span class="dim">'+done+' / '+v.mods.length+' downloaded</span>'+
   (v.changed?('<span class="warn" style="font-size:12px"> modlist changed +'+v.changed.added+' -'+v.changed.removed+' - Make preset updates it</span>'):'')+
    '<button class="mini" onclick="queueSrv(\''+escAttr(v.id)+'\',event)">Queue first</button>'+
-   '<button class="mini amber" onclick="presetSrv(\''+escAttr(v.id)+'\',event)">Make preset</button></summary><ul>'+
+   '<button class="mini amber" onclick="presetSrv(\''+escAttr(v.id)+'\',event)">Make preset</button>'+
+  '<button class="mini grey" onclick="refreshOne(\''+escAttr(v.id)+'\',event)" title="pull this server\'s modlist again and queue what is new">Refresh</button>'+
+  '<button class="mini grey" onclick="removeSrv(\''+escAttr(v.id)+'\',event)" title="remove the server from this list - mods stay on disk">Remove</button></summary><ul>'+
    v.mods.map(m=>{
     const t=D[m.id]?'<span class="ok">&#10003;</span>':A[m.id]?'<span class="warn">&#10227;</span>':'<span class="dim">&#8226;</span>';
     const s2=B[m.id]!=null?sz(B[m.id]):(m.e>0?sz(m.e):'');
@@ -1100,6 +1163,23 @@ async function refreshSrv(ev){
  b.disabled=false; b.textContent='Refresh all';
  loadSrv();
 }
+async function refreshOne(id,ev){
+ ev.stopPropagation();
+ const b=ev.target; b.disabled=true; b.textContent='refreshing...';
+ say('pulling this server\'s modlist again...');
+ await post('refresh-server?id='+id);
+ b.disabled=false; b.textContent='Refresh';
+ SRV=null; SRVAt=0; await loadSrv();
+ if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+}
+async function removeSrv(id,ev){
+ ev.stopPropagation();
+ if(!confirm('Remove this server from the list? Its mods stay on disk and in the queue.'))return;
+ const b=ev.target; b.disabled=true; b.textContent='removing...';
+ await post('remove-server?id='+id);
+ SRV=null; SRVAt=0; await loadSrv();
+ if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+}
 async function act(w){
  const b=event?event.target:null; if(b){b.disabled=true;b.textContent='...';}
  say(w==='start'?'starting / resuming the download...':w==='pause'?'pausing...':w==='clear-queue'?'clearing the queue...':w==='resume-all'?'queuing every missing mod of your servers...':'checking installed mods against the Workshop...');
@@ -1231,6 +1311,8 @@ while ($l.IsListening) {
       '/add-mod' { $msg = Invoke-AddMod $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/add-server'   { $msg = Invoke-AddServer $ctx.Request.QueryString['id'];   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/refresh-servers' { $msg = Invoke-RefreshServers; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan }
+      '/refresh-server'  { $msg = Invoke-RefreshServer $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan }
+      '/remove-server'   { $msg = Invoke-RemoveServer  $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
       default   {
         $ctx.Response.StatusCode = 404
         $b = [Text.Encoding]::UTF8.GetBytes('{"error":"no such route"}')
