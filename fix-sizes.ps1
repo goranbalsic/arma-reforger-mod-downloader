@@ -1,7 +1,8 @@
 # Fill in non-exact / zero sizes in batch1-sizes.json via /v2/mods/{id} (60 req/min).
 $ErrorActionPreference = 'Stop'
 $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
-$h = @{ 'User-Agent' = 'arma-reforger-ai-toolkit/1.0' }
+$ver = ((Get-Content (Join-Path $PSScriptRoot 'version.txt') -Raw -ErrorAction SilentlyContinue) -replace '\s', '')
+$h = @{ 'User-Agent' = "arma-reforger-mod-downloader/$(if ($ver) { $ver } else { 'dev' })" }
 $p = "$Data\batch1-sizes.json"
 # the dashboard writes this file too, and last writer wins: refuse while it runs
 if (Get-NetTCPConnection -LocalPort 8123 -State Listen -ErrorAction SilentlyContinue) {

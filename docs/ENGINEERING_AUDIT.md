@@ -1,6 +1,6 @@
 # Engineering audit
 
-Scope: every script in this repository at `main` (commit `869ab2d` plus the changes in
+Scope: every script in this repository at `main` (1.0.15),
 this release), the dashboard page, state files, tests and release flow.
 Runtime assumed: Windows 10/11, Windows PowerShell 5.1, one dashboard process, one
 watchdog process, ~300 addons / ~30 GB on disk.
@@ -91,7 +91,7 @@ Each finding lists the real root cause and the test that now proves the fix. Sev
   watchdog killed a stalled engine without the lock.
 - Impact: a start and a stop/delete could interleave — two engines on one profile, or
   files removed under a live engine.
-- Fix: every state-changing path takes `ReforgerEngineCtl`, `Stop-DS` aborts without it,
+- Fix: every write to the engine config takes `ReforgerEngineCtl` (via Update-Cfg), `Stop-DS` aborts without it,
   the trim holds it across deletion **and** the config write, and the watchdog takes it
   around the kill. The lock is always released in `finally`.
 - Test: exercised by `test-torture.ps1` (5 starts in a row, pause/start, refresh) and the
@@ -146,7 +146,7 @@ Each finding lists the real root cause and the test that now proves the fix. Sev
 | P2 | There was no local audit tool, and nothing distinguished "check could not run" from "check passed". | Fixed: `tools/audit.ps1` reports PASS / FAIL / INCOMPLETE; a mandatory check that cannot run makes the audit INCOMPLETE (exit 2), never PASS. |
 | P2 | Refreshing servers ran inside the HTTP request: one slow API call froze the page and other requests. | Fixed: one bounded background job per refresh; network only in the job, apply on the request thread. |
 | P3 | `Lock-Engine` always waited 20 s, so contention could not be tested. | Fixed: timeout parameter (default unchanged) + contention test. |
-| — | Mutex enforcement, preset validation and meta validation (reported again for `mod-manager/…`, a path that does not exist in this repository) were already fixed in 1.0.12/1.0.13; re-verified with tests rather than assumed. | Verified |
+| - | Mutex enforcement, preset validation and meta validation (reported again for a directory layout this repository does not use) were already fixed in 1.0.12/1.0.13; re-verified with tests rather than assumed. | Verified |
 
 The audit now distinguishes a skipped check from a passing one: PSScriptAnalyzer had been
 installed only for PowerShell 7, and the 5.1 audit reported INCOMPLETE until it was made

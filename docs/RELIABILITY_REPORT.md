@@ -2,7 +2,7 @@
 
 ## 1. Initial repository assessment
 
-`goranbalsic/arma-reforger-mod-downloader`, branch `main`, clean tree at `869ab2d`
+`goranbalsic/arma-reforger-mod-downloader`, branch `main`, clean tree at 1.0.14
 before this pass. Windows PowerShell 5.1 target. One dashboard process, one watchdog
 process, ~300 addons / ~30 GB. No CI, three test scripts, no `docs/`.
 
@@ -140,7 +140,7 @@ Same machine, 299 addons:
 
 ## Round 2 (1.0.14)
 
-The second review pointed at `mod-manager/…` and `tools/audit.ps1`; this repository has
+The second review pointed at a directory layout this repository does not use and at `tools/audit.ps1`; it has
 neither directory (everything is at the root, there is no `tools/` in 1.0.13). Items 1-3
 were already fixed in 1.0.12/1.0.13 and were re-verified with tests, not assumed:
 
@@ -176,8 +176,10 @@ CI has still not run on GitHub, logs still have no rotation.
 
 ## 16. Score
 
-**9.0 / 10.** Data-integrity paths are tested and fail safely; the completion rule is
+**8.5 / 10.** Data-integrity paths are tested and fail safely; the completion rule is
 single-sourced; updates verify content; slow network work no longer blocks the UI; there
-is a real audit gate that refuses to call a skipped check a pass. Not higher because
-releases are unsigned, the audit has not run on GitHub Actions, and logging has no
-rotation or structured format.
+is a real audit gate that refuses to call a skipped check a pass. Lowered from 9.0 after
+this round: the handler tests found a real defect the earlier review missed (Add-Member
+fails for an all-digit mod id), some handlers still read the config outside the lock (the
+write is locked), releases are unsigned, the audit has never run on GitHub Actions, and
+logging has no rotation or structured format.

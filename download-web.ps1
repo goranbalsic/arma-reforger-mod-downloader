@@ -4,9 +4,8 @@ param([switch]$Check)
 # double-click the .cmd: serves http://localhost:8123 and opens your browser.
 #
 # Paths: everything is relative to this folder, so the project folder is portable.
-#   RFMM_HOME  where the big data lives (serverprofile\, airmar-server\, steamcmd\)
+#   RFMM_HOME  where the big data lives (serverprofile\, armar-server\, steamcmd\)
 #   RFMM_DATA  where the json state lives (data\)   [both optional; default = here]
-# On this machine they are set until migrate-here.ps1 moves the folders in here.
 $ErrorActionPreference = 'Stop'
 $Root    = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
 $Data    = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
@@ -61,7 +60,10 @@ $script:dsCache = $null; $script:dsAt = (Get-Date).AddMinutes(-1)
 $script:speedCache = @{ b = 0; age = 999 }; $script:speedCacheAt = (Get-Date).AddMinutes(-5)
 
 $ApiBase = 'https://api.reforgermods.net/v2'
-$ApiH = @{ 'User-Agent' = 'arma-reforger-ai-toolkit/1.0' }
+$ApiH# one user agent for every API call, versioned from version.txt
+$UserAgent = 'arma-reforger-mod-downloader/' + (((Get-Content (Join-Path $PSScriptRoot 'version.txt') -Raw -ErrorAction SilentlyContinue) -replace '\s', ''))
+if ($UserAgent -match '/$') { $UserAgent = 'arma-reforger-mod-downloader/dev' }
+$ApiH = @{ 'User-Agent' = $UserAgent }
 $script:bCache = @{}; $script:bCacheAt = @{}   # /browse search cache
 $script:dCache = @{}; $script:dCacheAt = @{}   # /browse-server detail cache
 
@@ -108,7 +110,7 @@ if ($Check) {
 
 
 
-# per-run token: the six state-changing endpoints only answer requests that carry
+# per-run token: the 13 state-changing endpoints only answer requests that carry
 # it, so another website open in the browser cannot drive this server (CSRF)
 $token = [guid]::NewGuid().ToString('N')
 $mutating = '/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'

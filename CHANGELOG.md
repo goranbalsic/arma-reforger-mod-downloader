@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.15
+
+- Adding a server lists it once (memory and `batch1-servers.json`), stops the engine
+  before writing the queue, and aborts when the process list cannot be read.
+- `Test-ModId` validates ids at every API boundary; invalid ids are dropped with a
+  warning and trim skips them before any filesystem call.
+- An unreadable queue is no longer read as "queue empty" by the watchdog.
+- Corrupt `skipped.json` cannot break `/status`; sizes reads use an explicit default;
+  `a..b.pak` is a legal file name again.
+- Every queue write goes through `Update-Cfg` under the engine mutex.
+- Mutating routes are POST-only (405) and every response carries `X-Frame-Options`,
+  `nosniff` and a CSP.
+- Blocking API calls time out after 10 s; the dependency walk stops at 20 s / 200 mods.
+- Dashboard functions live in `dashboard-core.ps1`; the page is `page.html` (copied by
+  the updater).
+- New handler unit tests, `Stop Mods Download.cmd` + `stop.ps1`, and an audit that
+  reports FAIL vs INCOMPLETE (with `tools\test-audit.ps1` proving it).
+- Fixed: `Add-Member` failed for an all-digit mod id, so sizes were silently dropped.
+- Docs, user agent and version references cleaned up.
 ## 1.0.14
 
 - `tools/audit.ps1`: PASS / FAIL / INCOMPLETE. A mandatory check that cannot run makes the

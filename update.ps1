@@ -17,10 +17,11 @@ $Repo = 'goranbalsic/arma-reforger-mod-downloader'
 . "$PSScriptRoot\state.ps1"
 $mine = (Get-Content (Join-Path $Root 'version.txt') -Raw -ErrorAction SilentlyContinue)
 $mine = if ($mine) { $mine.Trim() } else { 'unknown' }
+$UserAgent = "arma-reforger-mod-downloader/$mine"
 
 try {
     $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" `
-        -Headers @{ 'User-Agent' = 'arma-reforger-mod-downloader' } -TimeoutSec 20
+        -Headers @{ 'User-Agent' = $UserAgent } -TimeoutSec 20
 } catch {
     if (-not $Quiet) {
         Write-Host 'Could not reach GitHub to check for updates.' -ForegroundColor Yellow

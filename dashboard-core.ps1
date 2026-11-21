@@ -649,9 +649,9 @@ function Start-RefreshJob([string[]]$Ids) {
   $id = [guid]::NewGuid().ToString('N').Substring(0, 8)
   $out = Join-Path $Data "job-$id.json"
   $known = @($sizeMap.Keys)
-  $job = Start-Job -ArgumentList $id, $ids, $out, $ApiBase, $known -ScriptBlock {
-    param($jobId, $serverIds, $out, $base, $known)
-    $h = @{ 'User-Agent' = 'arma-reforger-ai-toolkit/1.0' }
+  $job = Start-Job -ArgumentList $id, $ids, $out, $ApiBase, $known, $UserAgent -ScriptBlock {
+    param($jobId, $serverIds, $out, $base, $known, $ua)
+    $h = @{ 'User-Agent' = $ua }
     $servers = @()
     $need = @{}
     foreach ($sid in $serverIds) {

@@ -24,7 +24,7 @@ Runs against a *running* install. Pauses and restarts the download on purpose.
 server, and restores it if the API fails).
 
 Covers: page, `/status`, `/servers`, 404, 403 without and with a wrong token, 96 parallel
-polls from 8 clients, 5 starts in a row, pause/start, verify, six mutating routes with
+polls from 8 clients, 5 starts in a row, pause/start, verify, all 13 mutating routes with
 unknown ids, and after all that: valid config, well-formed and unique queued ids, valid
 sizes and server files, no repeated mod in a server, no duplicate addon folder, junction
 intact, dashboard still answering.
@@ -45,7 +45,7 @@ is INCOMPLETE, not a failure).
 | job lifecycle | `test-torture.ps1` | refresh returns a job id, the message names it, polling reaches `done` with a message, server list intact |
 | audit statuses | 	ools\test-audit.ps1 | PASS (exit 0), INCOMPLETE when the analyzer module is hidden (exit 2), FAIL when the fixture's unit test fails (exit 1) |
 
-Counts: `test-units.ps1` 53 checks; `test-torture.ps1` 38 (42 with `-ServerRoundTrip`).
+Counts: `test-units.ps1` 98 checks; `test-torture.ps1` 42 (46 with `-ServerRoundTrip`).
 
 ## Not covered
 
