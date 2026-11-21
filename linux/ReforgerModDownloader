@@ -47,7 +47,8 @@ BRIDGE = r"""
 class Worker:
     def __init__(self):
         DATA.mkdir(parents=True, exist_ok=True)
-        self.environment = dict(os.environ, RFMM_HOME=str(HOME), RFMM_DATA=str(DATA))
+        self.environment = dict(os.environ, RFMM_HOME=str(HOME), RFMM_DATA=str(DATA),
+                                RFMM_DESKTOP_OWNER_PID=str(os.getpid()))
         self.log = (DATA / "desktop.log").open("a", encoding="utf-8")
         self.process = subprocess.Popen(
             ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(SOURCE / "download-web.ps1"), "-Desktop"],

@@ -22,6 +22,9 @@ main{padding-block:24px 48px}
 .row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0}
 .big{font-weight:600;font-size:clamp(20px,3vw,30px);font-variant-numeric:tabular-nums}
 .bar{background:#e2e7e6;height:7px;border-radius:4px;overflow:hidden}.bar>div{height:100%;background:var(--accent)}.bar.amber>div{background:#926500}
+.bar.indeterminate>div{width:35%;animation:pending-transfer 1.2s ease-in-out infinite alternate}
+@keyframes pending-transfer{from{transform:translateX(0)}to{transform:translateX(185%)}}
+@media(prefers-reduced-motion:reduce){.bar.indeterminate>div{animation:none}}
 .controls,.search{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 button,input{font:inherit;border:1px solid #aeb8b6;border-radius:4px;background:#fff;color:var(--ink);padding:6px 11px}
 button{font-size:14px;cursor:pointer}button:hover:enabled{background:#edf2f0}
@@ -99,14 +102,18 @@ function left(sec){ if(!Number.isFinite(sec)||sec<=0)return ''; if(sec<60)return
 let SRV=null,BR=null,lastKey='';
 let FILTER={queue:'',act:'',rec:''},LAST=null;
 function match(name,q){ return !q || String(name).toLowerCase().indexOf(q.toLowerCase())>=0; }
+let activeMarkup='';
 function renderActive(list,A){
   const el=document.getElementById('act'); if(!el)return;
   const shown=list.filter(a=>match(a.name,FILTER.act));
   document.getElementById('actcount').textContent=list.length?'('+list.length+')':'';
-  el.innerHTML=shown.length
+  const markup=shown.length
    ?shown.map(a=>'<div class="row"><span>'+esc(a.name)+'</span><span class="dim">'+(Number.isFinite(a.b)?(a.expB>0?sz(a.b)+' / '+sz(a.expB):sz(a.b)):'')+'</span></div>'+
-     (Number.isFinite(a.b)&&a.expB>0?'<div class="bar amber"><div style="width:'+a.pct+'%"></div></div>':'')).join('')
-   :(list.length?'<span class="dim">no download matches the filter</span>':'<span class="dim">No active downloads</span>');
+     (Number.isFinite(a.pct)&&a.expB>0
+       ?'<div class="bar amber" role="progressbar" aria-label="'+escAttr(a.name)+'" aria-valuenow="'+a.pct+'"><div style="width:'+a.pct+'%"></div></div>'
+       :'<div class="bar amber indeterminate" role="progressbar" aria-label="'+escAttr(a.name)+'"><div></div></div>')).join('')
+   :(list.length?'<span class="dim">No downloads match the filter</span>':'<span class="dim">No active downloads</span>');
+  if(markup!==activeMarkup){el.innerHTML=markup;activeMarkup=markup;}
 }
 function renderQueue(queue,A){
   const el=document.getElementById('queue'); if(!el)return;
@@ -286,9 +293,12 @@ async function tick(){
    if(batchWasRunning&&LAST.queueRevision===s.queueRevision&&!skipped)showNotice('finished','Downloads finished.');
    batchWasRunning=false;
   }
-  const status=s.running?'Downloading':!hasQueue?'Idle':s.paused?'Paused':'Waiting for downloader';
+  const transferring=s.active.some(a=>Number.isFinite(a.b)&&a.b>0&&a.b<a.expB);
+  const preparing=s.active.some(a=>!Number.isFinite(a.b)||a.b===0);
+  const status=transferring?'Downloading':preparing?'Preparing':s.active.length?'Finishing':
+    !hasQueue?'Idle':s.paused?'Paused':'Waiting for downloader';
   document.getElementById('st').textContent=status;
-  document.getElementById('st').className=s.running?'ok':'dim';
+  document.getElementById('st').className=s.active.length?'ok':'dim';
   const totalKnown=s.totalB>0&&!s.unknownSizes;
   const totalLabel=(s.estimatedSizes?'~':'')+sz(s.totalB);
   document.getElementById('gbtxt').textContent=hasQueue
@@ -463,10 +473,9 @@ async function act(w){
 queueControls(null);
 loadSrv();   // self-gated (5 s); tick retries it too, so this is the only call site
 (async function loop(){
- // one request in flight. A /status build costs ~0.3 s of one core, so polling at
- // 400 ms (measured: 97% of one core) is not worth it; 1 s is still live enough.
- const ms = document.hidden ? 4000 : (LAST && LAST.running ? 500 : 2000);
+ const start=performance.now();
  await tick();
- setTimeout(loop, ms);
+ const interval=document.hidden?4000:500;
+ setTimeout(loop,Math.max(0,interval-(performance.now()-start)));
 })();
 </script></body></html>

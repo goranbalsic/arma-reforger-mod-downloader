@@ -165,7 +165,7 @@ function Get-TransferSnapshot($Log, [datetime]$Now, [datetime]$StartedAt) {
       $cached.current = $script:transferLogMetrics.current
     }
     foreach ($line in Get-Content -LiteralPath $Log.FullName -Tail 160 -Encoding UTF8 -ErrorAction SilentlyContinue) {
-      $entry = [regex]::Match($line, '^\s*(\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+BACKEND\s*:\s*(.+)$')
+      $entry = [regex]::Match($line, '^\s*(\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+BACKEND(?:\s*\([A-Z]+\))?\s*:\s*(.+)$')
       if (!$entry.Success) { continue }
       $elapsed = [timespan]::Zero
       if (![timespan]::TryParse($entry.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture, [ref]$elapsed)) { continue }
@@ -173,6 +173,18 @@ function Get-TransferSnapshot($Log, [datetime]$Now, [datetime]$StartedAt) {
       if ($at -gt $Now.AddSeconds(2)) { $at = $at.AddDays(-1) }
       if ($at -lt $StartedAt) { continue }
       $body = $entry.Groups[2].Value
+      if ($body.StartsWith('Server registered')) {
+        $cached.current = $null
+        $cached.mods.Clear()
+        $cached.speedAt = $null
+        continue
+      }
+      if ($body.StartsWith('Failed to fetch addon details') -and $cached.current) {
+        $cached.mods.Remove($cached.current.name)
+        $cached.current = $null
+        $cached.speedAt = $null
+        continue
+      }
       $start = [regex]::Match($body, '^Addon Download started ([a-fA-F0-9]{16}) - (.+)$')
       if ($start.Success -and (!$cached.current -or $at -ge $cached.current.at)) {
         $cached.current = @{ id = $start.Groups[1].Value; name = $start.Groups[2].Value.Trim(); at = $at }
@@ -271,12 +283,12 @@ function Get-Status {
       elseif (!$report) { $estimatedSizes++ }
       if ($report) {
         $doneBytes += $report.b
-        if ($transfer.current.id -eq $id -or ($now - $report.at).TotalSeconds -le 25) {
+        if (($now - $report.at).TotalSeconds -le 35) {
           $active[$report.name] = @{ id = $id; name = $report.name; b = $report.b; expB = $report.expB
             pct = if ($report.expB) { [Math]::Round(100 * $report.b / $report.expB, 1) } else { 0 } }
         }
       }
-      if (!$report -and $transfer.current.id -eq $id) {
+      if (!$report -and $transfer.current.id -eq $id -and ($now - $transfer.current.at).TotalSeconds -le 35) {
         $active[$transfer.current.name] = @{ id = $id; name = $transfer.current.name }
       }
       @{ id = $id; name = $mod.name; version = $mod.version }
@@ -287,25 +299,27 @@ function Get-Status {
   foreach ($entry in $dirs.GetEnumerator()) {
     $report = $transfer.mods[[string]$entry.Value.name]
     if ($report -and !$active.ContainsKey($report.name) -and
-        ($now - $report.at).TotalSeconds -le 25 -and !(Test-AddonComplete $entry.Value.path $entry.Value.mtime)) {
+        ($now - $report.at).TotalSeconds -le 35 -and !(Test-AddonComplete $entry.Value.path $entry.Value.mtime)) {
       $active[$report.name] = @{ id = $entry.Key; name = $report.name; b = $report.b; expB = $report.expB
         pct = if ($report.expB) { [Math]::Round(100 * $report.b / $report.expB, 1) } else { 0 } }
     }
   }
   if ($transfer.current -and !$active.ContainsKey($transfer.current.name)) {
     $currentDir = $dirs[$transfer.current.id]
-    if (!$currentDir -or !(Test-AddonComplete $currentDir.path $currentDir.mtime)) {
-      $latest = $transfer.mods[$transfer.current.name]
+    $latest = $transfer.mods[$transfer.current.name]
+    $lastActivity = if ($latest -and $latest.at -ge $transfer.current.at) { $latest.at } else { $transfer.current.at }
+    if (($now - $lastActivity).TotalSeconds -le 35 -and
+        (!$currentDir -or !(Test-AddonComplete $currentDir.path $currentDir.mtime))) {
       $active[$transfer.current.name] = if ($latest -and $latest.at -ge $transfer.current.at) {
         @{ id = $transfer.current.id; name = $latest.name; b = $latest.b; expB = $latest.expB
           pct = if ($latest.expB) { [Math]::Round(100 * $latest.b / $latest.expB, 1) } else { 0 } }
       } else { @{ id = $transfer.current.id; name = $transfer.current.name } }
     }
   }
+  if (!$active.Count) { $transfer.speedB = 0 }
   if (!$queueList.Count) {
     $batchBytes = $doneBytes = $doneCount = $unknownSizes = $estimatedSizes = 0
     $queued = @()
-    if (!$active.Count) { $transfer.speedB = 0 }
   }
   @{ running = $runningNow; paused = (Test-Path -LiteralPath (Join-Path $Data 'paused.flag'))
      speedB = $transfer.speedB; speedAge = $transfer.speedAge

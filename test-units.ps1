@@ -558,6 +558,11 @@ Check 'old speed is withheld rather than shown as current' ($staleReport.speedB 
   "$stamp BACKEND      : Addon Download started ABCDEF0123456789 - Active from log" | Set-Content -LiteralPath $transferLog
   $started = Get-Status
   Check 'active mod appears before the first byte report' ($started.active[0].id -eq 'ABCDEF0123456789' -and $started.active[0].name -eq 'Active from log' -and $null -eq $started.active[0].b)
+  $stoppedLog = @("$stamp BACKEND : Addon Download started ABCDEF0123456789 - Active from log",
+    "$stamp BACKEND : Server registered")
+  $stoppedLog | Set-Content -LiteralPath $transferLog
+  $idle = Get-Status
+  Check 'a server that has registered is no longer downloading' ($idle.running -and !$idle.active.Count -and $idle.speedB -eq 0)
 }
 $script:fixtureComplete = $true
 $status = Get-Status

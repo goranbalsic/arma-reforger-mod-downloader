@@ -111,3 +111,56 @@ try {
   $backend.Dispose()
   [Console]::InputEncoding = $inputEncoding
 }
+
+Write-Host 'forced desktop close stops only the owned engine'
+$forced = Join-Path $fixture 'forced-close'
+$ownedData = Join-Path $forced 'owned'
+$otherData = Join-Path $forced 'other'
+New-Item -ItemType Directory -Path $ownedData,$otherData -Force | Out-Null
+$ownedCfg = Join-Path $ownedData 'batch1-serverconfig.json'
+$otherCfg = Join-Path $otherData 'batch1-serverconfig.json'
+$queue = '{"game":{"name":"Fixture","scenarioId":"fixture","mods":[{"modId":"ABCDEF0123456789","name":"Fixture"}]}}'
+Set-Content -LiteralPath $ownedCfg -Value $queue
+Set-Content -LiteralPath $otherCfg -Value $queue
+$token = [guid]::NewGuid().ToString('N')
+@{ token = $token } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ownedData 'desktop-owner.json')
+$program = Join-Path $forced 'Fixture.cs'
+$mockExe = Join-Path $forced 'ArmaReforgerServer.exe'
+'class Fixture { static void Main() { System.Threading.Thread.Sleep(60000); } }' | Set-Content -LiteralPath $program
+$compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+& $compiler /nologo "/out:$mockExe" $program
+if ($LASTEXITCODE) { throw 'Could not build the shutdown fixture.' }
+
+$owner = $null
+$owned = $null
+$other = $null
+$guard = $null
+try {
+  $owner = Start-Process $info.FileName -ArgumentList '-NoProfile -Command "Start-Sleep 60"' -WindowStyle Hidden -PassThru
+  $owned = Start-Process $mockExe -ArgumentList ('-config "{0}"' -f $ownedCfg) -WindowStyle Hidden -PassThru
+  $other = Start-Process $mockExe -ArgumentList ('-config "{0}"' -f $otherCfg) -WindowStyle Hidden -PassThru
+  $guardInfo = [Diagnostics.ProcessStartInfo]::new()
+  $guardInfo.FileName = $info.FileName
+  $guardInfo.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}\watchdog.ps1"' -f $source
+  $guardInfo.UseShellExecute = $false
+  $guardInfo.CreateNoWindow = $true
+  $guardInfo.EnvironmentVariables['RFMM_HOME'] = $forced
+  $guardInfo.EnvironmentVariables['RFMM_DATA'] = $ownedData
+  $guardInfo.EnvironmentVariables['RFMM_DESKTOP_OWNER_PID'] = [string]$owner.Id
+  $guardInfo.EnvironmentVariables['RFMM_DESKTOP_OWNER_TOKEN'] = $token
+  $guard = [Diagnostics.Process]::Start($guardInfo)
+  $owner.Kill()
+  if (!$guard.WaitForExit(15000) -or $guard.ExitCode -or !$owned.WaitForExit(5000) -or $other.HasExited -or
+      !(Test-Path -LiteralPath (Join-Path $ownedData 'paused.flag')) -or
+      (Get-Content -LiteralPath $ownedCfg -Raw).Trim() -ne $queue) {
+    throw 'Forced desktop close changed the queue or did not stop just the owned engine.'
+  }
+  'Forced-close watchdog check passed.'
+} finally {
+  foreach ($child in $guard,$owner,$owned,$other) {
+    if ($child) {
+      if (!$child.HasExited) { $child.Kill() }
+      $child.Dispose()
+    }
+  }
+}

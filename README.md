@@ -58,7 +58,7 @@ On Windows, your mods live in `Documents\My Games\ArmaReforger\addons`. The down
 
 To use an existing installation, close its legacy dashboard and put the executable next to its `armar-server` and `data` folders. The Windows app checks for new GitHub Releases on startup. Use **Check for updates** for a manual check. It verifies the release asset’s SHA-256 digest and installs a verified update when you close the app. Your queue, engine, and installed mods carry over.
 
-Closing the desktop app pauses its queue and stops its dedicated server. Use **Start / Resume** after reopening to continue.
+Closing or force-closing the desktop app pauses its queue and stops its dedicated server. Use **Start / Resume** after reopening to continue.
 
 ## If something gets stuck
 

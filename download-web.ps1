@@ -111,7 +111,15 @@ $mutating = '/update-mods','/cancel-mod-updates','/start','/pause','/verify','/q
 $script:modUpdateJob = $null
 
 function Start-DownloadHelpers {
-  if ($Desktop) { $env:RFMM_DESKTOP_OWNER_PID = [string]$PID }
+  if ($Desktop) {
+    if (!$env:RFMM_DESKTOP_OWNER_PID) { $env:RFMM_DESKTOP_OWNER_PID = [string]$PID }
+    $env:RFMM_DESKTOP_OWNER_TOKEN = [guid]::NewGuid().ToString('N')
+    $ctl = Lock-Engine
+    if (!$ctl) { throw 'Could not register the downloader window.' }
+    try {
+      Save-Json @{ token = $env:RFMM_DESKTOP_OWNER_TOKEN } (Join-Path $Data 'desktop-owner.json')
+    } finally { $ctl.ReleaseMutex() }
+  }
   if ($IsLinux) {
     $helper = Join-Path $PSScriptRoot 'watchdog.ps1'
     Start-Process (Join-Path $PSHOME 'pwsh') -ArgumentList ('-NoProfile -File "{0}"' -f $helper) -RedirectStandardInput '/dev/null' -RedirectStandardOutput (Join-Path $Data 'watchdog-output.log') -RedirectStandardError (Join-Path $Data 'watchdog-error.log')

@@ -38,8 +38,40 @@ function Start-EngineLocked {
   } finally { $ctl.ReleaseMutex() }
 }
 
-$mutex = [System.Threading.Mutex]::new($false, 'ReforgerDownloaderWatchdog')
-if (-not $mutex.WaitOne(0)) { exit 0 }
+function Stop-OwnerlessDownloads {
+  $ctl = Lock-Engine
+  if (!$ctl) { return $false }
+  try {
+    $marker = Read-Json (Join-Path $Data 'desktop-owner.json') $null
+    if ($marker -and $marker.token -ne $env:RFMM_DESKTOP_OWNER_TOKEN) { return $true }
+    New-Item -ItemType File -Force (Join-Path $Data 'paused.flag') | Out-Null
+    $engine = Get-OwnEngine $Cfg
+    if ($null -eq $engine) { return $false }
+    foreach ($process in $engine) {
+      Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
+    $remaining = Get-OwnEngine $Cfg
+    if ($null -eq $remaining -or @($remaining).Count) { return $false }
+    Write-Wd 'desktop closed - download engine stopped; queue kept'
+    return $true
+  } finally { $ctl.ReleaseMutex() }
+}
+
+$owner = if ($env:RFMM_DESKTOP_OWNER_PID) {
+  Get-Process -Id $env:RFMM_DESKTOP_OWNER_PID -ErrorAction SilentlyContinue
+}
+$mutexName = 'ReforgerDownloaderWatchdog'
+if ($env:RFMM_DESKTOP_OWNER_TOKEN) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    $path = [IO.Path]::GetFullPath($Cfg)
+    if (!$IsLinux) { $path = $path.ToUpperInvariant() }
+    $key = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($path))).Replace('-', '')
+    $mutexName += "-desktop-$key"
+  } finally { $sha.Dispose() }
+}
+$mutex = [System.Threading.Mutex]::new($false, $mutexName)
+if (-not $mutex.WaitOne(5000)) { exit 0 }
 
 $fail = @{}
 $scanFile = ''      # log file the failure scan is reading
@@ -50,10 +82,13 @@ $saidBlind = $false   # same for "cannot read the process list"
 $saidPause = $false   # and for "paused": silent skipping looked exactly like a hung watchdog
 $saidUnreadable = $false  # and for "config cannot be read": never treat it as "queue empty"
 while ($true) {
-  Start-Sleep 15
-  if ($env:RFMM_DESKTOP_OWNER_PID -and !(Get-Process -Id $env:RFMM_DESKTOP_OWNER_PID -ErrorAction SilentlyContinue)) {
-    if ((Test-Path -LiteralPath $PauseFlag) -or !(Get-Queued $Cfg).Count) { break }
-  }
+  if ($env:RFMM_DESKTOP_OWNER_PID) {
+    if (!$owner -or $owner.WaitForExit(15000)) {
+      if (Stop-OwnerlessDownloads) { break }
+      Start-Sleep 2
+      continue
+    }
+  } else { Start-Sleep 15 }
   if (-not (Test-Path $Cfg)) { continue }
   if (Test-Path $PauseFlag) {
     if (-not $saidPause) { Write-Wd 'paused - not restarting anything until the queue is started again'; $saidPause = $true }
