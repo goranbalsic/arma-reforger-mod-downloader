@@ -93,6 +93,15 @@ function Read-Json([string]$Path, $Default) {
   }
 }
 
+function Test-ModId([string]$Id) {
+  # Canonical (upper-case) 16-hex mod id, or $null. Called at every API boundary:
+  # an id that came from the internet must never reach a file name, a filter or the
+  # queue. Case-insensitive on the way in.
+  if (-not $Id) { return $null }
+  if ($Id -notmatch '^[0-9A-Fa-f]{16}$') { return $null }
+  $Id.ToUpper()
+}
+
 function Test-Sha256([string]$Path, [string]$Expected) {
   # $Expected is "sha256:<hex>" from the GitHub release asset. $null = nothing to
   # compare against (old release), $true/$false otherwise. This detects a truncated

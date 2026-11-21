@@ -543,7 +543,9 @@ function Invoke-AddServer([string]$Id) {
   $have = Get-HaveIds
   foreach ($m in (Get-Cfg).game.mods) { $have[$m.modId] = $true }
   $want = @($s.mods | ForEach-Object {
-    [PSCustomObject]@{ id = $_.id; name = $_.name; size = [double]$_.size; sizeKnown = [bool]$_.sizeKnown }
+    $mid = Test-ModId $_.id
+    if (-not $mid) { Write-Host "ignoring a mod with an invalid id from the API: $($_.id)" -ForegroundColor Yellow; return }
+    [PSCustomObject]@{ id = $mid; name = $_.name; size = [double]$_.size; sizeKnown = [bool]$_.sizeKnown }
   })
   $new = @($want | Where-Object { -not $have.ContainsKey($_.id) })
 
@@ -582,12 +584,18 @@ function Invoke-AddServer([string]$Id) {
   # the same server in memory and in batch1-servers.json twice)
   $gb = [Math]::Round(($new | ForEach-Object { [double]$_.size } | Measure-Object -Sum).Sum / 1GB, 2)
   $r = Start-DS
-  "added '$name': $($new.Count) new mods (~$gb GB) queued at the end, $(@($s.mods).Count - $new.Count) already on disk ($r)"
+  "added '$name': $($new.Count) new mods (~$gb GB) queued at the end, $(@($want).Count - $new.Count) already on disk ($r)"
 }
 function Merge-ServerMods($sv, $mods, $sz) {
   # apply a modlist that a background job fetched: sizes, then the "changed"
   # marker the page shows. No network here, and it runs on the single request
-  # thread, so two refreshes cannot interleave.
+  # thread, so two refreshes cannot interleave. Ids are validated here as well:
+  # a payload is data from the internet, not something to trust.
+  $mods = @(foreach ($m in $mods) {
+    $mid = Test-ModId $m.id
+    if (-not $mid) { Write-Host "refresh: ignoring a mod with an invalid id: $($m.id)" -ForegroundColor Yellow; continue }
+    [PSCustomObject]@{ id = $mid; name = $m.name; size = [double]$m.size; sizeKnown = [bool]$m.sizeKnown }
+  })
   foreach ($m in $mods) {
     if (-not $sizeMap.ContainsKey($m.id) -and $m.sizeKnown -and $m.size) {
       $sizeMap[$m.id] = @{ name = $m.name; bytes = [double]$m.size; exact = $true }
@@ -690,8 +698,10 @@ function Complete-RefreshJob([string]$Id) {
       $sz = Read-Json $Sizes $j
       foreach ($p in $sz.mods.PSObject.Properties) { $sizeMap[$p.Name] = $p.Value }
       foreach ($p in @($payload.sizes.PSObject.Properties)) {
-        $sizeMap[$p.Name] = @{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }
-        $sz.mods | Add-Member -NotePropertyName $p.Name -NotePropertyValue ([PSCustomObject]@{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }) -Force
+        $sid = Test-ModId $p.Name
+        if (-not $sid) { Write-Host "refresh: ignoring a size entry with an invalid id: $($p.Name)" -ForegroundColor Yellow; continue }
+        $sizeMap[$sid] = @{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }
+        $sz.mods | Add-Member -NotePropertyName $sid -NotePropertyValue ([PSCustomObject]@{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }) -Force
       }
       $ok = 0; $fail = 0; $changed = @()
       foreach ($sp in @($payload.servers)) {

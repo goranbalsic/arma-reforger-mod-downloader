@@ -21,9 +21,11 @@ $done = @{}
 # folder and holds the whole library, and parsing 1000 meta files before every
 # engine start made the watchdog crawl. Same completion rule as Get-HaveIds.
 foreach ($m in @($j.game.mods)) {
-  if (-not $m.modId -or $done.ContainsKey($m.modId)) { continue }
-  $d = Get-ChildItem $addons -Directory -Filter "*_$($m.modId)" -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($d -and (Test-AddonComplete $d.FullName $d.LastWriteTime)) { $done[$m.modId] = $true }
+  $mid = Test-ModId $m.modId
+  if (-not $mid) { "skipping a queued entry with an invalid mod id: $($m.modId)"; continue }
+  if ($done.ContainsKey($mid)) { continue }
+  $d = Get-ChildItem $addons -Directory -Filter "*_$mid" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($d -and (Test-AddonComplete $d.FullName $d.LastWriteTime)) { $done[$mid] = $true }
 }
 "assembled on disk: $($done.Count)"
 
@@ -56,12 +58,14 @@ try {
     exit 1
   }
   foreach ($m in $left) {
-    $d = Get-ChildItem $addons -Directory -Filter "*_$($m.modId)" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $mid = Test-ModId $m.modId
+    if (-not $mid) { "skipping a queued entry with an invalid mod id: $($m.modId)"; continue }
+    $d = Get-ChildItem $addons -Directory -Filter "*_$mid" -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $d) { continue }
     if (-not (Test-Path (Join-Path $d.FullName 'addon.gproj'))) { continue }
     # one attempt per 30 min: a mod the DS can never finish would otherwise be
     # deleted and downloaded again on every restart, forever
-    $last = $re.PSObject.Properties[$m.modId]
+    $last = $re.PSObject.Properties[$mid]
     if ($last -and $last.Value) {
       $at = [datetime]::MinValue
       if ([datetime]::TryParse([string]$last.Value, [ref]$at) -and ($now - $at).TotalMinutes -lt 30) {
@@ -71,7 +75,7 @@ try {
     }
     Remove-Item $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
     if (-not (Test-Path $d.FullName)) {
-      $re | Add-Member -NotePropertyName $m.modId -NotePropertyValue ($now.ToString('s')) -Force
+      $re | Add-Member -NotePropertyName $mid -NotePropertyValue ($now.ToString('s')) -Force
       "deleted unusable partial (the engine would have skipped it): $($d.Name)"
     }
   }

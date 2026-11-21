@@ -297,6 +297,46 @@ Check 'an unreadable process list aborts before stop or queue write' (
   ([array]::IndexOf($script:calls, 'save:batch1-serverconfig.json') -lt 0))
 . "$PSScriptRoot\dashboard-core.ps1"
 
+Write-Host 'item 3: mod ids are validated at the API boundary'
+. "$PSScriptRoot\state.ps1"   # item 2 stubbed Save-Json; restore the real one
+Check 'Test-ModId returns the upper-case id' ((Test-ModId 'abcdef0123456789') -eq 'ABCDEF0123456789')
+Check 'Test-ModId rejects a wildcard' ($null -eq (Test-ModId '*'))
+Check 'Test-ModId rejects path traversal' ($null -eq (Test-ModId '..\x'))
+Check 'Test-ModId rejects a short id' ($null -eq (Test-ModId 'ABCD'))
+Reset-State
+$sz = '{"totalBytes":0,"mods":{}}' | ConvertFrom-Json
+$sv = [pscustomobject]@{ id = '99999999-9999-9999-9999-999999999999'; name = 'S'; mods = @() }
+Merge-ServerMods $sv @(
+  [pscustomobject]@{ id = '*'; name = 'bad'; size = 1; sizeKnown = $true },
+  [pscustomobject]@{ id = '..\x'; name = 'bad2'; size = 1; sizeKnown = $true },
+  [pscustomobject]@{ id = 'abcdef0123456789'; name = 'ok'; size = 2; sizeKnown = $true }
+) $sz
+Check 'Merge keeps only the valid id' (@($sv.mods).Count -eq 1 -and $sv.mods[0].id -eq 'ABCDEF0123456789')
+Check 'invalid ids never reach the size map' ((-not $sizeMap.ContainsKey('*')) -and (-not $sizeMap.ContainsKey('..\x')))
+function Get-Detail {
+  param($Id)
+  [pscustomobject]@{ name = 'S'; passwordProtected = $false; mods = @(
+    [pscustomobject]@{ id = '*'; name = 'bad'; size = 1; sizeKnown = $true },
+    [pscustomobject]@{ id = 'ABCDEF0123456789'; name = 'ok'; size = 2; sizeKnown = $true }) }
+}
+function Get-HaveIds { @{} }
+function Get-DS { param([switch]$Fresh) ,@() }
+function Stop-DS { 'stopped' }
+function Start-DS { 'started' }
+Reset-State
+$null = Invoke-AddServer '33333333-3333-3333-3333-333333333333'
+Check 'Add server drops an invalid mod id' (@($serverList[0].mods).Count -eq 1 -and $serverList[0].mods[0].id -eq 'ABCDEF0123456789')
+Check 'the queue holds only the valid id' (@((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods).Count -eq 1)
+. "$PSScriptRoot\dashboard-core.ps1"
+
+$td2 = Join-Path $tmp 'trim-ids'
+New-Item -ItemType Directory -Force (Join-Path $td2 'data'), (Join-Path $td2 'serverprofile\addons') | Out-Null
+'{"game":{"name":"n","scenarioId":"s","mods":[{"modId":"*","name":"bad"}]}}' | Set-Content (Join-Path $td2 'data\batch1-serverconfig.json')
+$env:RFMM_HOME = $td2; $env:RFMM_DATA = Join-Path $td2 'data'
+$trimIds = try { (& "$PSScriptRoot\trim-config.ps1" 2>&1) -join ' ' } catch { "ERROR: $_" }
+$env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
+Check 'trim skips an invalid queued id' ($trimIds -match 'invalid mod id')
+
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)
