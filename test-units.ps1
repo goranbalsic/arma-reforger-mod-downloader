@@ -491,6 +491,20 @@ Check 'the dependency depth cap stops at three levels' ($depthMods.Count -eq 4 -
 . "$PSScriptRoot\dashboard-core.ps1"
 . "$PSScriptRoot\state.ps1"
 
+Write-Host 'item 11: the stop script targets only this folder''s helpers'
+$sr = Join-Path $tmp 'stoplab'
+New-Item -ItemType Directory -Force $sr | Out-Null
+$p1 = Start-Process powershell -ArgumentList '-NoProfile', '-Command', "Start-Sleep 30 # $sr\watchdog.ps1" -PassThru -WindowStyle Hidden
+$p2 = Start-Process powershell -ArgumentList '-NoProfile', '-Command', "Start-Sleep 30 # $sr\sync-addons.ps1" -PassThru -WindowStyle Hidden
+$p3 = Start-Process powershell -ArgumentList '-NoProfile', '-Command', "Start-Sleep 30 # $sr\other.ps1" -PassThru -WindowStyle Hidden
+Start-Sleep 2
+$stopOut = & powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\stop.ps1" -Root $sr 2>&1
+Start-Sleep 1
+Check 'the watchdog of that folder is stopped' (-not (Get-Process -Id $p1.Id -ErrorAction SilentlyContinue))
+Check 'the addon mirror of that folder is stopped' (-not (Get-Process -Id $p2.Id -ErrorAction SilentlyContinue))
+Check 'an unrelated process is left alone' ([bool](Get-Process -Id $p3.Id -ErrorAction SilentlyContinue))
+foreach ($pp in @($p1, $p2, $p3)) { Stop-Process -Id $pp.Id -Force -ErrorAction SilentlyContinue }
+
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)

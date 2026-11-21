@@ -132,9 +132,14 @@ catch {
 Write-Host '=== Arma Reforger Mods - web dashboard ===' -ForegroundColor White
 Write-Host "open: $Url   (keep this window open; closing it only stops the UI, not the download)" -ForegroundColor Cyan
 # -Command + quoted path: -File breaks on a repo path containing a space,
-# which silently disabled the client-addon mirror
-Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass',`
-  '-Command',"& '$PSScriptRoot\sync-addons.ps1' -Loop"   # auto-mirror completed mods into client addons
+# which silently disabled the client-addon mirror.
+# Not started at all when the engine folder is already linked into the game folder:
+# the mirror exits immediately in that case, so the process would only be noise.
+$addonsItem = Get-Item $Addons -Force -ErrorAction SilentlyContinue
+if (-not ($addonsItem -and $addonsItem.LinkType)) {
+  Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass',`
+    '-Command',"& '$PSScriptRoot\sync-addons.ps1' -Loop"   # auto-mirror completed mods into client addons
+}
 Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass',`
  '-Command',"& '$PSScriptRoot\watchdog.ps1'"            # restarts the downloader when it exits or stalls
 Start-Process $Url

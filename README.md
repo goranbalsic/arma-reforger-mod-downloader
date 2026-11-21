@@ -36,6 +36,12 @@ page as the control panel. Windows 10/11, PowerShell 5.1, MIT.
 
 Each mod is stored once, straight in the folder the game reads.
 
+## Stopping
+
+`Stop Mods Download.cmd` stops the hidden helper processes (watchdog and addon mirror) for
+this folder. Closing the page does not stop them. Your game server and mods are not
+touched.
+
 ## Updating
 
 `2 - Update.cmd` installs the newest release over the scripts. `Start Mods Download.cmd`
