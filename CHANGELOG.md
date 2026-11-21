@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.20
+
+- Compact dashboard navigation, clearer download controls, and side-by-side queue and transfer lists on wider screens.
+
 ## 1.0.19
 
 - Show the running dashboard version beside its title and keep the GitHub banner near the navigation.
