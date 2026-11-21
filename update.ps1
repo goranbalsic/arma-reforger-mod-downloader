@@ -28,7 +28,12 @@ try {
 }
 
 $new = ($rel.tag_name -replace '^v', '').Trim()
-if (-not $new -or $new -eq $mine) {
+# "not the same" is not the same as "newer": an older release must never be
+# offered as an update, and 1.0.10 is newer than 1.0.9
+[version]$newV = [version]'0.0'; [version]$mineV = [version]'0.0'
+$comparable = [version]::TryParse($new, [ref]$newV) -and [version]::TryParse($mine, [ref]$mineV)
+$newer = if ($comparable) { $newV -gt $mineV } else { $new -ne $mine }
+if (-not $new -or -not $newer) {
     if (-not $Quiet) { Write-Host "You have the latest version ($mine)." -ForegroundColor Green }
     exit 0
 }
