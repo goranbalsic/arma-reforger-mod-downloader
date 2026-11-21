@@ -35,12 +35,26 @@ if (-not (Test-Path (Join-Path $Steam 'steamcmd.exe'))) {
 
 Write-Host '2/2  Downloading the engine (~12 GB). Progress is printed below; this' -ForegroundColor Yellow
 Write-Host '     can take a while.'
-# The path is passed as a plain argument on purpose: embedding quote characters
-# (as an earlier version did) makes SteamCMD fail with "Missing configuration".
-$scArgs = @('+force_install_dir', $Engine, '+login', 'anonymous', '+app_update', $AppId, 'validate', '+quit')
-& (Join-Path $Steam 'steamcmd.exe') @scArgs
-$code = $LASTEXITCODE
-
+$steamCmd = Join-Path $Steam 'steamcmd.exe'
+$steamLog = Join-Path $Steam 'logs\console_log.txt'
+# On a fresh SteamCMD install the anonymous app cache can be missing the server
+# entry. Refresh it after login before requesting the depot.
+$scArgs = @('+force_install_dir', $Engine, '+login', 'anonymous',
+  '+app_info_update', '1', '+app_update', $AppId, 'validate', '+quit')
+Push-Location -LiteralPath $Steam
+try {
+  & $steamCmd @scArgs
+  $code = $LASTEXITCODE
+  if (!(Test-Path -LiteralPath $Exe) -and
+      (Get-Content -LiteralPath $steamLog -Tail 12 -ErrorAction SilentlyContinue |
+        Select-String -SimpleMatch "Failed to install app '$AppId' (Missing configuration)")) {
+    Write-Host 'Steam has not loaded the server configuration yet. Retrying once...'
+    & $steamCmd @scArgs
+    $code = $LASTEXITCODE
+  }
+} finally {
+  Pop-Location
+}
 Write-Host ''
 if (Test-Path $Exe) {
   Write-Host 'Download engine installed.' -ForegroundColor Green
