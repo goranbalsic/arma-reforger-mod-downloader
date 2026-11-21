@@ -76,7 +76,7 @@ Expand-Archive $zip $tmp -Force
 Get-ChildItem $tmp -Force |
     Where-Object {
         ($_.PSIsContainer -and $_.Name -eq 'docs') -or
-        (-not $_.PSIsContainer -and ($_.Extension -in '.ps1', '.cmd', '.md', '.txt' -or $_.Name -in '.gitignore', 'LICENSE'))
+        (-not $_.PSIsContainer -and ($_.Extension -in '.ps1', '.cmd', '.md', '.txt', '.html' -or $_.Name -in '.gitignore', 'LICENSE'))
     } |
     ForEach-Object { Copy-Item $_.FullName $Root -Recurse -Force }
 

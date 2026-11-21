@@ -19,7 +19,7 @@ function Add-Row([string]$Name, [string]$Status, [bool]$Mandatory, [string]$Deta
 }
 
 # --- required files (mandatory) -------------------------------------------------
-$required = 'state.ps1', 'download-web.ps1', 'watchdog.ps1', 'trim-config.ps1', 'make-preset.ps1', 'test-units.ps1'
+$required = 'state.ps1', 'dashboard-core.ps1', 'download-web.ps1', 'page.html', 'watchdog.ps1', 'trim-config.ps1', 'make-preset.ps1', 'test-units.ps1'
 $missing = @($required | Where-Object { -not (Test-Path (Join-Path $Root $_)) })
 Add-Row 'required files' $(if ($missing.Count) { 'FAIL' } else { 'PASS' }) $true $(
   if ($missing.Count) { "missing: $($missing -join ', ')" } else { "$($required.Count) present" })
