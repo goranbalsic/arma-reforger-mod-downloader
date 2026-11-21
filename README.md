@@ -1,28 +1,30 @@
 # Arma Reforger Mod Downloader
 
-Pick a server and download its missing Workshop mods before you join. Reforger Mod Downloader supports Windows x64 and has a Linux x64 desktop build. It uses the free Arma Reforger dedicated server to fetch mods.
+Download **Arma Reforger Workshop mods before joining a multiplayer server**. Search for a server to queue its full mod list, or find a single mod by name, author, or Workshop ID. The desktop app skips installed mods when building a server queue, checks for updates, and creates launcher presets from installed mods.
 
-## Get started
+[**Download for Windows x64**](https://github.com/goranbalsic/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader.exe) · [**Linux x64 preview**](#install-on-linux-x64) · [**Release notes**](../../releases/latest)
 
-1. Download and open **ReforgerModDownloader.exe** from the [latest release](../../releases/latest).
+## Install on Windows x64
+
+1. Open **ReforgerModDownloader.exe** from the [latest release](../../releases/latest).
 2. Choose where to keep the download engine, then select **Install engine**. Allow about 20 GB for setup and additional space for your mods.
 3. In **Find mods**, search for your server and select **Add server**. Go to **Downloads** and select **Start / Resume**.
 
 The app uses the Microsoft Edge WebView2 Runtime for its window. If Windows is missing it, install the Evergreen Runtime. [Microsoft WebView2 download](https://developer.microsoft.com/microsoft-edge/webview2/)
 
-## Linux x64
+## Install on Linux x64
 
-Download the Linux artifact from the repository’s **Actions** tab, extract it, then run `./ReforgerModDownloader` from the extracted folder. Linux uses native SteamCMD and the native Arma Reforger dedicated server.
+Open the latest successful run on `main` in [GitHub Actions](https://github.com/goranbalsic/arma-reforger-mod-downloader/actions/workflows/ci.yml?query=branch%3Amain). Download the **ReforgerModDownloader-linux-x64** artifact, extract it and the included TAR archive, then run `./ReforgerModDownloader` from the extracted app folder. Linux uses native SteamCMD and the native Arma Reforger dedicated server.
 
 Install PowerShell 7 (`pwsh`), SteamCMD, and the GTK 3 and WebKitGTK 4.1 Python bindings from your distribution. The Ubuntu and Debian packages for the window are `python3-gi`, `gir1.2-gtk-3.0`, and `gir1.2-webkit2-4.1`. Select **Install engine** on first launch.
 
 The default data folder is `~/.local/share/reforger-mod-downloader` (or the corresponding folder under `XDG_DATA_HOME`). Mods go into its `serverprofile/addons` directory. To share mods with a Steam Proton install and enable launcher presets, set `RFMM_GAME_PROFILE` to the complete path of the game’s `Documents/My Games/ArmaReforger` folder before first launch. For a custom engine location, set `RFMM_HOME`.
 
-Build the Linux archive with `sh linux/package.sh`.
+## Download a server’s mod list or a single Workshop mod
 
-For a single addon, use **Find a Workshop mod**. You can search by name, author, or the 16-character mod ID.
+For a full mod list, open **Find mods → Find a server**, then select **Add server**. For a single addon, use **Find a Workshop mod** and search by name, author, or the 16-character mod ID. Open **Downloads** and select **Start / Resume** when you’re ready.
 
-## Managing downloads
+## Pause, resume, and update mods
 
 **Download status** shows progress for the current batch and resets when it finishes. **Downloading now** shows which files are coming in, and **Queue** shows what’s left. Use **Pause** to take a break and **Start / Resume** to pick up again. Use **Remove** next to a mod or **Clear queue** to cancel queued downloads and keep any files already on disk.
 
@@ -32,11 +34,25 @@ Once the downloads finish, close Arma Reforger and click **Make preset** next to
 
 In **Library**, use **Update installed mods**, **Update tracked servers’ mods**, or **Update mods** next to a server. To update a single mod, select **Update** under **Completed**. These actions check Workshop versions in the background and download newer revisions when available.
 
-Select **Cancel updates** to stop a check or remove its queued updates. Finished updates, partial files, and unrelated downloads stay on disk or in the queue.
+In current desktop builds from [GitHub Actions](https://github.com/goranbalsic/arma-reforger-mod-downloader/actions/workflows/ci.yml?query=branch%3Amain), select **Cancel updates** to stop a check or remove its queued updates. Finished updates, partial files, and unrelated downloads stay on disk or in the queue.
+
+## Frequently asked questions
+
+### Do I need a Steam account for setup?
+
+The app installs the free Arma Reforger dedicated server through SteamCMD’s anonymous login. The dedicated server fetches the mods.
+
+### Can I download mods from a password-protected server?
+
+Server search can queue a full mod list when the server publishes it. If the list is private or unavailable, you can still queue individual Workshop mods by name or ID.
+
+### Can I create a launcher preset for a server?
+
+Yes. After the downloads finish, close the game and select **Make preset** next to the tracked server. The preset includes the mods that are installed. On Linux, set `RFMM_GAME_PROFILE` as described in the [Linux setup section](#install-on-linux-x64).
 
 ## Files, updates, and shutdown
 
-Your mods live in `Documents\My Games\ArmaReforger\addons`. The download engine and queue are saved in the folder selected during setup. The default is `%LOCALAPPDATA%\Reforger Mod Downloader\downloads`.
+On Windows, your mods live in `Documents\My Games\ArmaReforger\addons`. The download engine and queue are saved in the folder selected during setup. The default is `%LOCALAPPDATA%\Reforger Mod Downloader\downloads`.
 
 To use an existing installation, close its legacy dashboard and put the executable next to its `armar-server` and `data` folders. To update the desktop app, close it and replace the executable. Your queue, engine, and installed mods carry over.
 
@@ -44,7 +60,7 @@ Active downloads can finish in the background after you close the app. To stop t
 
 ## If something gets stuck
 
-- **The app won’t open.** Check that the WebView2 Runtime is installed. Startup errors are saved in `%LOCALAPPDATA%\Reforger Mod Downloader\desktop.log`.
+- **The Windows app won’t open.** Check that the WebView2 Runtime is installed. Startup errors are saved in `%LOCALAPPDATA%\Reforger Mod Downloader\desktop.log`.
 - **Downloads won’t start.** Check the dashboard message and whether another dedicated server is running.
 - **One mod stays in the queue.** Refresh its server and click **Start / Resume**. The downloader can retry an incomplete installation.
 - **A preset doesn’t appear.** Close the game and run **Make preset** again. The game writes its settings when it exits.
@@ -52,6 +68,8 @@ Active downloads can finish in the background after you close the app. To stop t
 ## Development
 
 Run `powershell -NoProfile -ExecutionPolicy Bypass -File desktop\Build.ps1` to build `dist\ReforgerModDownloader.exe`. The executable bundles the existing PowerShell scripts, the interface, and the WebView2 SDK files. It uses a private process stream for desktop requests.
+
+Build the Linux archive with `sh linux/package.sh`.
 
 Run `powershell -File test-units.ps1` for the offline unit suite. See the [testing guide](docs/TESTING.md) before running the live tests.
 
