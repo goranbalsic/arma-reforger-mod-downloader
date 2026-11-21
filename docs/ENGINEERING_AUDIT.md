@@ -107,15 +107,29 @@ Each finding lists the real root cause and the test that now proves the fix. Sev
 - Test: "meta pointing outside the folder is not complete", "meta with an absolute path
   is not complete".
 
+### 9. Network refreshes blocked the whole page
+`download-web.ps1`
+- Cause: `/refresh-servers` and `/refresh-server` called the API inside the request.
+  The listener handles one request at a time, so the page and every button waited for
+  the slowest API call (30 s timeout each).
+- Impact: the UI appeared frozen during a refresh, and the watchdog could not be driven
+  from the page meanwhile.
+- Fix: one bounded background job (`Start-Job`, one at a time) does all network work and
+  writes a JSON result; `/job?id=` applies it once on the request thread, so queue and
+  state changes stay serialised. A second refresh request returns the running job instead
+  of starting another process.
+- Measured: `/refresh-servers` 0.65 s, `/refresh-server` 0.09 s (previously the full
+  round trip). Tests: torture phase "background refresh job" (job id, poll to `done`,
+  message, server list unchanged).
+
 ## P3 — accepted, not changed
 
-- **Synchronous HTTP loop.** One request at a time: a `Refresh all` with many servers
-  blocks other requests while it waits on the API (30 s timeout each). Measured on this
-  machine with 299 addons: `/status` 1.0 s cold and 0.31-0.38 s warm, `/servers` 0.01 s
-  (served from memory), verify 0.57 s. The page used to poll every 400 ms, which measured
-  **97% of one core**; at 1 s it measures **31%**, and zero when the page is closed. A job
-  queue would change every endpoint and the page; not justified for two tracked servers.
-  If users start tracking 20+ servers, this is the first thing to change.
+- **The apply step is still synchronous.** When a background refresh finishes, the
+  result is written and new mods are queued on the request thread; this can stop and
+  start the engine (~2 s). It is fast and must stay serialised, so it is not a job.
+- **`/status` costs 0.31-0.38 s warm.** It used to be polled every 400 ms, measuring
+  **97% of one core**; at 1 s it measures **31%**, and zero when the page is closed.
+  A cached status would cut it further at the cost of stale numbers.
 - **No structured log file.** Console + `data\actions.log` + `data\watchdog.log`. They
   are append-only and unbounded; only `watchdog.log` is transition-based. Rotation is a
   known gap.
@@ -124,3 +138,17 @@ Each finding lists the real root cause and the test that now proves the fix. Sev
   unknown fields. A migration framework is not justified until a format actually changes.
 - **`test-rules.ps1` needs a live dashboard and library.** It is a manual integrity
   check, not part of CI.
+
+## Round 2 — findings against the public tree
+
+| Severity | Finding | State |
+| --- | --- | --- |
+| P2 | There was no local audit tool, and nothing distinguished "check could not run" from "check passed". | Fixed: `tools/audit.ps1` reports PASS / FAIL / INCOMPLETE; a mandatory check that cannot run makes the audit INCOMPLETE (exit 2), never PASS. |
+| P2 | Refreshing servers ran inside the HTTP request: one slow API call froze the page and other requests. | Fixed: one bounded background job per refresh; network only in the job, apply on the request thread. |
+| P3 | `Lock-Engine` always waited 20 s, so contention could not be tested. | Fixed: timeout parameter (default unchanged) + contention test. |
+| — | Mutex enforcement, preset validation and meta validation (reported again for `mod-manager/…`, a path that does not exist in this repository) were already fixed in 1.0.12/1.0.13; re-verified with tests rather than assumed. | Verified |
+
+The audit now distinguishes a skipped check from a passing one: PSScriptAnalyzer had been
+installed only for PowerShell 7, and the 5.1 audit reported INCOMPLETE until it was made
+available to the runtime the tool actually uses. That is the behaviour the review asked
+for.

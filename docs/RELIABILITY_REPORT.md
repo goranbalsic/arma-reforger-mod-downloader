@@ -138,9 +138,46 @@ Same machine, 299 addons:
 - PowerShell 7: the tool targets 5.1; 7 was not exercised.
 - Cross-process mutex timeout (>20 s hold): no automated test.
 
+## Round 2 (1.0.14)
+
+The second review pointed at `mod-manager/…` and `tools/audit.ps1`; this repository has
+neither directory (everything is at the root, there is no `tools/` in 1.0.13). Items 1-3
+were already fixed in 1.0.12/1.0.13 and were re-verified with tests, not assumed:
+
+- `Stop-DS` throws without the lock; trim holds it across delete + config write; the
+  watchdog takes it before killing. **Verified in code and by the torture test.**
+- Presets use `Test-AddonComplete` (plus the `meta` the launcher needs). **Verified.**
+- Meta validation rejects empty lists, nameless/sizeless entries, `..`, absolute paths
+  and negative sizes. **Verified by tests.**
+
+New in this round:
+
+1. `tools/audit.ps1` with PASS/FAIL/INCOMPLETE. A mandatory check that cannot run makes
+   the audit INCOMPLETE (exit 2). Proven three ways: PASS on this repo, INCOMPLETE with
+   the analyzer hidden, FAIL with a broken script.
+2. Bounded background refresh. `/refresh-servers` answers in 0.65 s and `/refresh-server`
+   in 0.09 s; one job at a time; the result is applied on the request thread. A second
+   request while one runs returns the same job id instead of spawning another process.
+3. `Lock-Engine` takes a timeout (default 20 s unchanged) so contention is testable: a
+   held lock returns `$null` and is available again after release.
+4. Tests grew to **53 unit checks** and **38 torture checks** (42 with the optional server
+   round trip); the incomplete-addon preset exclusion and create/modify cache cases were
+   added.
+
+Files changed: `state.ps1`, `download-web.ps1`, `test-units.ps1`, `test-torture.ps1`,
+`tools/audit.ps1` (new), `.github/workflows/ci.yml`, docs, README, CHANGELOG.
+
+Executed in this round: parse (0 errors), PSScriptAnalyzer 5.1 (0 errors), 53/53 units,
+38/38 torture, audit PASS (exit 0), audit INCOMPLETE with analyzer hidden (exit 2), audit
+FAIL on a fixture (exit 1), refresh job timings above.
+
+Not fixed: the apply step of a job is still synchronous (short), releases are not signed,
+CI has still not run on GitHub, logs still have no rotation.
+
 ## 16. Score
 
-**8.5 / 10.** Data-integrity paths are now tested and fail safely; the completion rule is
-single-sourced; the update path verifies content. It is not a 10 because the HTTP
-architecture is still synchronous, CI has not run on GitHub, there is no signed release,
-and logging has no rotation or structured format.
+**9.0 / 10.** Data-integrity paths are tested and fail safely; the completion rule is
+single-sourced; updates verify content; slow network work no longer blocks the UI; there
+is a real audit gate that refuses to call a skipped check a pass. Not higher because
+releases are unsigned, the audit has not run on GitHub Actions, and logging has no
+rotation or structured format.

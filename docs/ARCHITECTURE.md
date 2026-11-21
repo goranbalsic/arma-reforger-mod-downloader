@@ -14,6 +14,7 @@ plus a browser page that controls it.
 | `sync-addons.ps1` | Mirrors completed mods into the game folder. No-op when the engine folder is already a junction; one folder per mod id. |
 | `make-preset.ps1` | Writes or updates a launcher preset from a server's modlist. Verifies the candidate text, then replaces the settings file atomically with a backup. |
 | `Setup.ps1`, `update.ps1` | One-time engine install (SteamCMD), and release update with SHA-256 verification. |
+| `tools/audit.ps1` | Local gate: mandatory checks (files, parse, unit tests, analyzer) with PASS/FAIL/INCOMPLETE. A check that cannot run makes the audit INCOMPLETE, never PASS. |
 | `download-web.ps1` (page) | Single HTML document with inline CSS/JS, polls `/status`. |
 
 ## Data flow
@@ -40,6 +41,25 @@ plus a browser page that controls it.
 | `data/actions.log`, `data/watchdog.log` | append-only | Action trail and watchdog transitions. |
 | `data/paused.flag` | dashboard | While present, the watchdog restarts nothing. Cleared by Start. |
 | `data/skipped.json` | watchdog | Mods skipped after repeated Workshop errors. |
+
+## Background jobs
+
+The HTTP loop handles one request at a time, so a network call inside a request blocks
+the page and every other button. Network refreshes therefore run in a single bounded
+`Start-Job` process:
+
+1. `/refresh-servers` or `/refresh-server` starts the job (or returns the one already
+   running) and answers in well under a second with a job id.
+2. The job fetches modlists and any unknown sizes and writes `data/job-<id>.json`. It does
+   not touch shared state.
+3. The page polls `/job?id=<id>`. On the request thread, `Complete-RefreshJob` merges the
+   result (sizes, change markers), queues new mods (stopping/starting the engine under
+   the mutex), saves state, removes the temp file and the job, and returns
+   `{ state: done | failed, msg | error }`.
+
+One job at a time bounds the number of background processes. If a job finishes and nobody
+collects it, the next refresh discards it. The apply step stays synchronous on purpose:
+it is where shared state changes, and serialising it removes a whole class of races.
 
 ## Concurrency
 

@@ -131,6 +131,21 @@ if ($ServerRoundTrip -and @($servers).Count -ge 1) {
   }
 }
 
+"== background refresh job"
+$srvBefore = @((Call '/servers').json.servers).Count
+$job = Call "/refresh-servers?t=$tok" 'POST'
+Check 'refresh returns a job id' ($job.code -eq 200 -and [bool]$job.json.job)
+Check 'the message names the job' ([string]$job.json.msg -match [regex]::Escape([string]$job.json.job))
+$done = $null
+for ($i = 0; $i -lt 120; $i++) {
+  Start-Sleep 1
+  $st = Call "/job?id=$($job.json.job)&t=$tok" 'POST'
+  if ($st.json.state -ne 'running') { $done = $st.json; break }
+}
+Check 'the job finishes' ($done -and $done.state -eq 'done') "state: $($done.state) error: $($done.error)"
+Check 'the job reports what it did' ([bool]$done.msg)
+Check 'the server list survives the job' (@((Call '/servers').json.servers).Count -eq $srvBefore)
+
 "== state files survived"
 function Read-JsonFile($p) { try { Get-Content $p -Raw | ConvertFrom-Json } catch { $null } }
 $cfg = Read-JsonFile (Join-Path $Data 'batch1-serverconfig.json')

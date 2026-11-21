@@ -49,13 +49,14 @@ function Get-OwnEngine([string]$ConfigPath) {
   }
 }
 
-function Lock-Engine {
+function Lock-Engine([int]$Milliseconds = 20000) {
   # the dashboard and the watchdog both start/stop the engine. A named mutex
   # removes the check-then-act race that could put two DS processes on one profile
   # (both write <mod>\temp\, so an assembled pak can be a mix of two downloads).
+  # $null means the lock was not acquired: the caller must NOT continue.
   $m = [Threading.Mutex]::new($false, 'ReforgerEngineCtl')
   try {
-    if (-not $m.WaitOne(20000)) { return $null }
+    if (-not $m.WaitOne($Milliseconds)) { return $null }
   } catch [System.Threading.AbandonedMutexException] {
     # the previous holder died inside the critical section. WaitOne takes ownership
     # anyway, but it throws instead of returning - without this the engine could

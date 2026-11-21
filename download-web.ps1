@@ -681,46 +681,21 @@ function Invoke-AddServer([string]$Id) {
   "added '$name': $($new.Count) new mods (~$gb GB) queued at the end, $(@($s.mods).Count - $new.Count) already on disk ($r)"
 }
 
-function Resolve-Sizes($ids, $sz) {
-  # name + size for mods never seen before, 400 per call (free tier limit)
-  $ids = @($ids)
-  for ($i = 0; $i -lt $ids.Count; $i += 400) {
-    $chunk = @($ids[$i..([Math]::Min($i + 399, $ids.Count - 1))])
-    try {
-      $body = @{ mode = 'replace'; desired = @($chunk | ForEach-Object { @{ id = $_ } }) } | ConvertTo-Json -Depth 5
-      $plan = Invoke-RestMethod -Uri "$ApiBase/tools/storage-plan" -Method Post -Body $body -Headers $ApiH -ContentType 'application/json' -TimeoutSec 120
-      foreach ($x in $plan.data.downloads) {
-        $sizeMap[$x.id] = @{ name = $x.name; bytes = [double]$x.bytes; exact = [bool]$x.exact }
-        $sz.mods | Add-Member -NotePropertyName $x.id -NotePropertyValue ([PSCustomObject]@{ name = $x.name; bytes = [double]$x.bytes; exact = [bool]$x.exact }) -Force
-      }
-    } catch { }
-  }
-}
-
-function Sync-Server($sv, $sz) {
-  # fresh modlist for ONE server, sizes for new mods, and the "changed" marker.
-  # $false = the list could not be read (offline, empty, or password protected).
-  $d = Invoke-RestMethod -Uri "$ApiBase/servers/$($sv.id)" -Headers $ApiH -TimeoutSec 30
-  if (-not $d.server -or -not @($d.server.mods).Count) { return $false }
-  $oldIds = @($sv.mods | ForEach-Object { $_.id })
-  $need = [Collections.Generic.List[string]]::new()
-  $sv.mods = @($d.server.mods | ForEach-Object {
-    $m = $_
-    if (-not $sizeMap.ContainsKey($m.id)) {
-      if ($m.sizeKnown -and $m.size) {
-        $sizeMap[$m.id] = @{ name = $m.name; bytes = [double]$m.size; exact = $true }
-        $sz.mods | Add-Member -NotePropertyName $m.id -NotePropertyValue ([PSCustomObject]@{ name = $m.name; bytes = [double]$m.size; exact = $true }) -Force
-      } else { $need.Add($m.id) }
+function Merge-ServerMods($sv, $mods, $sz) {
+  # apply a modlist that a background job fetched: sizes, then the "changed"
+  # marker the page shows. No network here, and it runs on the single request
+  # thread, so two refreshes cannot interleave.
+  foreach ($m in $mods) {
+    if (-not $sizeMap.ContainsKey($m.id) -and $m.sizeKnown -and $m.size) {
+      $sizeMap[$m.id] = @{ name = $m.name; bytes = [double]$m.size; exact = $true }
+      $sz.mods | Add-Member -NotePropertyName $m.id -NotePropertyValue ([PSCustomObject]@{ name = $m.name; bytes = [double]$m.size; exact = $true }) -Force
     }
-    $e = if ($sizeMap[$m.id]) { [double]$sizeMap[$m.id].bytes } else { [double]0 }
-    [PSCustomObject]@{ id = $m.id; name = $m.name; e = $e }
-  })
-  if ($need.Count) {
-    Resolve-Sizes $need $sz
-    foreach ($m in $sv.mods) { if (-not $m.e -and $sizeMap.ContainsKey($m.id)) { $m.e = [double]$sizeMap[$m.id].bytes } }
   }
-  # did the server change its modlist since the last refresh? The page shows it,
-  # and Make preset then rebuilds the preset from the new list
+  $oldIds = @($sv.mods | ForEach-Object { $_.id })
+  $sv.mods = @($mods | ForEach-Object {
+    $sm = $sizeMap[$_.id]
+    [PSCustomObject]@{ id = $_.id; name = $_.name; e = $(if ($sm) { [double]$sm.bytes } else { [double]0 }) }
+  })
   $newIds = @($sv.mods | ForEach-Object { $_.id })
   $addN = @($newIds | Where-Object { $oldIds -notcontains $_ }).Count
   $remN = @($oldIds | Where-Object { $newIds -notcontains $_ }).Count
@@ -729,7 +704,121 @@ function Sync-Server($sv, $sz) {
   } elseif ($oldIds.Count) {
     $sv | Add-Member -NotePropertyName changed -NotePropertyValue $null -Force
   }
-  $true
+}
+
+function Start-RefreshJob([string[]]$Ids) {
+  # Network work (modlists + sizes) runs in a separate PowerShell process and the
+  # result is applied later on the request thread. One job at a time, so there is
+  # never more than one background process.
+  $ids = @($Ids | Where-Object { $_ })
+  if (-not $ids.Count) { return @{ job = $null; msg = 'no servers to refresh' } }
+  if ($script:refreshJob) {
+    $state = [string]$script:refreshJob.job.State
+    if ($state -eq 'Running' -or $state -eq 'NotStarted') {
+      return @{ job = $script:refreshJob.id; msg = "a refresh is already running (job $($script:refreshJob.id))" }
+    }
+    # finished but never collected: discard it and start clean
+    Remove-Job $script:refreshJob.job -Force -ErrorAction SilentlyContinue
+    Remove-Item $script:refreshJob.out -Force -ErrorAction SilentlyContinue
+    $script:refreshJob = $null
+  }
+  $id = [guid]::NewGuid().ToString('N').Substring(0, 8)
+  $out = Join-Path $Data "job-$id.json"
+  $known = @($sizeMap.Keys)
+  $job = Start-Job -ArgumentList $id, $ids, $out, $ApiBase, $known -ScriptBlock {
+    param($jobId, $serverIds, $out, $base, $known)
+    $h = @{ 'User-Agent' = 'arma-reforger-ai-toolkit/1.0' }
+    $servers = @()
+    $need = @{}
+    foreach ($sid in $serverIds) {
+      try {
+        $d = Invoke-RestMethod -Uri "$base/servers/$sid" -Headers $h -TimeoutSec 30
+        if (-not $d.server -or -not @($d.server.mods).Count) { throw 'no modlist (offline or password protected)' }
+        $mods = @()
+        foreach ($m in @($d.server.mods)) {
+          $mods += [PSCustomObject]@{ id = $m.id; name = $m.name; size = [double]$m.size; sizeKnown = [bool]$m.sizeKnown }
+          if ($known -notcontains $m.id -and -not ($m.sizeKnown -and $m.size)) { $need[$m.id] = $true }
+        }
+        $servers += [PSCustomObject]@{ id = $sid; name = $d.server.name; mods = $mods }
+      } catch {
+        $servers += [PSCustomObject]@{ id = $sid; name = ''; error = $_.Exception.Message; mods = @() }
+      }
+    }
+    $sizes = @{}
+    if ($need.Count) {
+      try {
+        $body = @{ mode = 'replace'; desired = @($need.Keys | ForEach-Object { @{ id = $_ } }) } | ConvertTo-Json -Depth 5
+        $plan = Invoke-RestMethod -Uri "$base/tools/storage-plan" -Method Post -Body $body -Headers $h -ContentType 'application/json' -TimeoutSec 120
+        foreach ($x in $plan.data.downloads) { $sizes[$x.id] = @{ bytes = [double]$x.bytes; exact = [bool]$x.exact } }
+      } catch { }
+    }
+    @{ servers = $servers; sizes = $sizes } | ConvertTo-Json -Depth 8 | Set-Content $out
+  }
+  $script:refreshJob = @{ id = $id; out = $out; job = $job }
+  @{ job = $id; msg = "refreshing $($ids.Count) server(s) in the background (job $id)..." }
+}
+
+function Complete-RefreshJob([string]$Id) {
+  # Called by /job. Returns { state = running|done|failed }; applies the result
+  # exactly once, on the request thread, then cleans the job up.
+  $rj = $script:refreshJob
+  if (-not $rj) { return @{ state = 'failed'; error = 'no refresh job is running' } }
+  if ($Id -and $Id -ne $rj.id) { return @{ state = 'failed'; error = "unknown job $Id" } }
+  $state = [string]$rj.job.State
+  if ($state -eq 'Running' -or $state -eq 'NotStarted') { return @{ state = 'running'; id = $rj.id } }
+
+  $err = ''
+  if ($state -eq 'Failed') { $err = [string]$rj.job.ChildJobs[0].JobStateInfo.Reason.Message }
+  $payload = $null
+  if (-not $err) {
+    if (Test-Path $rj.out) {
+      try { $payload = Get-Content $rj.out -Raw | ConvertFrom-Json }
+      catch { $err = "unreadable refresh result: $($_.Exception.Message)" }
+    } else { $err = 'the refresh produced no result' }
+  }
+
+  $result = $null
+  try {
+    if ($err) {
+      $result = @{ state = 'failed'; error = $err }
+    } else {
+      $script:bCache = @{}; $script:bCacheAt = @{}
+      $script:dCache = @{}; $script:dCacheAt = @{}
+      $script:dirCacheAt = (Get-Date).AddMinutes(-10)
+      $script:clCacheAt = (Get-Date).AddMinutes(-10)
+      $sz = Read-Json $Sizes $j
+      foreach ($p in $sz.mods.PSObject.Properties) { $sizeMap[$p.Name] = $p.Value }
+      foreach ($p in @($payload.sizes.PSObject.Properties)) {
+        $sizeMap[$p.Name] = @{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }
+        $sz.mods | Add-Member -NotePropertyName $p.Name -NotePropertyValue ([PSCustomObject]@{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }) -Force
+      }
+      $ok = 0; $fail = 0; $changed = @()
+      foreach ($sp in @($payload.servers)) {
+        $sv = @($serverList | Where-Object { $_.id -eq $sp.id })[0]
+        if (-not $sv) { continue }            # removed while the job was running
+        if ($sp.PSObject.Properties['error'] -and $sp.error) { $fail++; continue }
+        Merge-ServerMods $sv @($sp.mods) $sz
+        $c = $sv.PSObject.Properties['changed']
+        if ($c -and $c.Value) { $changed += "$($sv.name): +$($c.Value.added) -$($c.Value.removed)" }
+        $ok++
+      }
+      $script:TotalBytes = ($sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
+      $sz.totalBytes = [double]$script:TotalBytes
+      Save-Json $sz $Sizes 4
+      Save-Json @{ servers = $serverList } $ServersPath 6
+      $want = [ordered]@{}
+      foreach ($sv in $serverList) { foreach ($m in $sv.mods) { $want[$m.id] = $m.name } }
+      $q = Add-MissingToQueue $want
+      $result = @{ state = 'done'; msg = "refreshed $ok/$(@($payload.servers).Count) servers$(if ($fail) { " ($fail unreachable)" }): $($sizeMap.Count) mods tracked, $($q.count) new mods queued$(if (@($changed).Count) { " - modlist changed: $($changed -join '; ')" })$($q.note)" }
+    }
+  } catch {
+    $result = @{ state = 'failed'; error = $_.Exception.Message }
+  } finally {
+    Remove-Job $rj.job -Force -ErrorAction SilentlyContinue
+    Remove-Item $rj.out -Force -ErrorAction SilentlyContinue
+    $script:refreshJob = $null
+  }
+  $result
 }
 
 function Add-MissingToQueue($want) {
@@ -755,57 +844,6 @@ function Add-MissingToQueue($want) {
     if ($restart) { $note = "; downloader restarted for the new mods ($(Start-DS))" }
   }
   @{ count = $new.Count; note = $note }
-}
-
-function Invoke-RefreshServers {
-  # global refresh: re-read local state, pull a fresh modlist for every tracked
-  # server, resolve sizes for mods we have never seen, and queue the new ones
-  $script:bCache = @{}; $script:bCacheAt = @{}
-  $script:dCache = @{}; $script:dCacheAt = @{}
-  $script:dirCacheAt = (Get-Date).AddMinutes(-10)   # force a disk rescan
-  $script:clCacheAt = (Get-Date).AddMinutes(-10)
-  $sz = Read-Json $Sizes $j
-  foreach ($p in $sz.mods.PSObject.Properties) { $sizeMap[$p.Name] = $p.Value }
-  $ok = 0; $fail = 0; $changed = @()
-  foreach ($sv in $serverList) {
-    try { if (Sync-Server $sv $sz) { $ok++ } else { $fail++ } } catch { $fail++ }
-    # pacing for the free tier (60 requests/minute); a short list needs no pause
-    if (@($serverList).Count -gt 20) { Start-Sleep -Milliseconds 300 }
-    $c = $sv.PSObject.Properties['changed']
-    if ($c -and $c.Value) { $changed += "$($sv.name): +$($c.Value.added) -$($c.Value.removed)" }
-  }
-  $script:TotalBytes = ($sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
-  $sz.totalBytes = [double]$script:TotalBytes
-  Save-Json $sz $Sizes 4
-  Save-Json @{ servers = $serverList } $ServersPath 6
-
-  $want = [ordered]@{}
-  foreach ($sv in $serverList) { foreach ($m in $sv.mods) { $want[$m.id] = $m.name } }
-  $q = Add-MissingToQueue $want
-  $have = Get-HaveIds
-  $onDisk = 0
-  foreach ($sv in $serverList) { $onDisk += @($sv.mods | Where-Object { $have.ContainsKey($_.id) }).Count }
-  "refreshed $ok/$(@($serverList).Count) servers$(if ($fail) { " ($fail unreachable)" }): $($sizeMap.Count) mods tracked, $onDisk server mod slots installed, $($q.count) new mods queued$(if (@($changed).Count) { " - modlist changed: $($changed -join '; ')" })$($q.note)"
-}
-
-function Invoke-RefreshServer([string]$Id) {
-  # one server only - same rules as Refresh all, so the two can never disagree
-  $sv = @($serverList | Where-Object { $_.id -eq $Id })[0]
-  if (-not $sv) { throw 'server is not in the list' }
-  $sz = Read-Json $Sizes $j
-  foreach ($p in $sz.mods.PSObject.Properties) { $sizeMap[$p.Name] = $p.Value }
-  if (-not (Sync-Server $sv $sz)) { throw "could not read the modlist of '$($sv.name)' - it may be offline or password protected" }
-  $script:TotalBytes = ($sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
-  $sz.totalBytes = [double]$script:TotalBytes
-  Save-Json $sz $Sizes 4
-  Save-Json @{ servers = $serverList } $ServersPath 6
-  $want = [ordered]@{}
-  foreach ($m in $sv.mods) { $want[$m.id] = $m.name }
-  $q = Add-MissingToQueue $want
-  $chg = ''
-  $c = $sv.PSObject.Properties['changed']
-  if ($c -and $c.Value) { $chg = " - modlist changed: +$($c.Value.added) -$($c.Value.removed), Make preset rebuilds it" }
-  "refreshed '$($sv.name)': $(@($sv.mods).Count) mods, $($q.count) new mods queued$chg$($q.note)"
 }
 
 function Invoke-RemoveServer([string]$Id) {
@@ -849,7 +887,7 @@ function Invoke-ResumeAll {
 # per-run token: the six state-changing endpoints only answer requests that carry
 # it, so another website open in the browser cannot drive this server (CSRF)
 $token = [guid]::NewGuid().ToString('N')
-$mutating = '/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/make-preset','/add-server','/refresh-servers','/refresh-server','/remove-server','/add-mod'
+$mutating = '/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
 
 $html = @'
 <!doctype html><html><head><meta charset="utf-8"><title>Reforger Mods Download</title>
@@ -1136,7 +1174,20 @@ async function post(w){
   if(j.error)say('failed: '+j.error,false);
   else if(j.msg)say(String(j.msg),true);
   await tick();
- }catch(e){say('failed: '+e,false); await tick();}
+  return j;
+ }catch(e){say('failed: '+e,false); await tick(); return null;}
+}
+async function jobPoll(id){
+ // a refresh runs in one background job; this asks until it is finished
+ for(let i=0;i<200;i++){
+  try{
+   const r=await fetch('/job?id='+encodeURIComponent(id)+'&t='+T,{method:'POST'});
+   const j=await r.json();
+   if(j.state!=='running')return j;
+  }catch(e){return {state:'failed',error:String(e)};}
+  await new Promise(r=>setTimeout(r,700));
+ }
+ return {state:'failed',error:'the refresh did not finish in time'};
 }
 async function queueSrv(id,ev){
  ev.stopPropagation();
@@ -1155,19 +1206,30 @@ async function presetSrv(id,ev){
 async function refreshSrv(ev){
  ev.stopPropagation();   // the button sits inside the card's <summary>
  const b=ev.target; b.disabled=true; b.textContent='refreshing...';
- say('refreshing servers: rescanning disk and pulling fresh modlists...');
- await post('refresh-servers');
+ const r=await post('refresh-servers');
  b.disabled=false; b.textContent='Refresh all';
- loadSrv();
+ if(!r||!r.job)return;
+ say('refreshing in the background (job '+r.job+')...');
+ const j=await jobPoll(r.job);
+ if(j.state==='done')say(j.msg||'refresh done',true);
+ else say('refresh failed: '+(j.error||'unknown'),false);
+ SRV=null; SRVAt=0; await loadSrv();
+ if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+ await tick();
 }
 async function refreshOne(id,ev){
  ev.stopPropagation();
  const b=ev.target; b.disabled=true; b.textContent='refreshing...';
- say('pulling this server\'s modlist again...');
- await post('refresh-server?id='+id);
+ const r=await post('refresh-server?id='+encodeURIComponent(id));
  b.disabled=false; b.textContent='Refresh';
+ if(!r||!r.job)return;
+ say('refreshing in the background (job '+r.job+')...');
+ const j=await jobPoll(r.job);
+ if(j.state==='done')say(j.msg||'refresh done',true);
+ else say('refresh failed: '+(j.error||'unknown'),false);
  SRV=null; SRVAt=0; await loadSrv();
  if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+ await tick();
 }
 async function removeSrv(id,ev){
  ev.stopPropagation();
@@ -1222,6 +1284,7 @@ while ($l.IsListening) {
   $ctx = $l.GetContext()
   try {
     $msg = $null   # must reset per request or it leaks into the next response body
+    $jobId = $null
     $path = $ctx.Request.Url.AbsolutePath
     $ctx.Response.Headers.Add('Cache-Control', 'no-store')
     if ($path -in $mutating -and $ctx.Request.QueryString['t'] -ne $token) {
@@ -1307,8 +1370,25 @@ while ($l.IsListening) {
       }
       '/add-mod' { $msg = Invoke-AddMod $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/add-server'   { $msg = Invoke-AddServer $ctx.Request.QueryString['id'];   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
-      '/refresh-servers' { $msg = Invoke-RefreshServers; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan }
-      '/refresh-server'  { $msg = Invoke-RefreshServer $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan }
+      '/refresh-servers' {
+        $r = Start-RefreshJob @($serverList | ForEach-Object { $_.id })
+        $msg = $r.msg; $jobId = $r.job
+        Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan
+      }
+      '/refresh-server' {
+        $sid = [string]$ctx.Request.QueryString['id']
+        if (-not @($serverList | Where-Object { $_.id -eq $sid }).Count) { throw 'server is not in the list' }
+        $r = Start-RefreshJob @($sid)
+        $msg = $r.msg; $jobId = $r.job
+        Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Cyan
+      }
+      '/job' {
+        # collects a background refresh: applies the result once, then reports it
+        $r = Complete-RefreshJob ([string]$ctx.Request.QueryString['id'])
+        $b = [Text.Encoding]::UTF8.GetBytes(($r | ConvertTo-Json -Compress))
+        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.OutputStream.Write($b, 0, $b.Length)
+      }
       '/remove-server'   { $msg = Invoke-RemoveServer  $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
       default   {
         $ctx.Response.StatusCode = 404
@@ -1329,7 +1409,9 @@ while ($l.IsListening) {
         Add-Content (Join-Path $Data 'actions.log') ("[{0:yyyy-MM-dd HH:mm:ss}] {1,7} {2} <- {3}: {4}" -f
           (Get-Date), $src, $what, $ctx.Request.RemoteEndPoint, ($msg -replace '\s+', ' '))
       } catch { }
-      $b = [Text.Encoding]::UTF8.GetBytes((@{ ok = $true; msg = [string]$msg } | ConvertTo-Json -Compress))
+      $resp = @{ ok = $true; msg = [string]$msg }
+      if ($jobId) { $resp.job = [string]$jobId }
+      $b = [Text.Encoding]::UTF8.GetBytes(($resp | ConvertTo-Json -Compress))
       $ctx.Response.ContentType = 'application/json'
       $ctx.Response.OutputStream.Write($b, 0, $b.Length)
     }

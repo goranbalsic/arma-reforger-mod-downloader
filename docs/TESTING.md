@@ -29,15 +29,29 @@ unknown ids, and after all that: valid config, well-formed and unique queued ids
 sizes and server files, no repeated mod in a server, no duplicate addon folder, junction
 intact, dashboard still answering.
 
-### `test-rules.ps1` — live integrity (manual)
+### `test-rules.ps1` - live integrity (manual)
 Asserts that every mod the dashboard lists as completed satisfies the same rule and has
 not been written to for 2 minutes. Needs a live install with a library.
+
+### `tools/audit.ps1` - local gate
+Runs the mandatory checks and reports PASS, FAIL or INCOMPLETE per check and overall.
+A mandatory check that could not run makes the audit INCOMPLETE (exit 2) - never PASS.
+`-Deep` adds the docs, changelog and the live torture test (optional; a missing dashboard
+is INCOMPLETE, not a failure).
+
+| Check | Covered by | Evidence |
+| --- | --- | --- |
+| engine lock | `test-units.ps1` | a held lock returns `$null` (400 ms timeout against a 4 s holder) and is available afterwards |
+| job lifecycle | `test-torture.ps1` | refresh returns a job id, the message names it, polling reaches `done` with a message, server list intact |
+| audit statuses | audit + fixtures | PASS (exit 0), INCOMPLETE when the analyzer module is hidden (exit 2), FAIL on a broken script (exit 1) |
+
+Counts: `test-units.ps1` 53 checks; `test-torture.ps1` 38 (42 with `-ServerRoundTrip`).
 
 ## Not covered
 
 - A real Steam/Workshop download in CI (needs a 12 GB engine and an account).
-- Cross-process lock timeout: the mutex is exercised by concurrent starts in the torture
-  test, but a test that holds the mutex >20 s and asserts the caller aborts is missing.
+- A lock held longer than the 20 s default: the short-timeout path is tested; the
+  "waited long enough, then proceeded" path is not.
 - The update path end to end (network + release). It is run by hand on every release and
   the result is recorded in the release report.
 - WMI failure (`Get-OwnEngine` returning `$null`). The code paths exist; there is no
@@ -50,6 +64,8 @@ powershell -File test-units.ps1
 powershell -File test-torture.ps1                 # dashboard must be running
 powershell -File test-torture.ps1 -ServerRoundTrip
 powershell -File test-rules.ps1                   # live install with addons
+powershell -File tools\audit.ps1                  # all mandatory checks
+powershell -File tools\audit.ps1 -Deep            # plus docs and live tests
 ```
 
 Exit code 0 means everything passed; any failed check prints `FAIL` and returns 1.
@@ -58,13 +74,14 @@ Exit code 0 means everything passed; any failed check prints `FAIL` and returns 
 
 `.github/workflows/ci.yml` runs on `windows-latest`:
 
-1. Parse every `.ps1` with the PowerShell parser (syntax gate).
-2. Install and run PSScriptAnalyzer at `Error` severity.
-3. Run `test-units.ps1`.
+1. Install PSScriptAnalyzer for Windows PowerShell.
+2. Run `tools/audit.ps1` (it parses every script, runs the unit tests, and gates on
+   analyzer errors).
 
-PSScriptAnalyzer findings at warning level are printed but not enforced. If the module
-cannot be installed, the job fails — it does not report success for a check it could not
-run.
+If the module cannot be installed, the audit reports INCOMPLETE and the job fails; it
+never reports success for a check it could not run.
+
+PSScriptAnalyzer findings at warning level are printed but not enforced.
 
 The torture and rules suites are not in CI: they need a running dashboard and a real
 addon library. They are release checks, run by hand and reported with each release.

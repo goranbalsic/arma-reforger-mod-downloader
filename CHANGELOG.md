@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.14
+
+- `tools/audit.ps1`: PASS / FAIL / INCOMPLETE. A mandatory check that cannot run makes the
+  audit INCOMPLETE, never PASS. CI now runs it.
+- Refresh runs in one bounded background job; the page stays responsive (0.65 s instead of
+  waiting for the API) and the result is applied on the request thread. A second refresh
+  returns the running job.
+- `Lock-Engine` takes a timeout so contention is testable; a held lock is never stolen.
+- Tests: 53 unit checks (lock contention, incomplete preset exclusion, created/modified
+  files, negative size) and 38 torture checks (refresh job lifecycle).
+- Docs: architecture, testing and audit updates for the job mechanism and the audit gate.
+
 ## 1.0.13
 
 Reliability, integrity and performance pass.

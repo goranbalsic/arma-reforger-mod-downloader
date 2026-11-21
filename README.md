@@ -51,10 +51,12 @@ checks once at startup. The engine, your queue and your mods are never touched.
 
 ## Tests
 
-- `powershell -File test-units.ps1` - offline checks of the shared rules, about a second.
+- `powershell -File test-units.ps1` - offline checks of the shared rules, about a few seconds.
 - `powershell -File test-torture.ps1` - beats on a running dashboard: every route, wrong
-  ids, a wrong action token, parallel polling, state-file damage. Add `-ServerRoundTrip`
-  for the remove/re-add test (needs the Workshop API).
+  ids, a wrong action token, parallel polling, a refresh job, state-file damage. Add
+  `-ServerRoundTrip` for the remove/re-add test (needs the Workshop API).
+- `powershell -File tools\audit.ps1` - the local gate: parse, PSScriptAnalyzer, unit tests.
+  Exit 0 = PASS, 1 = FAIL, 2 = INCOMPLETE (a mandatory check could not run).
 
 ## Docs
 

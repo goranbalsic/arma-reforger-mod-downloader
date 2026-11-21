@@ -76,12 +76,16 @@ Check 'repair turns null mods into an array'  (@((Repair-Cfg ([pscustomobject]@{
 
 Write-Host 'preset writer (empty preset storage block, update in place)'
 $pd = Join-Path $tmp 'preset'
-New-Item -ItemType Directory -Force (Join-Path $pd 'data'), (Join-Path $pd 'addons\TestMod_0123456789ABCDEF') | Out-Null
+New-Item -ItemType Directory -Force (Join-Path $pd 'data'), (Join-Path $pd 'addons\TestMod_0123456789ABCDEF'), (Join-Path $pd 'addons\Broken_1111222233334444') | Out-Null
 [IO.File]::WriteAllText((Join-Path $pd 'addons\TestMod_0123456789ABCDEF\data.pak'), ('x' * 4))
 '{ "meta": { "versions": [ { "package": { "files": [ { "name": "data.pak", "size": 4 } ] } } ] } }' |
   Set-Content (Join-Path $pd 'addons\TestMod_0123456789ABCDEF\meta')
+# a second addon that is installed but incomplete: it must never reach a preset
+[IO.File]::WriteAllText((Join-Path $pd 'addons\Broken_1111222233334444\data.pak'), ('x' * 2))
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "data.pak", "size": 4 } ] } } ] } }' |
+  Set-Content (Join-Path $pd 'addons\Broken_1111222233334444\meta')
 @{ servers = @(@{ id = 'aaaaaaaa-0000-0000-0000-000000000000'; name = 'Test Server'
-                  mods = @(@{ id = '0123456789ABCDEF'; name = 'Test Mod' }) }) } |
+                  mods = @(@{ id = '0123456789ABCDEF'; name = 'Test Mod' }, @{ id = '1111222233334444'; name = 'Broken' }) }) } |
   ConvertTo-Json -Depth 5 | Set-Content (Join-Path $pd 'data\batch1-servers.json')
 $conf = Join-Path $pd 'ReforgerGameSettings.conf'
 "GameUserSettings {`r`n  SCR_WorkshopAddonManagerPresetStorage SCR_WorkshopAddonManagerPresetStorage `"{6AEA4081FE80EE32}`" {`r`n  }`r`n}" |
@@ -103,6 +107,8 @@ Check 'preset sits inside m_aPresets'             ($presetText.IndexOf('m_aPrese
 Check 'a conf-breaking preset is refused'         ($out3 -match 'verification failed')
 Check 'the settings file is unchanged after it'   ((Get-Content $conf -Raw) -eq $beforeBad)
 Check 'no temp file is left behind'               (-not (Test-Path "$conf.tmp"))
+Check 'an incomplete addon is kept out of the preset' ($out1 -match 'in this preset: 1')
+Check 'only the complete addon is written'        (([regex]::Matches($presetText, 'SCR_WorkshopAddonPresetAddonMeta')).Count -eq 1)
 
 Write-Host 'trim: a partial that looks installed is deleted, one without markers is kept'
 $td = Join-Path $tmp 'trim'
@@ -152,6 +158,23 @@ Check 'meta entry without a name is not complete' (-not (Test-AddonComplete $md 
 Check 'meta pointing outside the folder is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
 '{ "meta": { "versions": [ { "package": { "files": [ { "name": "C:\\Windows\\win.ini", "size": 5 } ] } } ] } }' | Set-Content (Join-Path $md 'meta')
 Check 'meta with an absolute path is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "data.pak", "size": -5 } ] } } ] } }' | Set-Content (Join-Path $md 'meta')
+Check 'meta with a negative size is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
+
+$gd = Join-Path $tmp 'complete\Add_0000111122223333'
+New-Item -ItemType Directory -Force $gd | Out-Null
+[IO.File]::WriteAllText((Join-Path $gd 'a.pak'), 'x')
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "a.pak", "size": 1 }, { "name": "b.pak", "size": 2 } ] } } ] } }' |
+  Set-Content (Join-Path $gd 'meta')
+Check 'a missing listed file is incomplete' (-not (Test-AddonComplete $gd (Get-Item (Join-Path $gd 'a.pak')).LastWriteTime))
+Start-Sleep -Milliseconds 60
+[IO.File]::WriteAllText((Join-Path $gd 'b.pak'), 'yy')
+$newest = (Get-ChildItem $gd -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+Check 'creating the missing file makes it complete' (Test-AddonComplete $gd $newest)
+Start-Sleep -Milliseconds 60
+[IO.File]::WriteAllText((Join-Path $gd 'a.pak'), 'zz')
+$newest2 = (Get-ChildItem $gd -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+Check 'changing a file size invalidates completion' (-not (Test-AddonComplete $gd $newest2))
 
 Write-Host 'watchdog failure scan (resumable, no double counting)'
 $logLines = @(
@@ -194,6 +217,24 @@ $migBad = Initialize-AddonsLink $mp2 $game2 (Join-Path $mg2 'data\cfg.json')
 $handle.Close()
 Check 'keeps the old folder when a move fails' ((-not $migBad) -and (Test-Path (Join-Path $mp2 'Locked_EEEEFFFF00001111\meta')))
 Check 'leaves no empty copy in the game folder' (-not (Test-Path (Join-Path $game2 'Locked_EEEEFFFF00001111')))
+
+Write-Host 'engine lock (a held lock is never stolen)'
+$hold = Start-Job -ArgumentList $tmp -ScriptBlock {
+  param($d)
+  $m = [Threading.Mutex]::new($false, 'ReforgerEngineCtl')
+  $null = $m.WaitOne(5000)
+  New-Item -ItemType File -Force (Join-Path $d 'held.lock') | Out-Null
+  Start-Sleep -Milliseconds 4000
+  $m.ReleaseMutex()
+}
+foreach ($i in 1..50) { if (Test-Path (Join-Path $tmp 'held.lock')) { break }; Start-Sleep -Milliseconds 100 }
+$blocked = Lock-Engine 400
+Check 'a held engine lock returns null instead of being stolen' ($null -eq $blocked)
+$null = Wait-Job $hold -Timeout 20000
+Remove-Job $hold -Force -ErrorAction SilentlyContinue
+$free = Lock-Engine 5000
+Check 'the lock is available again after the holder exits' ($null -ne $free)
+if ($free) { $free.ReleaseMutex() }
 
 Write-Host 'engine ownership (only the engine we started)'
 $none = Get-OwnEngine (Join-Path $tmp 'no-such-config.json')

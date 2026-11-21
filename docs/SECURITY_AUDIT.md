@@ -16,6 +16,7 @@ user accounts.
 | Update integrity | The release zip's SHA-256 is compared with the digest GitHub publishes for the asset; a mismatch aborts before anything is copied. Only `.ps1/.cmd/.md/.txt`, `.gitignore`, `LICENSE` and `docs` are copied into the app folder. |
 | Secrets | None in this repository. The mod.io scripts that live outside the repo keep credentials in DPAPI, per Windows account and machine. |
 | Local data written | `data/` (queue, sizes, server lists, logs), `serverprofile/` (engine profile), and the game's settings file for presets. Preset writes are atomic and keep a timestamped backup. |
+| Background jobs | A refresh runs in one `Start-Job` process with the same user rights. It writes `data/job-<id>.json` (server names, mod ids, sizes - no secrets) which is deleted when the result is applied. A second refresh is refused while one runs, so at most one extra process exists. |
 | Addon writes | Only inside the addons folder, through the engine or in a migration that refuses to delete anything it did not move. |
 
 ## What is NOT protected
