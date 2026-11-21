@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.21
+
+- Write launcher presets inside the storage body, recover truncated storage IDs from profile backups, and show action results in Library.
+
 ## 1.0.20
 
 - Compact dashboard navigation, clearer download controls, and side-by-side queue and transfer lists on wider screens.

@@ -40,22 +40,48 @@ $text = [IO.File]::ReadAllText($conf)
 
 # anchor on the storage declaration itself, never on a version line: inserting
 # near the top gets the preset dropped by the game
-$sIdx = $text.IndexOf('SCR_WorkshopAddonManagerPresetStorage')
-if ($sIdx -lt 0) { throw 'preset storage block not found in conf' }
-$storage = $text.Substring($sIdx)
+$declaration = '(?m)^[ \t]*SCR_WorkshopAddonManagerPresetStorage[ \t]+SCR_WorkshopAddonManagerPresetStorage[ \t]+'
+# Recover the ID from this profile's backups if the old writer inserted into
+# its quoted opening brace and the game subsequently truncated the ID.
+if ($text -match ($declaration + '"\{\s*"')) {
+  $guid = $null
+  foreach ($backup in (Get-ChildItem -LiteralPath (Split-Path $conf) -Filter 'ReforgerGameSettings.conf.bak-*' | Sort-Object LastWriteTime -Descending)) {
+    $saved = [IO.File]::ReadAllText($backup.FullName)
+    if ($saved -match ($declaration + '"\{([0-9A-Fa-f]{16})\}"') -or
+        $saved -match ($declaration + '"\{\s+m_aPresets\s*\{[\s\S]*?\}\s*([0-9A-Fa-f]{16})\}"')) {
+      $guid = $Matches[1]
+      break
+    }
+  }
+  if (-not $guid) { throw 'The preset storage ID is damaged. Restore a settings backup with its original ID.' }
+  $text = [regex]::Replace($text, '(' + $declaration + ')"\{\s*"', ('$1"{' + $guid + '}"'))
+}
+$header = [regex]::Match($text, $declaration + '"\{[0-9A-Fa-f]{16}\}"\s*\{')
+if (-not $header.Success) { throw 'Cannot locate a valid preset storage declaration in the settings file.' }
+$sIdx = $header.Index
+$storageStart = $header.Index + $header.Length
+$depth = 1
+$end = $storageStart
+foreach ($token in [regex]::Matches($text.Substring($storageStart), '"[^"]*"|[{}]')) {
+  if ($token.Value -eq '{') { $depth++ }
+  if ($token.Value -eq '}') { $depth-- }
+  if ($depth -eq 0) { $end = $storageStart + $token.Index; break }
+}
+if ($depth) { throw 'Unclosed preset storage block.' }
+$storage = $text.Substring($storageStart, $end - $storageStart)
 $presetsBefore = ([regex]::Matches($storage, 'SCR_WorkshopAddonPreset "\{[0-9A-F]{16}\}"')).Count
 
 # insert inside m_aPresets { }; create that container when the conf has none yet
 $indent = '   '   # the game indents a preset by 3 spaces inside m_aPresets
-$mp = $text.IndexOf('m_aPresets', $sIdx)
+$mp = $storage.IndexOf('m_aPresets')
 if ($mp -ge 0) {
-  $ins = $text.IndexOf('{', $mp) + 1
+  $ins = $text.IndexOf('{', $storageStart + $mp) + 1
   $wrapBefore = ''; $wrapAfter = ''
 } else {
   # an empty storage block has neither m_aPresets nor m_iVersion (the conf on this
   # machine ships "{ }"), so anchor on the storage block's own brace. Every Make
   # preset click used to fail here with "preset storage m_iVersion not found".
-  $ins = $text.IndexOf('{', $sIdx) + 1
+  $ins = $storageStart
   $wrapBefore = "`r`n  m_aPresets {"
   $wrapAfter = "`r`n  }"
 }
@@ -123,7 +149,7 @@ $body = $indent + 'SCR_WorkshopAddonPreset "{' + $presetGuid + '}" {' + "`r`n" +
 # in place with the current modlist instead of refusing: a server changes its mods
 # and the preset has to follow
 $mark = 'SCR_WorkshopAddonPreset "{' + $presetGuid + '}"'
-$at = $text.IndexOf($mark)
+$at = $text.IndexOf($mark, $storageStart, $storage.Length)
 if ($at -ge 0) {
   $ob = $text.IndexOf('{', $at + $mark.Length)
   $depth = 0; $cb = -1

@@ -100,6 +100,7 @@ $beforeBad = Get-Content $conf -Raw
 $out3 = try { (& "$PSScriptRoot\make-preset.ps1" -ServerId 'aaaaaaaa-0000-0000-0000-000000000000' -ConfPath $conf -AddonsDir (Join-Path $pd 'addons') -Name 'Bad{Name' 2>&1) -join ' ' } catch { "ERROR: $_" }
 $env:RFMM_DATA = $oldData
 $presetText = Get-Content $conf -Raw
+Check 'storage ID survives preset creation' ($presetText -match '"\{6AEA4081FE80EE32\}"\s*\{\s*m_aPresets')
 Check 'creates a preset in an empty storage block' ($out1 -match 'created')
 Check 're-running updates instead of failing'     ($out2 -match 'updated')
 Check 'exactly one preset after both runs'        (([regex]::Matches($presetText, 'SCR_WorkshopAddonPreset "\{')).Count -eq 1)
