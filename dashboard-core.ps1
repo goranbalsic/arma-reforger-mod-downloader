@@ -268,12 +268,10 @@ function Start-DS {
     }
     # resume interrupted work: a partial download is not in the queue after Clear
     # queue, but Start / Resume should continue it instead of saying "empty"
-    $j0 = Get-Cfg
-    if (@($j0.game.mods).Count -eq 0) {
+    if (@((Get-Cfg).game.mods).Count -eq 0) {
       $partial = @(Get-PartialMods)
       if ($partial.Count) {
-        $j0.game.mods = $partial
-        Save-Json $j0 $Cfg
+        Update-Cfg { param($cfg) $cfg.game.mods = $partial } $Cfg | Out-Null
         Write-Host "resuming $($partial.Count) unfinished download(s)" -ForegroundColor Cyan
       }
     }
@@ -370,9 +368,7 @@ function Invoke-QueueServer([string]$Id) {
   # stop BEFORE writing: the engine rewrites this file on exit, so a write made
   # while it runs is immediately undone (the button looked like it did nothing)
   Stop-DS | Out-Null
-  $j = Get-Cfg
-  $j.game.mods = @($first + $rest)
-  Save-Json $j $Cfg
+  Update-Cfg { param($cfg) $cfg.game.mods = @($first + $rest) } $Cfg | Out-Null
   $r = Start-DS
   $already = @($srv.mods).Count - $first.Count
   "queue: $($first.Count) missing mods of '$name' download first, then the other $($rest.Count) batch mods follow ($already of $($srv.mods.Count) already installed) ($r)"
@@ -494,9 +490,11 @@ function Invoke-AddMod([string]$Id) {
   if ($null -eq $engine) { throw 'cannot read the process list right now - nothing was added, try again in a moment' }
   $wasRunning = @($engine).Count -gt 0
   if ($wasRunning) { Stop-DS | Out-Null }
-  $j = Get-Cfg   # after the stop: the engine's own copy is now on disk
-  $j.game.mods = @($j.game.mods) + @($add | ForEach-Object { [PSCustomObject]@{ modId = $_.modId; name = $_.name } })
-  Save-Json $j $Cfg
+  # serialised write; the engine's own copy is on disk because it was stopped
+  Update-Cfg {
+    param($cfg)
+    $cfg.game.mods = @($cfg.game.mods) + @($add | ForEach-Object { [PSCustomObject]@{ modId = $_.modId; name = $_.name } })
+  } $Cfg | Out-Null
   # merge the sizes (merge-only: a replace would destroy the rest of the map)
   $sz = Read-Json $Sizes ('{"totalBytes":0,"mods":{}}' | ConvertFrom-Json)
   foreach ($a in $add) {
@@ -569,9 +567,10 @@ function Invoke-AddServer([string]$Id) {
   $engine = Get-DS -Fresh
   if ($null -eq $engine) { throw 'cannot read the process list right now - nothing was added, try again in a moment' }
   if (@($engine).Count) { Stop-DS | Out-Null }
-  $j = Get-Cfg
-  $j.game.mods = @($j.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_.id; name = $_.name } })
-  Save-Json $j $Cfg
+  Update-Cfg {
+    param($cfg)
+    $cfg.game.mods = @($cfg.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_.id; name = $_.name } })
+  } $Cfg | Out-Null
 
   # merge the real sizes into the sizes file (merge-only: never replace it)
   $sz = Read-Json $Sizes ('{"totalBytes":0,"mods":{}}' | ConvertFrom-Json)
@@ -754,9 +753,10 @@ function Add-MissingToQueue($want) {
     if ($null -eq $engine) { throw 'cannot read the process list right now - the new mods were not queued, try again in a moment' }
     $restart = @($engine).Count -gt 0
     if ($restart) { Stop-DS | Out-Null }
-    $j = Get-Cfg   # after the stop: the engine's own copy is now on disk
-    $j.game.mods = @($j.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$want[$_] } })
-    Save-Json $j $Cfg
+    Update-Cfg {
+      param($cfg)
+      $cfg.game.mods = @($cfg.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$want[$_] } })
+    } $Cfg | Out-Null
     if ($restart) { $note = "; downloader restarted for the new mods ($(Start-DS))" }
   }
   @{ count = $new.Count; note = $note }
@@ -775,9 +775,7 @@ function Invoke-ClearQueue {
   $n = @((Get-Cfg).game.mods).Count
   Stop-DS | Out-Null
   Start-Sleep 2
-  $j = Get-Cfg
-  $j.game.mods = @()
-  Save-Json $j $Cfg
+  Update-Cfg { param($cfg) $cfg.game.mods = @() } $Cfg | Out-Null
   "queue cleared ($n mods removed) - installed mods are untouched"
 }
 function Invoke-ResumeAll {
@@ -790,9 +788,7 @@ function Invoke-ResumeAll {
     ForEach-Object { [PSCustomObject]@{ modId = $_; name = [string]$want[$_] } })
   # stop BEFORE writing: the engine rewrites the config on exit
   Stop-DS | Out-Null
-  $j = Get-Cfg
-  $j.game.mods = $mods
-  Save-Json $j $Cfg
+  Update-Cfg { param($cfg) $cfg.game.mods = $mods } $Cfg | Out-Null
   $r = Start-DS
   "resume all: $($mods.Count) mods queued, $(@($want.Keys).Count - $mods.Count) already installed ($r)"
 }

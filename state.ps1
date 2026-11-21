@@ -93,6 +93,23 @@ function Read-Json([string]$Path, $Default) {
   }
 }
 
+function Update-Cfg([scriptblock]$Change, [string]$ConfigPath, [int]$LockMs = 20000) {
+  # Serialised read-modify-write of the engine config. $Change receives the parsed
+  # config, may mutate it, and its output is returned. Throws when the engine lock
+  # is not available: a protected write must never continue without it.
+  # Do NOT call Start-DS / Stop-DS from inside $Change: they take the same lock
+  # themselves. Call them before/after this function.
+  if (-not $ConfigPath) { throw 'Update-Cfg: no config path' }
+  $ctl = Lock-Engine $LockMs
+  if (-not $ctl) { throw 'another start/stop is in progress - the queue was not changed' }
+  try {
+    $j = Repair-Cfg (Read-Json $ConfigPath ($CfgStub | ConvertFrom-Json))
+    $out = & $Change $j
+    Save-Json $j $ConfigPath
+    $out
+  } finally { $ctl.ReleaseMutex() }
+}
+
 function Get-Queued([string]$ConfigPath) {
   # Mods in the engine config, or $null when the file cannot be read or parsed.
   # $null must never be read as "no mods queued": the watchdog used to treat a

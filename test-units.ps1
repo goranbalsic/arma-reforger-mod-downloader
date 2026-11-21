@@ -391,6 +391,30 @@ Check 'a missing sizes file does not break add server' ($null -eq $szErr)
 Check 'the size of the new mod is recorded' ($szNow -and $szNow.mods.ABCDEF0123456789.bytes -eq 10)
 . "$PSScriptRoot\dashboard-core.ps1"
 
+Write-Host 'item 6: config updates are serialised'
+Reset-State
+$uout = Update-Cfg { param($cfg) $cfg.game.mods = @([pscustomobject]@{ modId = 'ABCDEF0123456789'; name = 'x' }); 'done' } $Cfg
+$usaved = Get-Content $Cfg -Raw | ConvertFrom-Json
+Check 'Update-Cfg saves the change' (@($usaved.game.mods).Count -eq 1)
+Check 'Update-Cfg returns the block output' ($uout -eq 'done')
+
+$hold2 = Start-Job -ArgumentList $tmp -ScriptBlock {
+  param($d)
+  $m = [Threading.Mutex]::new($false, 'ReforgerEngineCtl')
+  $null = $m.WaitOne(5000)
+  New-Item -ItemType File -Force (Join-Path $d 'held2.lock') | Out-Null
+  Start-Sleep -Milliseconds 3000
+  $m.ReleaseMutex()
+}
+foreach ($i in 1..50) { if (Test-Path (Join-Path $tmp 'held2.lock')) { break }; Start-Sleep -Milliseconds 100 }
+$beforeCfg = Get-Content $Cfg -Raw
+$uerr = $null
+try { Update-Cfg { param($cfg) $cfg.game.mods = @() } $Cfg 300 | Out-Null } catch { $uerr = $_ }
+Check 'Update-Cfg refuses while another process holds the lock' ($null -ne $uerr)
+Check 'Update-Cfg wrote nothing without the lock' ((Get-Content $Cfg -Raw) -eq $beforeCfg)
+$null = Wait-Job $hold2 -Timeout 20000
+Remove-Job $hold2 -Force -ErrorAction SilentlyContinue
+
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)

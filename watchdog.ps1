@@ -106,11 +106,21 @@ while ($true) {
       if ($fail.Count) {
         $drop = @($fail.Keys | Where-Object { $fail[$_] -ge 3 })
         if ($drop.Count) {
-          $j = Get-Content $Cfg -Raw | ConvertFrom-Json
-          $gone = @($j.game.mods | Where-Object { $drop -contains $_.modId } | ForEach-Object { $_.name })
-          $j.game.mods = @($j.game.mods | Where-Object { $drop -notcontains $_.modId })
-          Save-Json $j $Cfg
-          $queued = @($j.game.mods)
+          # serialised read-modify-write; the engine is dead in this branch
+          $gone = @()
+          try {
+            $gone = @(Update-Cfg {
+              param($cfg)
+              $names = @($cfg.game.mods | Where-Object { $drop -contains $_.modId } | ForEach-Object { $_.name })
+              $cfg.game.mods = @($cfg.game.mods | Where-Object { $drop -notcontains $_.modId })
+              $names
+            } $Cfg)
+          } catch {
+            Write-Wd "could not rewrite the queue (skipping this tick): $($_.Exception.Message)"
+            continue
+          }
+          $queued = Get-Queued $Cfg
+          if ($null -eq $queued) { $queued = ,@() }
           Write-Wd "skipped after 3 Workshop errors: $($gone -join ', ')"
           try {
             $prev = if (Test-Path $SkipFile) { @(Get-Content $SkipFile -Raw | ConvertFrom-Json) } else { @() }
