@@ -38,15 +38,35 @@ try {
   Add-Row 'parse every script' 'INCOMPLETE' $true $_.Exception.Message
 }
 
+# --- child processes ------------------------------------------------------------
+function Invoke-Child([string]$Exe, [string[]]$ChildArgs) {
+  # Start-Process with redirected files, because `& powershell ... 2>&1` under 5.1
+  # can turn the child's stderr into a terminating error - a failing test then
+  # looked INCOMPLETE instead of FAIL. This returns the real exit code and text.
+  $out = [IO.Path]::GetTempFileName()
+  $err = [IO.Path]::GetTempFileName()
+  try {
+    $quoted = @($ChildArgs | ForEach-Object { if ("$_" -match '\s') { '"' + $_ + '"' } else { $_ } })
+    $p = Start-Process -FilePath $Exe -ArgumentList $quoted -NoNewWindow -PassThru -Wait `
+      -RedirectStandardOutput $out -RedirectStandardError $err
+    $text = @()
+    if (Test-Path $out) { $text += @(Get-Content $out -ErrorAction SilentlyContinue) }
+    if (Test-Path $err) { $text += @(Get-Content $err -ErrorAction SilentlyContinue) }
+    @{ code = $p.ExitCode; output = $text }
+  } finally {
+    Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
+  }
+}
+
 # --- unit tests (mandatory) -----------------------------------------------------
 $units = Join-Path $Root 'test-units.ps1'
 if (-not (Test-Path $units)) {
   Add-Row 'unit tests' 'INCOMPLETE' $true 'test-units.ps1 not found'
 } else {
   try {
-    $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $units 2>&1
-    $last = @($out | Where-Object { "$_".Trim() }) | Select-Object -Last 1
-    Add-Row 'unit tests' $(if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }) $true ([string]$last)
+    $r = Invoke-Child 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $units)
+    $last = @($r.output | Where-Object { "$_".Trim() }) | Select-Object -Last 1
+    Add-Row 'unit tests' $(if ($r.code -eq 0) { 'PASS' } else { 'FAIL' }) $true ([string]$last)
   } catch {
     Add-Row 'unit tests' 'INCOMPLETE' $true $_.Exception.Message
   }
@@ -84,9 +104,9 @@ if ($Deep) {
     Add-Row 'live torture test' 'INCOMPLETE' $false 'dashboard not running on localhost:8123'
   } else {
     try {
-      $tout = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'test-torture.ps1') 2>&1
-      $summary = @($tout | Where-Object { "$_" -match 'checks:' }) | Select-Object -Last 1
-      Add-Row 'live torture test' $(if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }) $false ([string]$summary)
+      $r = Invoke-Child 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'test-torture.ps1'))
+      $summary = @($r.output | Where-Object { "$_" -match 'checks:' }) | Select-Object -Last 1
+      Add-Row 'live torture test' $(if ($r.code -eq 0) { 'PASS' } else { 'FAIL' }) $false ([string]$summary)
     } catch {
       Add-Row 'live torture test' 'INCOMPLETE' $false $_.Exception.Message
     }

@@ -43,7 +43,7 @@ is INCOMPLETE, not a failure).
 | --- | --- | --- |
 | engine lock | `test-units.ps1` | a held lock returns `$null` (400 ms timeout against a 4 s holder) and is available afterwards |
 | job lifecycle | `test-torture.ps1` | refresh returns a job id, the message names it, polling reaches `done` with a message, server list intact |
-| audit statuses | audit + fixtures | PASS (exit 0), INCOMPLETE when the analyzer module is hidden (exit 2), FAIL on a broken script (exit 1) |
+| audit statuses | 	ools\test-audit.ps1 | PASS (exit 0), INCOMPLETE when the analyzer module is hidden (exit 2), FAIL when the fixture's unit test fails (exit 1) |
 
 Counts: `test-units.ps1` 53 checks; `test-torture.ps1` 38 (42 with `-ServerRoundTrip`).
 

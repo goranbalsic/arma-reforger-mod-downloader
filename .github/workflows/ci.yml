@@ -23,3 +23,7 @@ jobs:
         shell: powershell
         # exit 0 PASS, 1 FAIL, 2 INCOMPLETE (a mandatory check could not run)
         run: powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\audit.ps1
+
+      - name: Audit status semantics (FAIL and INCOMPLETE fixtures)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\test-audit.ps1
