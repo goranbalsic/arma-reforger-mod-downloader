@@ -104,7 +104,9 @@ function Get-Hash16([string]$s) {
 $presetGuid = (Get-Hash16 "preset:$($srv.id):$presetName").ToUpper()
 $metas = foreach ($m in $mods) {
   $g = (Get-Hash16 "meta:$($m.id)").ToUpper()
-  $n = ($installed[$m.id] -replace '"', "'") -replace '[\x00-\x1F]', ' '
+  # quotes, control characters and braces: a brace in m_sName unbalanced the
+  # brace-count verification and blocked the whole preset
+  $n = ((($installed[$m.id] -replace '"', "'") -replace '[\x00-\x1F]', ' ') -replace '\{', '(') -replace '\}', ')'
   $indent + '  SCR_WorkshopAddonPresetAddonMeta "{' + $g + '}" {' + "`r`n" +
   $indent + '   m_sGuid "' + $m.id + '"' + "`r`n" +
   $indent + '   m_sName "' + $n + '"' + "`r`n" +

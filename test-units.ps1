@@ -491,6 +491,26 @@ Check 'the dependency depth cap stops at three levels' ($depthMods.Count -eq 4 -
 . "$PSScriptRoot\dashboard-core.ps1"
 . "$PSScriptRoot\state.ps1"
 
+Write-Host 'item 13: braces in a mod name do not block the preset'
+$bd = Join-Path $tmp 'preset-braces'
+New-Item -ItemType Directory -Force (Join-Path $bd 'data'), (Join-Path $bd 'addons\Foo {Bar_AAAABBBBCCCCDDDD'), (Join-Path $bd 'addons\Baz}Qux_EEEEFFFF00001111') | Out-Null
+[IO.File]::WriteAllText((Join-Path $bd 'addons\Foo {Bar_AAAABBBBCCCCDDDD\data.pak'), 'abc')
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "data.pak", "size": 3 } ] } } ] } }' | Set-Content (Join-Path $bd 'addons\Foo {Bar_AAAABBBBCCCCDDDD\meta')
+[IO.File]::WriteAllText((Join-Path $bd 'addons\Baz}Qux_EEEEFFFF00001111\data.pak'), 'abcd')
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "data.pak", "size": 4 } ] } } ] } }' | Set-Content (Join-Path $bd 'addons\Baz}Qux_EEEEFFFF00001111\meta')
+@{ servers = @(@{ id = 'bbbbbbbb-0000-0000-0000-000000000000'; name = 'Brace Server'; mods = @(
+  @{ id = 'AAAABBBBCCCCDDDD'; name = 'Foo {Bar' }, @{ id = 'EEEEFFFF00001111'; name = 'Baz}Qux' }) }) } |
+  ConvertTo-Json -Depth 5 | Set-Content (Join-Path $bd 'data\batch1-servers.json')
+$bconf = Join-Path $bd 'ReforgerGameSettings.conf'
+"GameUserSettings {`r`n  SCR_WorkshopAddonManagerPresetStorage SCR_WorkshopAddonManagerPresetStorage `"{6AEA4081FE80EE32}`" {`r`n  }`r`n}" | Set-Content $bconf
+$env:RFMM_DATA = Join-Path $bd 'data'
+$bout = try { (& "$PSScriptRoot\make-preset.ps1" -ServerId 'bbbbbbbb-0000-0000-0000-000000000000' -ConfPath $bconf -AddonsDir (Join-Path $bd 'addons') 2>&1) -join ' ' } catch { "ERROR: $_" }
+$env:RFMM_DATA = $oldData
+$btext = Get-Content $bconf -Raw
+Check 'a mod name with braces creates the preset' ($bout -match 'OK - preset')
+Check 'the braces are replaced in the conf' ($btext -match 'm_sName "Foo \(Bar"' -and $btext -match 'm_sName "Baz\)Qux"')
+Check 'the brace count still verifies' ($bout -match 'braces=[0-9]+/[0-9]+')
+
 Write-Host 'item 11: the stop script targets only this folder''s helpers'
 $sr = Join-Path $tmp 'stoplab'
 New-Item -ItemType Directory -Force $sr | Out-Null
