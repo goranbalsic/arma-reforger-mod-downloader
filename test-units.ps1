@@ -241,7 +241,7 @@ function Reset-State {
   $script:haveAt = (Get-Date).AddMinutes(-10)
 }
 function Get-HaveIds { @{} }
-function Get-DS { param([switch]$Fresh) @() }
+function Get-DS { param([switch]$Fresh) ,@() }   # comma: an empty array must not unroll to $null
 function Stop-DS { $script:calls += 'stop'; 'stopped' }
 function Start-DS { $script:calls += 'start'; 'started' }
 function Invoke-RestMethod {
@@ -270,6 +270,32 @@ $onDisk = @((Get-Content $ServersPath -Raw | ConvertFrom-Json).servers).Count
 Check 'adding the same server twice keeps one entry in memory' ($inMem -eq 1)
 Check 'adding the same server twice keeps one entry on disk'   ($onDisk -eq 1)
 . "$PSScriptRoot\dashboard-core.ps1"   # restore the real Get-Cfg for the next blocks
+Write-Host 'item 2: add server stops before writing the queue'
+Reset-State
+function Get-Detail {
+  param($Id)
+  [pscustomobject]@{ name = 'Srv'; passwordProtected = $false; mods = @(
+    [pscustomobject]@{ id = 'AAAABBBBCCCCDDDD'; name = 'Mod A'; size = 10; sizeKnown = $true }) }
+}
+function Get-HaveIds { @{} }
+function Get-DS { param([switch]$Fresh) @([pscustomobject]@{ Id = 1 }) }
+function Stop-DS { $script:calls += 'stop'; 'stopped' }
+function Start-DS { $script:calls += 'start'; 'started' }
+function Save-Json { param($obj, $Path, $Depth) $script:calls += ('save:' + [IO.Path]::GetFileName($Path)) }
+$null = Invoke-AddServer '22222222-2222-2222-2222-222222222222'
+$stopAt = [array]::IndexOf($script:calls, 'stop')
+$cfgAt = [array]::IndexOf($script:calls, 'save:batch1-serverconfig.json')
+$startAt = [array]::IndexOf($script:calls, 'start')
+Check 'the engine is stopped before the queue is written' ($stopAt -ge 0 -and $cfgAt -gt $stopAt)
+Check 'the engine is started after the write' ($startAt -gt $cfgAt)
+Reset-State
+function Get-DS { param([switch]$Fresh) $null }
+$threw = $false
+try { $null = Invoke-AddServer '22222222-2222-2222-2222-222222222222' } catch { $threw = $true }
+Check 'an unreadable process list aborts before stop or queue write' (
+  $threw -and ([array]::IndexOf($script:calls, 'stop') -lt 0) -and
+  ([array]::IndexOf($script:calls, 'save:batch1-serverconfig.json') -lt 0))
+. "$PSScriptRoot\dashboard-core.ps1"
 
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {

@@ -555,6 +555,12 @@ function Invoke-AddServer([string]$Id) {
   Save-Json @{ servers = $serverList } $ServersPath 6
   if (-not $new) { return "'$name' is in the list - all $(@($want).Count) mods are on disk or queued, nothing to download" }
 
+  # the engine rewrites the config on exit, so a write made while it runs is lost.
+  # Match Add mod / Add-MissingToQueue: abort if the process list cannot be read,
+  # stop first, then read + append + save, then start.
+  $engine = Get-DS -Fresh
+  if ($null -eq $engine) { throw 'cannot read the process list right now - nothing was added, try again in a moment' }
+  if (@($engine).Count) { Stop-DS | Out-Null }
   $j = Get-Cfg
   $j.game.mods = @($j.game.mods) + @($new | ForEach-Object { [PSCustomObject]@{ modId = $_.id; name = $_.name } })
   Save-Json $j $Cfg
@@ -575,7 +581,6 @@ function Invoke-AddServer([string]$Id) {
   # (one assignment only: the list is replaced above, so a second append here put
   # the same server in memory and in batch1-servers.json twice)
   $gb = [Math]::Round(($new | ForEach-Object { [double]$_.size } | Measure-Object -Sum).Sum / 1GB, 2)
-  Stop-DS | Out-Null
   $r = Start-DS
   "added '$name': $($new.Count) new mods (~$gb GB) queued at the end, $(@($s.mods).Count - $new.Count) already on disk ($r)"
 }
