@@ -337,6 +337,26 @@ $trimIds = try { (& "$PSScriptRoot\trim-config.ps1" 2>&1) -join ' ' } catch { "E
 $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
 Check 'trim skips an invalid queued id' ($trimIds -match 'invalid mod id')
 
+Write-Host 'item 4: an unreadable queue is not an empty queue'
+$q1 = Join-Path $tmp 'queue-ok.json'
+'{"game":{"name":"n","scenarioId":"s","mods":[{"modId":"ABCDEF0123456789","name":"m"}]}}' | Set-Content $q1
+$got = Get-Queued $q1
+Check 'a readable queue returns its mods' (@($got).Count -eq 1)
+'{"game":{"name":"n","scenarioId":"s","mods":[]}}' | Set-Content $q1
+$gotEmpty = Get-Queued $q1
+Check 'a readable empty queue is an empty array' ($null -ne $gotEmpty -and @($gotEmpty).Count -eq 0)
+'{"game":{"name":"n","scenarioId":"s","mods":null}}' | Set-Content $q1
+$gotNull = Get-Queued $q1
+Check 'mods null is an empty array, not a failure' ($null -ne $gotNull -and @($gotNull).Count -eq 0)
+'not json at all' | Set-Content $q1
+Check 'malformed json returns null' ($null -eq (Get-Queued $q1))
+$q2 = Join-Path $tmp 'queue-locked.json'
+'{"game":{"name":"n","scenarioId":"s","mods":[]}}' | Set-Content $q2
+$qh = [IO.File]::Open($q2, 'Open', 'Read', 'None')
+$locked = Get-Queued $q2
+$qh.Close()
+Check 'an unreadable file returns null' ($null -eq $locked)
+
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)

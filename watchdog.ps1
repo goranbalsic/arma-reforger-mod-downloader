@@ -18,18 +18,6 @@ $PauseFlag = "$Data\paused.flag"
 $SkipFile = "$Data\skipped.json"
 
 function Write-Wd([string]$t) { try { "[$(Get-Date -f HH:mm:ss)] $t" | Add-Content $LogFile } catch { } }
-function Get-Queued {
-  try {
-    $m = (Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods
-    # the DS writes "mods": null on shutdown and @($null).Count is 1, so the
-    # watchdog believed one mod was queued forever and restarted the DS in a loop.
-    if ($null -eq $m) { return ,@() }
-    # the comma matters: returning a 1-element array unrolls it into a plain
-    # object, and a plain object's .Count is $null in Windows PowerShell 5.1 -
-    # which silently disabled the stall killer for a single-mod queue
-    return ,@($m)
-  } catch { return ,@() }
-}
 function Get-LatestLog {
   Get-ChildItem "$DsProfile\logs" -Recurse -Filter console.log -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -60,6 +48,7 @@ $scanCur = $null    # mod id whose outcome is still pending
 $saidEmpty = $false   # "queue empty" is logged once per transition, not every 15 s
 $saidBlind = $false   # same for "cannot read the process list"
 $saidPause = $false   # and for "paused": silent skipping looked exactly like a hung watchdog
+$saidUnreadable = $false  # and for "config cannot be read": never treat it as "queue empty"
 while ($true) {
   Start-Sleep 15
   if (-not (Test-Path $Cfg)) { continue }
@@ -68,7 +57,14 @@ while ($true) {
     continue
   }
   if ($saidPause) { Write-Wd 'pause cleared - watching again'; $saidPause = $false }
-  $queued = Get-Queued
+  $queued = Get-Queued $Cfg
+  # a read/parse failure is not an empty queue: skipping the tick prevents the
+  # "queue empty - done" path from stopping a running engine
+  if ($null -eq $queued) {
+    if (-not $saidUnreadable) { Write-Wd 'cannot read the queue config right now - waiting for it to become readable'; $saidUnreadable = $true }
+    continue
+  }
+  if ($saidUnreadable) { Write-Wd 'queue config readable again'; $saidUnreadable = $false }
   $ds = Get-OwnEngine $Cfg
   # log the transition, not every tick: a busy machine made this fire 25 times in a
   # row (25 lines that hid the rest of the log) while nothing was being done
@@ -126,7 +122,11 @@ while ($true) {
 
     try { & "$PSScriptRoot\trim-config.ps1" | Out-Null }
     catch { Write-Wd "trim failed: $($_.Exception.Message)"; continue }   # never start an untrimmed list (1 MB trap)
-    $queued = Get-Queued
+    $queued = Get-Queued $Cfg
+    if ($null -eq $queued) {
+      if (-not $saidUnreadable) { Write-Wd 'cannot read the queue config right now - waiting for it to become readable'; $saidUnreadable = $true }
+      continue
+    }
     if ($queued.Count -eq 0) {
       if (-not $saidEmpty) { Write-Wd 'queue empty - downloader done'; $saidEmpty = $true }
       continue
@@ -171,7 +171,8 @@ while ($true) {
   if ($lg -and $lg.LastWriteTime -gt (Get-Date).AddSeconds(-30)) { continue }
   $ctl = Lock-Engine
   try {
-    $now = Get-Queued   # @() around the call would wrap its ,@() and count 1
+    $now = Get-Queued $Cfg   # $null = unreadable; never stop on an unreadable queue
+    if ($null -eq $now) { continue }
     if ($ctl -and $now.Count -eq 0) {
       $ds | Stop-Process -Force
       Write-Wd 'queue empty - engine stopped'

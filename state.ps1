@@ -93,6 +93,24 @@ function Read-Json([string]$Path, $Default) {
   }
 }
 
+function Get-Queued([string]$ConfigPath) {
+  # Mods in the engine config, or $null when the file cannot be read or parsed.
+  # $null must never be read as "no mods queued": the watchdog used to treat a
+  # read error as an empty queue and could stop a running engine. The comma keeps
+  # a successfully parsed empty list an array (a bare @() unrolls to $null).
+  if (-not $ConfigPath) { return $null }
+  $raw = $null
+  try { $raw = Get-Content $ConfigPath -Raw -ErrorAction Stop } catch { return $null }
+  if (-not $raw) { return $null }
+  $j = $null
+  try { $j = $raw | ConvertFrom-Json } catch { return $null }
+  if ($null -eq $j -or $null -eq $j.game) { return $null }
+  $m = $j.game.mods
+  # the DS writes "mods": null on shutdown: a real, empty queue
+  if ($null -eq $m) { return ,@() }
+  return ,@($m)
+}
+
 function Test-ModId([string]$Id) {
   # Canonical (upper-case) 16-hex mod id, or $null. Called at every API boundary:
   # an id that came from the internet must never reach a file name, a filter or the
