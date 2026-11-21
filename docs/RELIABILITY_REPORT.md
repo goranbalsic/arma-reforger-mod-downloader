@@ -97,7 +97,8 @@ parallel polling, server remove/re-add and state-file damage.
 ## 11. Exact results
 
 `units: OK` / `TORTURE: OK`, exit code 0. No skipped checks in these runs. The CI
-workflow was authored but has not run on GitHub yet — it is not reported as passing.
+workflow runs on GitHub-hosted `windows-latest`: run 44875274326 (workflow_dispatch,
+1.0.15) passed every step, and its log shows the audit PASS plus the three self-test statuses.
 
 ## 12. Performance measurements
 
@@ -131,9 +132,9 @@ Same machine, 299 addons:
 6. Empty `catch` blocks remain where a failure is genuinely non-fatal (best-effort
    cleanup); they are reviewed but not logged.
 
-## 15. Checks blocked by environment
+## 15. Environment notes
 
-- GitHub Actions: authored, not executed here (no runner). Marked UNVERIFIED.
+- GitHub Actions: executed on GitHub-hosted windows-latest (run 44875274326, 1.0.15): PASS - every step, including the audit self-test.
 - Real Workshop download in CI: impossible without a 12 GB engine and an account.
 - PowerShell 7: the tool targets 5.1; 7 was not exercised.
 - Cross-process mutex timeout (>20 s hold): no automated test.
@@ -172,7 +173,7 @@ Executed in this round: parse (0 errors), PSScriptAnalyzer 5.1 (0 errors), 53/53
 FAIL on a fixture (exit 1), refresh job timings above.
 
 Not fixed: the apply step of a job is still synchronous (short), releases are not signed,
-CI has still not run on GitHub, logs still have no rotation.
+logs still have no rotation.
 
 ## 16. Score
 
@@ -181,5 +182,4 @@ single-sourced; updates verify content; slow network work no longer blocks the U
 is a real audit gate that refuses to call a skipped check a pass. Lowered from 9.0 after
 this round: the handler tests found a real defect the earlier review missed (Add-Member
 fails for an all-digit mod id), some handlers still read the config outside the lock (the
-write is locked), releases are unsigned, the audit has never run on GitHub Actions, and
-logging has no rotation or structured format.
+write is locked), releases are unsigned, and logging has no rotation or structured format.
