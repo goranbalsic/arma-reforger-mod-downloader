@@ -1,74 +1,41 @@
 # Arma Reforger Mod Downloader
 
-Downloads a whole server's mods into your game's `addons` folder, with a local web
-page as the control panel. Windows 10/11, PowerShell 5.1, MIT.
+Pick a server and download its missing Workshop mods before you join. The downloader runs on Windows 10 or 11 with PowerShell 5.1. It uses the free Arma Reforger dedicated server to fetch the files and puts them in the same addons folder your game already uses.
 
-## Quick start
+## Get started
 
-1. Download the newest `.zip` from [Releases](../../releases/latest) and unpack it anywhere.
-2. Run `1 - Setup.cmd` once. It installs the free dedicated server (~12 GB) that does
-   the downloading. Keep ~20 GB free.
-3. Run `Start Mods Download.cmd`. The page opens at <http://localhost:8123>.
-4. Search for a server, press **Add server**, then **Start / Resume**.
+1. Download **arma-reforger-mod-downloader.zip** from the [latest release](../../releases/latest). Extract it to a folder you plan to keep.
+2. Double-click **1 - Setup.cmd**. Allow about 20 GB of free space for setup. The dedicated server takes roughly 12 GB, and the mods you choose need space of their own.
+3. Run **Start Mods Download.cmd** and leave its console window open. The dashboard opens in your browser at <http://localhost:8123>.
+4. Under **Find a server**, search for the server you want and click **Add server**. Its missing mods appear in **Queue**. Click **Start / Resume** to download them.
 
-## The page
+For a single addon, use **Find a Workshop mod**. You can search by name, author, or the 16-character mod ID.
 
-| Button / panel | What it does |
-| --- | --- |
-| Server browser | Search live servers, add one, its missing mods are queued |
-| Queue | Only mods still missing; row buttons: Queue first, Make preset, Refresh, Remove |
-| Downloading now | Per-mod progress and speed |
-| Completed | Every mod the tool has assembled |
-| Add individual mods | Workshop search by name, author, or mod id |
-| Start / Pause / Verify / Clear queue / Queue all missing | The main actions |
-| Make preset | Launcher preset with that server's installed mods; press again to update it |
-| Refresh (row or Refresh all) | Pull the modlist again, queue what is new, report a changed list |
-| Remove | Drops the server from the list only; mods stay on disk and in the queue |
+## Managing downloads
 
-## Where things go
+**Download status** shows overall progress. **Downloading now** shows which files are coming in, and **Queue** shows what’s left. Use **Pause** to take a break and **Start / Resume** to pick up again.
 
-| What | Where |
-| --- | --- |
-| Mods (the game reads these) | `Documents\My Games\ArmaReforger\addons` |
-| Download engine | `armar-server\` in the tool's folder |
-| Engine output folder | `serverprofile\addons` - a directory link to the game folder |
-| State (queue, sizes, servers) | `data\` |
+Under **Tracked servers**, use **Queue first** to prioritize a server. **Refresh** checks its current mod list and queues new additions. **Remove** takes the server off your list. Its queued downloads and installed mods stay where they are.
 
-Each mod is stored once, straight in the folder the game reads.
+Once the downloads finish, close Arma Reforger and click **Make preset** next to the server. The preset includes its installed mods. Click it again after downloading more to update the same preset.
 
-## Stopping
+## Files, updates, and shutdown
 
-`Stop Mods Download.cmd` stops the hidden helper processes (watchdog and addon mirror) for
-this folder. Closing the page does not stop them. Your game server and mods are not
-touched.
+Your mods live in `Documents\My Games\ArmaReforger\addons`. Inside the downloader folder, `serverprofile\addons` links to that directory, `armar-server` holds the dedicated server, and `data` holds the queue and tracked servers.
 
-## Updating
+Run **2 - Update.cmd** to install the latest release over the existing scripts. Your queue, engine, and installed mods carry over. The start script also checks for updates when you launch it.
 
-`2 - Update.cmd` installs the newest release over the scripts. `Start Mods Download.cmd`
-checks once at startup. The engine, your queue and your mods are never touched.
+Closing the browser tab leaves the downloader running. To shut it down, pause downloads, close the dashboard console, and run **Stop Mods Download.cmd** to stop this installation’s background helpers.
 
-## Problems
+## If something gets stuck
 
-- **Nothing downloads.** Another `ArmaReforgerServer.exe` is running; close it and press Start.
-- **A mod stays missing.** Press Refresh, then Start. A partial download the engine would
-  skip is deleted and fetched again.
-- **Make preset does nothing.** Close the game first - it rewrites its settings file on exit.
-- **The page will not open.** Something else uses port 8123, or the console window is closed.
+- **The dashboard won’t open.** Check that the console is still open, then visit <http://localhost:8123>. Another program using port 8123 can prevent the dashboard from starting.
+- **Downloads won’t start.** Check the dashboard message and whether another dedicated server is running.
+- **One mod stays in the queue.** Refresh its server and click **Start / Resume**. The downloader can retry an incomplete installation.
+- **A preset doesn’t appear.** Close the game and run **Make preset** again. The game writes its settings when it exits.
 
-## Tests
+## Development
 
-- `powershell -File test-units.ps1` - offline checks of the shared rules, about a few seconds.
-- `powershell -File test-torture.ps1` - beats on a running dashboard: every route, wrong
-  ids, a wrong action token, parallel polling, a refresh job, state-file damage. Add
-  `-ServerRoundTrip` for the remove/re-add test (needs the Workshop API).
-- `powershell -File tools\audit.ps1` - the local gate: parse, PSScriptAnalyzer, unit tests.
-  Exit 0 = PASS, 1 = FAIL, 2 = INCOMPLETE (a mandatory check could not run).
+Run `powershell -File tools\audit.ps1` for the local checks. Exit codes are 0 for pass, 1 for failure, and 2 when a required check could not run. For the offline unit suite alone, run `powershell -File test-units.ps1`. The live dashboard tests change the running download session. See the [testing guide](docs/TESTING.md) before running them.
 
-## Docs
-
-[Architecture](docs/ARCHITECTURE.md) · [Engineering audit](docs/ENGINEERING_AUDIT.md) ·
-[Security](docs/SECURITY_AUDIT.md) · [Testing](docs/TESTING.md) · [Changelog](CHANGELOG.md)
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+[Architecture](docs/ARCHITECTURE.md) · [Engineering audit](docs/ENGINEERING_AUDIT.md) · [Security audit](docs/SECURITY_AUDIT.md) · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)

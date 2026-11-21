@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.17
+
+- Redesigned the dashboard for desktop and narrow screens, added section navigation and queue-clear confirmation, and rewrote the setup guide.
+
 ## 1.0.16
 
 - Queue trimming now holds the engine lock while reading and saving the queue, drops invalid mod IDs, and records the first retry for partial downloads.
