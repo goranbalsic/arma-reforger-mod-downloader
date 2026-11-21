@@ -49,8 +49,21 @@ button{margin:0;background:#cadf9f;color:#202a1b;font-weight:600}button.grey,but
 input,.f{max-width:100%;color:#edf2e6;background:#191f1b;border-color:#505c4e}input::placeholder{color:#b4beb0}.dim{color:#b0bcab}.bar>div{background:#bad687}
 :focus-visible{outline:3px solid #e3c783;outline-offset:3px}
 @media(max-width:700px){main{grid-template-columns:1fr}body{padding-top:16px}.controls button{flex:1 1 auto}}
+body{max-width:1500px;display:grid;grid-template-columns:234px minmax(0,1fr);padding:0;background:#f2efe7;color:#222a26;font-family:"Segoe UI",sans-serif}
+header{position:sticky;top:0;height:100vh;align-self:start;display:flex;flex-flow:column nowrap;align-items:stretch;justify-content:flex-start;padding:32px 20px;background:#20382f;margin:0;color:#fff}
+header h1{font-size:26px;line-height:1.14;padding:0 10px 24px}
+nav{display:grid;gap:5px}nav a,.repo{padding:10px 14px;text-decoration:none;color:#eef4ec;border-radius:6px;font-weight:600}
+nav a[aria-current="page"]{background:#ddedac;color:#253825}
+.repo{margin-top:auto;display:flex;align-items:center;gap:10px;border:1px solid #6e8275;font-size:14px}.repo:hover,nav a:hover{box-shadow:inset 0 0 0 1px currentColor}
+main{display:block;padding:clamp(18px,4vw,55px)}.view{display:grid;gap:16px}.view[hidden]{display:none}.view>h2{font-size:clamp(28px,4vw,44px);letter-spacing:-.045em;margin:0 0 8px}
+.card{background:#fffdf7;border-color:#d6d8cc;border-radius:12px;padding:20px;color:#26342c}
+.overview{background:#293d32;color:#f6f8f1;border:0;padding:26px}.overview .dim{color:#c5d1c3}
+summary,details.card>summary h2{color:#26342c}summary{font-size:15px}.dim{color:#56645a}
+input,.f{color-scheme:light;color:#233329;background:#f5f5ef;border-color:#bdc5b9}input::placeholder{color:#5b695e}
+#srv li,#rec li{border-color:#d8ddd3}.ok{color:#346943}.warn{color:#805919}.bad{color:#a73638}.overview .ok{color:#b4e0a7}.overview .bad{color:#ffad9e}.overview .warn{color:#f7d28d}
+@media(max-width:760px){body{display:block}header{height:auto;position:static;display:grid;grid-template-columns:1fr auto;padding:16px;gap:12px}header h1{font-size:20px;padding:0}nav{grid-column:1/-1;grid-row:2;display:flex;flex-wrap:wrap}.repo{margin:0;padding:5px 9px}nav a{padding:7px 10px}}
 </style></head><body>
-<header><h1>Arma Reforger Mod Downloader</h1><nav aria-label="Dashboard sections"><a href="#downloads">Downloads</a><a href="#discover">Find mods</a><a href="#library">Library</a></nav></header><main><div class="card overview" id="downloads"><h2>Download status <span id="st"></span></h2>
+<header><h1>Arma Reforger Mod Downloader</h1><nav aria-label="Dashboard sections"><a href="#downloads">Downloads</a><a href="#discover">Find mods</a><a href="#library">Library</a></nav><a class="repo" href="https://github.com/goranbalsic/arma-reforger-mod-downloader" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.5 7.5 0 0 1 8 3.85c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub repo</a></header><main><section class="view" id="downloads"><h2>Downloads</h2><div class="card overview"><h2>Download status <span id="st"></span></h2>
  <div class="dim" id="boot">connecting to dashboard...</div>
  <div class="row"><span id="gbtxt" class="big"></span><span id="spd" class="dim"></span></div>
  <div class="bar"><div id="tbar" style="width:0%"></div></div>
@@ -67,26 +80,37 @@ input,.f{max-width:100%;color:#edf2e6;background:#191f1b;border-color:#505c4e}in
  <div role="status" id="say" class="dim" style="margin-top:10px;font-size:13px;min-height:18px"></div>
  <div id="failed" class="bad" style="font-size:13px;margin-top:4px"></div>
 </div>
-<details class="card" open><summary><h2 style="font-size:15px;color:#fff">Queue <span id="qcount" class="dim"></span> <span id="qpreview" class="dim" style="font-size:13px"></span></h2></summary>
+<details class="card" open><summary><h2 style="font-size:18px">Queue <span id="qcount" class="dim"></span> <span id="qpreview" class="dim" style="font-size:13px"></span></h2></summary>
   <input class="f" id="fq" aria-label="Filter queue" placeholder="filter queue by name..." oninput="FILTER.queue=this.value;renderAll()">
   <div id="queue" class="dim">-</div></details>
- <details class="card" open><summary><h2 style="font-size:15px;color:#fff">Downloading now <span id="actcount" class="dim"></span></h2></summary>
+ <details class="card" open><summary><h2 style="font-size:18px">Downloading now <span id="actcount" class="dim"></span></h2></summary>
   <input class="f" id="fa" aria-label="Filter downloads" placeholder="filter downloads by name..." oninput="FILTER.act=this.value;renderAll()">
   <div id="act">-</div></details>
-<details class="card" open id="discover"><summary><h2 style="font-size:15px;color:#fff">Find a server</h2></summary>
+</section><section class="view" id="discover"><h2>Find mods</h2><details class="card" open><summary><h2 style="font-size:18px">Find a server</h2></summary>
  <div class="search" style="margin-top:8px"><input id="bq" aria-label="Search servers" placeholder="search servers (e.g. PVE, Cold Front, Vietnam)..." oninput="browseCleared()" onkeydown="if(event.key==='Enter')browse()"><button onclick="browse()">Search</button></div>
  <div id="bs" class="dim" style="margin-top:8px">type a server name and press Enter</div>
 </details>
-<details class="card" open><summary><h2 style="font-size:15px;color:#fff">Find a Workshop mod</h2></summary>
+<details class="card" open><summary><h2 style="font-size:18px">Find a Workshop mod</h2></summary>
  <div class="search" style="margin-top:8px"><input id="mq" aria-label="Search Workshop mods" placeholder="search mods (name, author, or 16-character mod id)..." oninput="modsCleared()" onkeydown="if(event.key==='Enter')searchMods(1)"><button onclick="searchMods(1)">Search</button></div>
  <div id="mres" class="dim" style="margin-top:8px">type a mod name, an author, or a mod id and press Enter</div>
  <div id="mpager" style="margin-top:6px"></div>
 </details>
-<details class="card wide" open id="library"><summary><h2 style="font-size:15px;color:#fff">Tracked servers <span id="srvcount" class="dim"></span><button class="mini" onclick="refreshSrv(event)" title="re-read disk + pull fresh modlists from reforgermods.net">Refresh all</button></h2></summary><div id="srv" class="dim" style="margin-top:8px">loading server lists...</div></details>
-<details class="card wide"><summary><h2 style="font-size:15px;color:#fff">Completed <span id="reccount" class="dim"></span></h2></summary>
+</section><section class="view" id="library"><h2>Library</h2><details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span><button class="mini" onclick="refreshSrv(event)" title="re-read disk + pull fresh modlists from reforgermods.net">Refresh all</button></h2></summary><div id="srv" class="dim" style="margin-top:8px">loading server lists...</div></details>
+<details class="card wide"><summary><h2 style="font-size:18px">Completed <span id="reccount" class="dim"></span></h2></summary>
  <input class="f" id="fr" aria-label="Filter completed mods" placeholder="filter completed mods by name..." oninput="FILTER.rec=this.value;renderAll()">
  <ul id="rec"></ul></details>
-</main><script>
+</section></main><script>
+function showView(){
+ const links=document.querySelectorAll('nav a');
+ const active=Array.from(links).find(link=>link.hash===location.hash)||links[0];
+ for(const link of links){
+   document.getElementById(link.hash.slice(1)).hidden=link!==active;
+   if(link===active)link.setAttribute('aria-current','page');
+   else link.removeAttribute('aria-current');
+ }
+}
+addEventListener('hashchange',showView);
+showView();
 let T='__T__';   // refreshed from /status so an open page survives dashboard restarts
 function esc(x){return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 // ids land inside onclick="...('id')" and data-id="...": esc() alone leaves

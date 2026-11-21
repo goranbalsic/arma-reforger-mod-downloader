@@ -115,7 +115,6 @@ if ($Check) {
 $token = [guid]::NewGuid().ToString('N')
 $mutating = '/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
 
-$html = Get-Content (Join-Path $PSScriptRoot 'page.html') -Raw
 
 
 $l = [System.Net.HttpListener]::new(); $l.Prefixes.Add($Url)
@@ -175,6 +174,7 @@ while ($l.IsListening) {
     }
     switch ($path) {
       '/' {
+        $html = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'page.html'))
         $b = [Text.Encoding]::UTF8.GetBytes($html.Replace('__T__', $token))
         $ctx.Response.ContentType = 'text/html; charset=utf-8'
         $ctx.Response.ContentLength64 = $b.Length

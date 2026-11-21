@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.18
+
+- Split the dashboard into Downloads, Find mods, and Library views. Added a GitHub repository link and reload the dashboard template on each page visit.
+
 ## 1.0.17
 
 - Redesigned the dashboard for desktop and narrow screens, added section navigation and queue-clear confirmation, and rewrote the setup guide.
