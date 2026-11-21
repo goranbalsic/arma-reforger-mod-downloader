@@ -66,7 +66,8 @@ $presetName = if ($Name) { $Name }
               elseif ($srv.PSObject.Properties['key'] -and $srv.key) { [string]$srv.key }
               else { ([string]$srv.name -split '\|')[0].Trim() }
 if ($presetName.Length -gt 60) { $presetName = $presetName.Substring(0, 60).Trim() }
-$presetName = $presetName -replace '"', "'"
+# quotes and control characters would break the conf or its brace structure
+$presetName = ($presetName -replace '"', "'") -replace '[\x00-\x1F]', ' '
 
 # a folder alone is not an installed addon: UTF-Hesco_6A23267521A13350 exists in
 # this machine's client folder with 0 files, and a preset referencing an id the
@@ -96,8 +97,6 @@ if ($installedCount -lt @($srv.mods).Count) {
 }
 if (-not $mods) { throw 'no installed mods for this preset yet' }
 
-Copy-Item $conf "$conf.bak-$(Get-Date -f yyyyMMdd-HHmmss)" -Force
-
 function Get-Hash16([string]$s) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
   ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($s))) -replace '-', '').Substring(0, 16)
@@ -105,7 +104,7 @@ function Get-Hash16([string]$s) {
 $presetGuid = (Get-Hash16 "preset:$($srv.id):$presetName").ToUpper()
 $metas = foreach ($m in $mods) {
   $g = (Get-Hash16 "meta:$($m.id)").ToUpper()
-  $n = $installed[$m.id] -replace '"', ''
+  $n = ($installed[$m.id] -replace '"', "'") -replace '[\x00-\x1F]', ' '
   $indent + '  SCR_WorkshopAddonPresetAddonMeta "{' + $g + '}" {' + "`r`n" +
   $indent + '   m_sGuid "' + $m.id + '"' + "`r`n" +
   $indent + '   m_sName "' + $n + '"' + "`r`n" +
@@ -139,9 +138,9 @@ if ($at -ge 0) {
   $action = 'created'
   $expected = $presetsBefore + 1
 }
-[IO.File]::WriteAllText($conf, $newText, [Text.UTF8Encoding]::new($false))
-
-$check = [IO.File]::ReadAllText($conf)
+# verify BEFORE writing: a preset that would break the settings file is never
+# committed, so there is nothing to roll back
+$check = $newText
 $open = ([regex]::Matches($check, '\{')).Count
 $close = ([regex]::Matches($check, '\}')).Count
 $presets = ([regex]::Matches($check.Substring($check.IndexOf('SCR_WorkshopAddonManagerPresetStorage')), 'SCR_WorkshopAddonPreset "\{[0-9A-F]{16}\}"')).Count
@@ -150,7 +149,12 @@ $mpAfter = $check.IndexOf('m_aPresets', $check.IndexOf('SCR_WorkshopAddonManager
 $newAt = $check.IndexOf('SCR_WorkshopAddonPreset "{' + $presetGuid + '}"')
 $inside = $mpAfter -ge 0 -and $newAt -gt $mpAfter
 "verification: presets=$presets (expected $expected) inside m_aPresets=$inside meta=$($mods.Count) braces=$open/$close"
-if ($presets -ne $expected -or $open -ne $close -or -not $inside) { throw 'verification failed - restore from the .bak next to the conf' }
+if ($presets -ne $expected -or $open -ne $close -or -not $inside) { throw 'verification failed - the settings file was not changed' }
+
+# atomic: a temp file beside it, then a swap that also keeps the previous version
+$tmpConf = "$conf.tmp"
+[IO.File]::WriteAllText($tmpConf, $newText, [Text.UTF8Encoding]::new($false))
+[IO.File]::Replace($tmpConf, $conf, "$conf.bak-$(Get-Date -f yyyyMMdd-HHmmss)")
 # keep the newest 5 backups only: 17 had accumulated next to a single conf
 Get-ChildItem (Split-Path $conf -Parent) -Filter "$([IO.Path]::GetFileName($conf)).bak-*" -ErrorAction SilentlyContinue |
   Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 |

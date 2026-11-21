@@ -92,6 +92,36 @@ function Read-Json([string]$Path, $Default) {
   }
 }
 
+function Test-Sha256([string]$Path, [string]$Expected) {
+  # $Expected is "sha256:<hex>" from the GitHub release asset. $null = nothing to
+  # compare against (old release), $true/$false otherwise. This detects a truncated
+  # or altered download; it is NOT a signature - the digest comes from the same
+  # origin, so a compromised release would carry a matching digest.
+  if (-not $Expected) { return $null }
+  $m = [regex]::Match($Expected, '^sha256:([0-9a-fA-F]{64})$')
+  if (-not $m.Success) { return $null }
+  (Get-FileHash $Path -Algorithm SHA256).Hash.ToLower() -eq $m.Groups[1].Value.ToLower()
+}
+
+function Get-WorkshopFailures($Lines, [int]$From = 0, $Current = $null) {
+  # Workshop refusals per mod id in a dedicated-server log: a refusal follows the
+  # "started" line of the mod that caused it. Pure and resumable, because the
+  # watchdog re-reads the same file every 15 s - counting the same lines again used
+  # to drop a mod after one real failure. Returns the next offset and the id that
+  # is still waiting for its outcome.
+  $all = @($Lines)
+  $counts = @{}
+  for ($i = $From; $i -lt $all.Count; $i++) {
+    $ln = $all[$i]
+    if ($ln -match 'Addon Download started ([0-9A-F]{16})') { $Current = $Matches[1]; continue }
+    if ($Current -and $ln -match 'Failed to fetch addon details') {
+      if ($counts.ContainsKey($Current)) { $counts[$Current]++ } else { $counts[$Current] = 1 }
+      $Current = $null
+    }
+  }
+  @{ counts = $counts; current = $Current; next = $all.Count }
+}
+
 function Test-AddonComplete([string]$Path, $Mtime) {
   # THE completion rule: the addon's own meta lists every file with its exact
   # size, and the game itself reads it that way. Never use a folder total.
@@ -115,6 +145,9 @@ function Test-AddonComplete([string]$Path, $Mtime) {
         $ok = $true
         foreach ($f in $files) {
           if (-not $f -or -not $f.name -or $null -eq $f.size) { $ok = $false; break }
+          # a meta must not point outside its own folder: '..', a drive path or an
+          # alternate data stream would verify a file that is not part of the addon
+          if ($f.name -match '\.\.' -or [IO.Path]::IsPathRooted($f.name) -or $f.name -match ':') { $ok = $false; break }
           $p = Join-Path $Path $f.name
           if (-not (Test-Path $p)) { $ok = $false; break }
           if ((Get-Item $p).Length -ne [long]$f.size) { $ok = $false; break }

@@ -54,6 +54,9 @@ $mutex = [System.Threading.Mutex]::new($false, 'ReforgerDownloaderWatchdog')
 if (-not $mutex.WaitOne(0)) { exit 0 }
 
 $fail = @{}
+$scanFile = ''      # log file the failure scan is reading
+$scanAt = 0         # lines of that file already counted
+$scanCur = $null    # mod id whose outcome is still pending
 $saidEmpty = $false   # "queue empty" is logged once per transition, not every 15 s
 $saidBlind = $false   # same for "cannot read the process list"
 $saidPause = $false   # and for "paused": silent skipping looked exactly like a hung watchdog
@@ -92,15 +95,17 @@ while ($true) {
     # log: a refusal follows the "started" line of the mod that caused it, and a
     # run logs ~20 "started" lines, so a last-80-lines window usually held none and
     # the skip almost never fired (the 5-minute stall killer did the work instead).
+    # Resumable scan: counting the same lines on every 15 s tick dropped a mod from
+    # the queue after ONE real refusal.
     $lg = Get-LatestLog
     if ($lg -and $lg.LastWriteTime -gt (Get-Date).AddMinutes(-20)) {
-      $cur = $null
-      foreach ($ln in (Get-Content $lg.FullName -ErrorAction SilentlyContinue)) {
-        if ($ln -match 'Addon Download started ([0-9A-F]{16})') { $cur = $Matches[1]; continue }
-        if ($cur -and $ln -match 'Failed to fetch addon details') {
-          if ($fail.ContainsKey($cur)) { $fail[$cur]++ } else { $fail[$cur] = 1 }
-          $cur = $null
-        }
+      if ($scanFile -ne $lg.FullName) { $scanFile = $lg.FullName; $scanAt = 0; $scanCur = $null }
+      $lines = @(Get-Content $lg.FullName -ErrorAction SilentlyContinue)
+      $scan = Get-WorkshopFailures $lines $scanAt $scanCur
+      $scanAt = $scan.next
+      $scanCur = $scan.current
+      foreach ($k in $scan.counts.Keys) {
+        if ($fail.ContainsKey($k)) { $fail[$k] += $scan.counts[$k] } else { $fail[$k] = $scan.counts[$k] }
       }
       if ($fail.Count) {
         $drop = @($fail.Keys | Where-Object { $fail[$_] -ge 3 })

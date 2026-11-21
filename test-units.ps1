@@ -90,12 +90,19 @@ $oldData = $env:RFMM_DATA
 $env:RFMM_DATA = Join-Path $pd 'data'
 $out1 = try { (& "$PSScriptRoot\make-preset.ps1" -ServerId 'aaaaaaaa-0000-0000-0000-000000000000' -ConfPath $conf -AddonsDir (Join-Path $pd 'addons') 2>&1) -join ' ' } catch { "ERROR: $_" }
 $out2 = try { (& "$PSScriptRoot\make-preset.ps1" -ServerId 'aaaaaaaa-0000-0000-0000-000000000000' -ConfPath $conf -AddonsDir (Join-Path $pd 'addons') 2>&1) -join ' ' } catch { "ERROR: $_" }
+# a preset name that would unbalance the settings file must be refused BEFORE the
+# write, leaving the file byte-identical (this used to write, then throw)
+$beforeBad = Get-Content $conf -Raw
+$out3 = try { (& "$PSScriptRoot\make-preset.ps1" -ServerId 'aaaaaaaa-0000-0000-0000-000000000000' -ConfPath $conf -AddonsDir (Join-Path $pd 'addons') -Name 'Bad{Name' 2>&1) -join ' ' } catch { "ERROR: $_" }
 $env:RFMM_DATA = $oldData
 $presetText = Get-Content $conf -Raw
 Check 'creates a preset in an empty storage block' ($out1 -match 'created')
 Check 're-running updates instead of failing'     ($out2 -match 'updated')
 Check 'exactly one preset after both runs'        (([regex]::Matches($presetText, 'SCR_WorkshopAddonPreset "\{')).Count -eq 1)
 Check 'preset sits inside m_aPresets'             ($presetText.IndexOf('m_aPresets') -lt $presetText.IndexOf('SCR_WorkshopAddonPreset "'))
+Check 'a conf-breaking preset is refused'         ($out3 -match 'verification failed')
+Check 'the settings file is unchanged after it'   ((Get-Content $conf -Raw) -eq $beforeBad)
+Check 'no temp file is left behind'               (-not (Test-Path "$conf.tmp"))
 
 Write-Host 'trim: a partial that looks installed is deleted, one without markers is kept'
 $td = Join-Path $tmp 'trim'
@@ -106,7 +113,7 @@ New-Item -ItemType Directory -Force (Join-Path $td 'data'), (Join-Path $td 'serv
   Set-Content (Join-Path $td 'data\batch1-serverconfig.json')
 $oldHome = $env:RFMM_HOME
 $env:RFMM_HOME = $td; $env:RFMM_DATA = Join-Path $td 'data'
-$tout = try { (& "$PSScriptRoot\trim-config.ps1" 2>&1) -join ' ' } catch { "ERROR: $_" }
+try { & "$PSScriptRoot\trim-config.ps1" | Out-Null } catch { "ERROR: $_" }
 $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
 Check 'deletes the partial the engine would skip' (-not (Test-Path (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD')))
 Check 'keeps the partial the engine re-fetches'   (Test-Path (Join-Path $td 'serverprofile\addons\NoMark_EEEEFFFF00001111'))
@@ -141,6 +148,32 @@ New-Item -ItemType Directory -Force $md | Out-Null
 Check 'meta without a file list is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
 '{ "meta": { "versions": [ { "package": { "files": [ { "size": 5 } ] } } ] } }' | Set-Content (Join-Path $md 'meta')
 Check 'meta entry without a name is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "../outside.pak", "size": 5 } ] } } ] } }' | Set-Content (Join-Path $md 'meta')
+Check 'meta pointing outside the folder is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
+'{ "meta": { "versions": [ { "package": { "files": [ { "name": "C:\\Windows\\win.ini", "size": 5 } ] } } ] } }' | Set-Content (Join-Path $md 'meta')
+Check 'meta with an absolute path is not complete' (-not (Test-AddonComplete $md (Get-Item $md).LastWriteTime))
+
+Write-Host 'watchdog failure scan (resumable, no double counting)'
+$logLines = @(
+  'Addon Download started AAAABBBBCCCCDDDD',
+  'Failed to fetch addon details',
+  'Addon Download started EEEEEEEEFFFFFFFF',
+  'Failed to fetch addon details'
+)
+$scan1 = Get-WorkshopFailures $logLines 0 $null
+Check 'one refusal per mod is counted' (($scan1.counts['AAAABBBBCCCCDDDD'] -eq 1) -and ($scan1.counts['EEEEEEEEFFFFFFFF'] -eq 1))
+$scan2 = Get-WorkshopFailures $logLines $scan1.next $scan1.current
+Check 're-reading the same log counts nothing twice' ($scan2.counts.Count -eq 0)
+$scan3 = Get-WorkshopFailures $logLines 1 'AAAABBBBCCCCDDDD'
+Check 'a resumed scan still attributes the pending mod' ($scan3.counts['AAAABBBBCCCCDDDD'] -eq 1)
+
+Write-Host 'download checksum'
+$hf = Join-Path $tmp 'hash.bin'
+[IO.File]::WriteAllText($hf, 'abc')
+$hex = (Get-FileHash $hf -Algorithm SHA256).Hash.ToLower()
+Check 'matching sha256 passes'          ((Test-Sha256 $hf "sha256:$hex") -eq $true)
+Check 'different sha256 fails'          ((Test-Sha256 $hf ('sha256:' + ('0' * 64))) -eq $false)
+Check 'no digest is unknown, not a pass' ($null -eq (Test-Sha256 $hf ''))
 
 Write-Host 'addons folder migration (never delete what was not moved)'
 $mg = Join-Path $tmp 'migrate'

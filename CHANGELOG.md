@@ -1,0 +1,44 @@
+# Changelog
+
+## 1.0.13
+
+Reliability, integrity and performance pass.
+
+- Addon migration never deletes a folder that was not fully moved; a failed move
+  leaves the source untouched and creates no empty copy.
+- Completion rule rejects a meta without a file list, entries without a name or size,
+  and paths that point outside the addon. The cache now notices a deleted file.
+- Presets are verified before the settings file is touched, written atomically, and keep
+  a timestamped backup. Names with control characters are sanitised.
+- The watchdog counts each Workshop failure once instead of re-counting the same log
+  line every 15 s (that dropped valid mods after one refusal).
+- Engine lock is required to stop the engine, held across the trim's delete + config
+  write, and taken before the watchdog kills a stalled engine.
+- Updates verify the release's SHA-256 and only copy scripts and docs.
+- Page polls every 1 s instead of 400 ms (a status build costs ~0.3 s of one core).
+- `docs/` added, CI added, unit tests extended from 24 to 39 checks.
+
+## 1.0.12
+
+- Preset generation uses the shared completion rule.
+- `Stop-DS` / trim / watchdog mutex gaps closed.
+- Meta validation and cache fingerprint fixes.
+
+## 1.0.11
+
+- Partial downloads that the engine would skip are cleaned up (once per 30 min per mod).
+- Start on an empty queue no longer reports a phantom unfinished download, and clears
+  Pause.
+- Add mod / Start read the disk instead of a 3-second-old cache.
+- Per-server Refresh and Remove; shorter README.
+
+## 1.0.10
+
+- Partial-cleanup fix for mods stuck at a fixed size.
+- Torture test added.
+
+## 1.0.6 – 1.0.9
+
+Setup path fix, engine config repair, one addons folder (junction), per-server refresh,
+presets, update check. Released versions before the reliability pass; only the newest
+release is kept on GitHub.

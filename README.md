@@ -56,6 +56,11 @@ checks once at startup. The engine, your queue and your mods are never touched.
   ids, a wrong action token, parallel polling, state-file damage. Add `-ServerRoundTrip`
   for the remove/re-add test (needs the Workshop API).
 
+## Docs
+
+[Architecture](docs/ARCHITECTURE.md) · [Engineering audit](docs/ENGINEERING_AUDIT.md) ·
+[Security](docs/SECURITY_AUDIT.md) · [Testing](docs/TESTING.md) · [Changelog](CHANGELOG.md)
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

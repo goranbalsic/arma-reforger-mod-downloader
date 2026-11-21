@@ -732,7 +732,7 @@ function Sync-Server($sv, $sz) {
   $true
 }
 
-function Queue-Missing($want) {
+function Add-MissingToQueue($want) {
   # $want: ordered id -> name. Append only: installed and already-queued mods are
   # never downloaded twice. Returns @{ count; note }.
   $have = Get-HaveIds
@@ -781,7 +781,7 @@ function Invoke-RefreshServers {
 
   $want = [ordered]@{}
   foreach ($sv in $serverList) { foreach ($m in $sv.mods) { $want[$m.id] = $m.name } }
-  $q = Queue-Missing $want
+  $q = Add-MissingToQueue $want
   $have = Get-HaveIds
   $onDisk = 0
   foreach ($sv in $serverList) { $onDisk += @($sv.mods | Where-Object { $have.ContainsKey($_.id) }).Count }
@@ -801,7 +801,7 @@ function Invoke-RefreshServer([string]$Id) {
   Save-Json @{ servers = $serverList } $ServersPath 6
   $want = [ordered]@{}
   foreach ($m in $sv.mods) { $want[$m.id] = $m.name }
-  $q = Queue-Missing $want
+  $q = Add-MissingToQueue $want
   $chg = ''
   $c = $sv.PSObject.Properties['changed']
   if ($c -and $c.Value) { $chg = " - modlist changed: +$($c.Value.added) -$($c.Value.removed), Make preset rebuilds it" }
@@ -1185,10 +1185,10 @@ async function act(w){
 }
 loadSrv();   // self-gated (5 s); tick retries it too, so this is the only call site
 (async function loop(){
- // one request in flight. Poll fast while downloading, slow when idle, and very
- // slow in a background tab: each poll rebuilds ~900 rows on the only thread.
+ // one request in flight. A /status build costs ~0.3 s of one core, so polling at
+ // 400 ms (measured: 97% of one core) is not worth it; 1 s is still live enough.
+ const ms = document.hidden ? 4000 : (LAST && LAST.running ? 1000 : 2000);
  await tick();
- const ms = document.hidden ? 4000 : (LAST && LAST.running ? 400 : 1500);
  setTimeout(loop, ms);
 })();
 </script></body></html>
