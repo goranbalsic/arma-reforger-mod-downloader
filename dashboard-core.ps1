@@ -429,7 +429,7 @@ function Search-Mods([string]$q, [int]$page) {
   if ($q -match '^[0-9A-Fa-f]{16}$') {
     $key = "id:$($q.ToUpper())"
     if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 60) { return $script:bCache[$key] }
-    $m = (Invoke-RestMethod -Uri "$ApiBase/mods/$($q.ToUpper())" -Headers $ApiH -TimeoutSec 30).mod
+    $m = (Invoke-RestMethod -Uri "$ApiBase/mods/$($q.ToUpper())" -Headers $ApiH -TimeoutSec 10).mod
     $r = @{ total = 1; page = 1; pages = 1; mods = @($m) }
     $script:bCache[$key] = $r; $script:bCacheAt[$key] = Get-Date
     return $r
@@ -438,7 +438,7 @@ function Search-Mods([string]$q, [int]$page) {
   if ($page -lt 1) { $page = 1 }
   $key = "s:$($q.ToLower()):$page"
   if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 15) { return $script:bCache[$key] }
-  $r = Invoke-RestMethod -Uri "$ApiBase/mods?search=$([uri]::EscapeDataString($q))&limit=24&page=$page" -Headers $ApiH -TimeoutSec 30
+  $r = Invoke-RestMethod -Uri "$ApiBase/mods?search=$([uri]::EscapeDataString($q))&limit=24&page=$page" -Headers $ApiH -TimeoutSec 10
   $res = @{ total = [int]$r.meta.totalMods; page = $page
             pages = $(if ($r.meta.totalPages) { [int]$r.meta.totalPages } else { 1 })
             mods = @($r.data) }
@@ -448,7 +448,7 @@ function Search-Mods([string]$q, [int]$page) {
 function Get-ModDeps([string]$Id) {
   # dependencies of one mod (ids, names, sizes). The DS pulls them by itself, but
   # then the queue and the total size would hide them.
-  try { @((Invoke-RestMethod -Uri "$ApiBase/mods/$Id/dependencies" -Headers $ApiH -TimeoutSec 30).data.dependencies) }
+  try { @((Invoke-RestMethod -Uri "$ApiBase/mods/$Id/dependencies" -Headers $ApiH -TimeoutSec 10).data.dependencies) }
   catch { @() }
 }
 function Invoke-AddMod([string]$Id) {
@@ -464,15 +464,22 @@ function Invoke-AddMod([string]$Id) {
   $queued = @{}
   foreach ($m in $j.game.mods) { $queued[$m.modId] = $true }
   if ($queued.ContainsKey($Id) -or $have.ContainsKey($Id)) { return "already $(if ($have.ContainsKey($Id)) { 'installed' } else { 'queued' }) - nothing to add" }
-  $m = (Invoke-RestMethod -Uri "$ApiBase/mods/$Id" -Headers $ApiH -TimeoutSec 30).mod
+  $m = (Invoke-RestMethod -Uri "$ApiBase/mods/$Id" -Headers $ApiH -TimeoutSec 10).mod
   $add = @([PSCustomObject]@{ modId = $Id; name = [string]$m.name; size = [double]$m.size })
   $depNames = @()
   $seen = @{}; $seen[$Id] = $true
   $queue2 = @(@{ id = $Id; depth = 0 })
+  # a malicious or broken dependency graph must not keep the request thread busy:
+  # 20 s and 200 mods, then queue what was found and say so
+  $budget = (Get-Date).AddSeconds(20)
+  $cap = 200
+  $cut = $false
   while ($queue2.Count) {
+    if ((Get-Date) -gt $budget -or $add.Count -ge $cap) { $cut = $true; break }
     $cur = $queue2[0]; $queue2 = @($queue2 | Select-Object -Skip 1)
     if ($cur.depth -ge 3) { continue }
     foreach ($d in (Get-ModDeps $cur.id)) {
+      if ($add.Count -ge $cap) { $cut = $true; break }
       if ($d.id -notmatch '^[0-9A-Fa-f]{16}$') { continue }
       $did = $d.id.ToUpper()
       if ($seen[$did] -or $queued.ContainsKey($did) -or $have.ContainsKey($did)) { continue }
@@ -481,6 +488,7 @@ function Invoke-AddMod([string]$Id) {
       $depNames += [string]$d.name
       $queue2 += @{ id = $did; depth = $cur.depth + 1 }
     }
+    if ($cut) { break }
   }
   # the engine rewrites the config on exit, so an append made while it runs is
   # discarded: stop it first and start it again afterwards, like Add server.
@@ -500,14 +508,15 @@ function Invoke-AddMod([string]$Id) {
   foreach ($a in $add) {
     if ($script:sizeMap.ContainsKey($a.modId)) { continue }
     $script:sizeMap[$a.modId] = @{ name = $a.name; bytes = [double]$a.size; exact = [bool]($a.size -gt 0) }
-    $sz.mods | Add-Member -NotePropertyName $a.modId `
-      -NotePropertyValue ([PSCustomObject]@{ name = $a.name; bytes = [double]$a.size; exact = [bool]($a.size -gt 0) }) -Force
+    $sz.mods | Add-Member -MemberType NoteProperty -Name $a.modId `
+      -Value ([PSCustomObject]@{ name = $a.name; bytes = [double]$a.size; exact = [bool]($a.size -gt 0) }) -Force
   }
   $script:TotalBytes = ($script:sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
   $sz.totalBytes = [double]$script:TotalBytes
   Save-Json $sz $Sizes 4
   $msg = "queued '$($m.name)' ($([Math]::Round([double]$m.size / 1GB, 2)) GB)"
   if ($depNames.Count) { $msg += " + $($depNames.Count) dependency mod(s): $($depNames -join ', ')" }
+  if ($cut) { $msg += " - dependency walk stopped at the 20 s / $cap mod limit; press Add again for the rest" }
   if ($wasRunning) { $msg += " ($(Start-DS))" } else { $msg += ' - press Start' }
   $msg
 }
@@ -517,7 +526,7 @@ function Get-Browse([string]$q) {
   if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 15) { return $script:bCache[$key] }
   $u = "$ApiBase/servers?includeOffline=true"
   if ($q) { $u += "&search=$([uri]::EscapeDataString($q))" }
-  $r = Invoke-RestMethod -Uri $u -Headers $ApiH -TimeoutSec 30
+  $r = Invoke-RestMethod -Uri $u -Headers $ApiH -TimeoutSec 10
   $list = @($r.data | Sort-Object online, players -Descending |
     Select-Object -First 60 | ForEach-Object {
       [PSCustomObject]@{ id = $_.id; name = $_.name; players = $_.players; maxPlayers = $_.maxPlayers
@@ -532,7 +541,7 @@ function Get-Detail([string]$Id) {
   # from the page cannot steer it at another endpoint
   if ($Id -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') { throw 'bad server id' }
   if ($script:dCache[$Id] -and ((Get-Date) - $script:dCacheAt[$Id]).TotalSeconds -lt 30) { return $script:dCache[$Id] }
-  $d = Invoke-RestMethod -Uri "$ApiBase/servers/$Id" -Headers $ApiH -TimeoutSec 30
+  $d = Invoke-RestMethod -Uri "$ApiBase/servers/$Id" -Headers $ApiH -TimeoutSec 10
   if (-not $d.server -or -not @($d.server.mods).Count) { throw 'server has no modlist (offline or password protected)' }
   $script:dCache[$Id] = $d.server; $script:dCacheAt[$Id] = Get-Date
   $d.server
@@ -577,7 +586,7 @@ function Invoke-AddServer([string]$Id) {
   foreach ($m in $new) {
     if (-not $sizeMap.ContainsKey($m.id)) {
       $sizeMap[$m.id] = @{ name = $m.name; bytes = [double]$m.size; exact = [bool]$m.sizeKnown }
-      $sz.mods | Add-Member -NotePropertyName $m.id -NotePropertyValue ([PSCustomObject]@{ name = $m.name; bytes = [double]$m.size; exact = [bool]$m.sizeKnown }) -Force
+      $sz.mods | Add-Member -MemberType NoteProperty -Name $m.id -Value ([PSCustomObject]@{ name = $m.name; bytes = [double]$m.size; exact = [bool]$m.sizeKnown }) -Force
     }
   }
   $script:TotalBytes = ($sizeMap.Values | ForEach-Object { [double]$_.bytes } | Measure-Object -Sum).Sum
@@ -604,7 +613,7 @@ function Merge-ServerMods($sv, $mods, $sz) {
   foreach ($m in $mods) {
     if (-not $sizeMap.ContainsKey($m.id) -and $m.sizeKnown -and $m.size) {
       $sizeMap[$m.id] = @{ name = $m.name; bytes = [double]$m.size; exact = $true }
-      $sz.mods | Add-Member -NotePropertyName $m.id -NotePropertyValue ([PSCustomObject]@{ name = $m.name; bytes = [double]$m.size; exact = $true }) -Force
+      $sz.mods | Add-Member -MemberType NoteProperty -Name $m.id -Value ([PSCustomObject]@{ name = $m.name; bytes = [double]$m.size; exact = $true }) -Force
     }
   }
   $oldIds = @($sv.mods | ForEach-Object { $_.id })
@@ -706,7 +715,7 @@ function Complete-RefreshJob([string]$Id) {
         $sid = Test-ModId $p.Name
         if (-not $sid) { Write-Host "refresh: ignoring a size entry with an invalid id: $($p.Name)" -ForegroundColor Yellow; continue }
         $sizeMap[$sid] = @{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }
-        $sz.mods | Add-Member -NotePropertyName $sid -NotePropertyValue ([PSCustomObject]@{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }) -Force
+        $sz.mods | Add-Member -MemberType NoteProperty -Name $sid -Value ([PSCustomObject]@{ name = ''; bytes = [double]$p.Value.bytes; exact = [bool]$p.Value.exact }) -Force
       }
       $ok = 0; $fail = 0; $changed = @()
       foreach ($sp in @($payload.servers)) {

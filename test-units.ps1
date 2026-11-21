@@ -415,6 +415,21 @@ Check 'Update-Cfg wrote nothing without the lock' ((Get-Content $Cfg -Raw) -eq $
 $null = Wait-Job $hold2 -Timeout 20000
 Remove-Job $hold2 -Force -ErrorAction SilentlyContinue
 
+Write-Host 'item 8: the dependency crawl is bounded'
+Reset-State
+function Get-Detail { param($Id) [pscustomobject]@{ name = 'S'; passwordProtected = $false; mods = @() } }
+function Get-HaveIds { @{} }
+function Get-DS { param([switch]$Fresh) ,@() }
+function Stop-DS { 'stopped' }
+function Start-DS { 'started' }
+function Get-ModDeps { param($Id) @(1..300 | ForEach-Object { [pscustomobject]@{ id = ('{0:X16}' -f $_); name = "dep$_"; size = 1 } }) }
+$amsg = Invoke-AddMod 'ABCDEF0123456789'
+$queuedNow = @((Get-Content $Cfg -Raw | ConvertFrom-Json).game.mods)
+Check 'the crawl stops at the 200 mod cap' ($queuedNow.Count -le 200 -and $queuedNow.Count -ge 2)
+Check 'the message says the dependency walk was cut' ($amsg -match 'limit')
+. "$PSScriptRoot\dashboard-core.ps1"
+. "$PSScriptRoot\state.ps1"
+
 Write-Host 'engine lock (a held lock is never stolen)'
 $hold = Start-Job -ArgumentList $tmp -ScriptBlock {
   param($d)
