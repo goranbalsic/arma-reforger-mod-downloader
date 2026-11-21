@@ -60,7 +60,7 @@ function Get-DS([switch]$Fresh) {
   # "nothing running" made add-mod / refresh-servers append while the engine was
   # running, and the engine rewrites that file on exit, so the append vanished.
   # Empty array = none. $null = the query failed - not the same thing.
-  if (-not (Get-Process ArmaReforgerServer -ErrorAction SilentlyContinue)) { return ,@() }
+  if (-not (Get-Process -Name $(if ($IsLinux) { 'ArmaReforgerSer*' } else { 'ArmaReforgerServer' }) -ErrorAction SilentlyContinue)) { return ,@() }
   if (-not $Fresh -and $script:dsAt -and ((Get-Date) - $script:dsAt).TotalSeconds -lt 2) {
     if ($null -eq $script:dsCache) { return $null }
     return ,$script:dsCache
@@ -84,7 +84,7 @@ function Get-AddonsBytes {
   # number is the folder you can look at in Explorer, not an estimate.
   if (((Get-Date) - $script:clBytesAt).TotalSeconds -lt 15) { return $script:clBytes }
   $sum = [double]0
-  $root = [IO.DirectoryInfo]::new("$env:USERPROFILE\Documents\My Games\ArmaReforger\addons")
+  $root = [IO.DirectoryInfo]::new((Get-ClientAddons $DsProfile))
   if ($root.Exists) {
     try { foreach ($f in $root.EnumerateFiles('*', [IO.SearchOption]::AllDirectories)) { $sum += $f.Length } } catch { }
   }
@@ -99,7 +99,7 @@ function Get-ClientIds {
   # Cost is paid once: Test-AddonComplete caches per folder + mtime.
   if (((Get-Date) - $script:clCacheAt).TotalSeconds -lt 10) { return $script:clCache }
   $ids = [Collections.Generic.List[string]]::new()
-  $root = [IO.DirectoryInfo]::new("$env:USERPROFILE\Documents\My Games\ArmaReforger\addons")
+  $root = [IO.DirectoryInfo]::new((Get-ClientAddons $DsProfile))
   if ($root.Exists) {
     foreach ($d in $root.EnumerateDirectories()) {
       $m = [regex]::Match($d.Name, '_([0-9A-F]{16})$')
@@ -120,12 +120,12 @@ function Get-DirMap {
   $map = @{}
   $root = [IO.DirectoryInfo]::new($Addons)
   if ($root.Exists) {
-    $baseLen = $root.FullName.TrimEnd('\').Length + 1
+    $baseLen = $root.FullName.TrimEnd([IO.Path]::DirectorySeparatorChar).Length + 1
     try {
       foreach ($f in $root.EnumerateFiles('*', [IO.SearchOption]::AllDirectories)) {
         # first path segment = the mod folder: the DS downloads into <mod>\temp\,
         # so the immediate parent name is not the mod (it would hide all progress)
-        $rel = $f.FullName.Substring($baseLen); $cut = $rel.IndexOf('\')
+        $rel = $f.FullName.Substring($baseLen); $cut = $rel.IndexOf([IO.Path]::DirectorySeparatorChar)
         if ($cut -lt 0) { continue }   # file directly in addons\, not a mod
         $dir = $rel.Substring(0, $cut)
         $m = [regex]::Match($dir, '_([0-9A-F]{16})$')
@@ -315,7 +315,7 @@ function Start-DS {
     if (@($mine).Count) { return 'already running' }
     # a server we did not start shares the profile folder the engine writes to:
     # refuse instead of running two of them (and never stop theirs on Pause)
-    if (Get-Process ArmaReforgerServer -ErrorAction SilentlyContinue) {
+    if (Get-Process -Name $(if ($IsLinux) { 'ArmaReforgerSer*' } else { 'ArmaReforgerServer' }) -ErrorAction SilentlyContinue) {
       return 'another ArmaReforgerServer is already running - close it, then press Start'
     }
     # the 1 MB download-list trap: trimming is lossless (the DS skips done mods
@@ -326,8 +326,7 @@ function Start-DS {
     $left = @((Get-Cfg).game.mods).Count
     if ($left -eq 0) { return 'nothing to download - the queue is empty' }
     Remove-Item (Join-Path $Data 'paused.flag') -Force -ErrorAction SilentlyContinue
-    Start-Process -FilePath $Exe -ArgumentList "-config `"$Cfg`" -profile `"$DsProfile`"" `
-      -WorkingDirectory "$Root\armar-server" -WindowStyle Hidden
+    Start-DownloadEngine
     # no 25 s sleep here: it froze the only HTTP thread (and the mirror with it).
     # The watchdog restarts a DS that dies within ~20 s, and /status shows the truth.
     'started - progress is on the page (a failed start is retried by the watchdog)'
@@ -388,7 +387,7 @@ function Get-HaveIds {
     if (Test-AddonComplete $e.Value.path $e.Value.mtime) { $have[$e.Key] = $true }
   }
   # client copies: same exact check (the launcher reads that folder)
-  $croot = [IO.DirectoryInfo]::new("$env:USERPROFILE\Documents\My Games\ArmaReforger\addons")
+  $croot = [IO.DirectoryInfo]::new((Get-ClientAddons $DsProfile))
   if ($croot.Exists) {
     foreach ($d in $croot.EnumerateDirectories()) {
       $m = [regex]::Match($d.Name, '_([0-9A-F]{16})$')   # not $Matches: it does not survive a function call

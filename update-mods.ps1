@@ -10,10 +10,10 @@ $env:RFMM_HOME = $Root
 $env:RFMM_DATA = $Data
 $Cfg = Join-Path $Data 'batch1-serverconfig.json'
 $DsProfile = Join-Path $Root 'serverprofile'
-$Exe = Join-Path $Root 'armar-server\ArmaReforgerServer.exe'
+$Exe = Get-EngineExecutable $Root
 if (!$PSBoundParameters.ContainsKey('QueueRevision')) { $QueueRevision = [string](Get-QueueRevision) }
 $installed = @{}
-foreach ($folder in @("$DsProfile\addons", "$env:USERPROFILE\Documents\My Games\ArmaReforger\addons")) {
+foreach ($folder in @((Join-Path $DsProfile 'addons'), (Get-ClientAddons $DsProfile))) {
   foreach ($dir in Get-ChildItem -LiteralPath $folder -Directory -ErrorAction SilentlyContinue) {
     if ($dir.Name -notmatch '_([a-f0-9]{16})$') { continue }
     $id = $Matches[1].ToUpperInvariant()

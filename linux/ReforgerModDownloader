@@ -1,0 +1,245 @@
+#!/usr/bin/python3
+import concurrent.futures
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+from urllib.parse import urlsplit
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("WebKit2", "4.1")
+from gi.repository import Gio, GLib, Gtk, WebKit2
+
+
+SOURCE = Path(__file__).resolve().parent
+SOURCE = SOURCE / "lib" if (SOURCE / "lib").is_dir() else SOURCE.parent
+DEFAULT_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "reforger-mod-downloader"
+HOME = Path(os.environ.get("RFMM_HOME", DEFAULT_HOME)).expanduser().resolve()
+DATA = Path(os.environ.get("RFMM_DATA", HOME / "data")).expanduser().resolve()
+ENGINE = HOME / "armar-server/ArmaReforgerServer"
+ORIGIN = "rfmm://app/"
+BRIDGE = r"""
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<script>
+(() => {
+  const waiting = new Map();
+  let sequence = 0;
+  window.fetch = (path, options = {}) => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    waiting.set(id, {resolve, reject});
+    window.webkit.messageHandlers.request.postMessage({id, path, method:options.method || 'GET'});
+  });
+  window.receiveReply = (id, reply) => {
+    const request = waiting.get(id);
+    if (!request) return;
+    waiting.delete(id);
+    request.resolve(new Response(reply.body, {status:reply.status, headers:{'Content-Type':reply.type}}));
+  };
+})();
+</script>
+"""
+
+
+class Worker:
+    def __init__(self):
+        DATA.mkdir(parents=True, exist_ok=True)
+        environment = dict(os.environ, RFMM_HOME=str(HOME), RFMM_DATA=str(DATA))
+        self.log = (DATA / "desktop.log").open("a", encoding="utf-8")
+        self.process = subprocess.Popen(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(SOURCE / "download-web.ps1"), "-Desktop"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log,
+            text=True, encoding="utf-8", env=environment,
+        )
+
+    def request(self, path, method="GET"):
+        self.process.stdin.write(json.dumps({"path": path, "method": method}) + "\n")
+        self.process.stdin.flush()
+        for line in self.process.stdout:
+            if line.startswith("RFMM "):
+                return json.loads(line[5:])
+            self.log.write(line)
+            self.log.flush()
+        raise RuntimeError(f"The downloader stopped. See {DATA / 'desktop.log'}.")
+
+    def close(self):
+        self.process.stdin.close()
+        self.process.wait(timeout=20)
+        self.log.close()
+
+
+class Downloader(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id="net.reforger.moddownloader")
+        self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.window = None
+        self.worker = None
+        self.installing = False
+        self.view = None
+
+    def do_activate(self):
+        if self.window:
+            self.window.present()
+            return
+        self.window = Gtk.ApplicationWindow(application=self, title="Arma Reforger Mod Downloader")
+        self.window.set_default_size(1024, 740)
+        self.window.connect("delete-event", lambda *_: self.installing)
+        if not shutil.which("pwsh"):
+            self.show_error("PowerShell 7 is required. Install pwsh and reopen the downloader.")
+        elif ENGINE.is_file():
+            self.open_dashboard()
+        else:
+            self.show_setup()
+        self.window.show_all()
+
+    def show_error(self, text):
+        for child in self.window.get_children():
+            self.window.remove(child)
+        label = Gtk.Label(label=text)
+        label.set_line_wrap(True)
+        label.set_margin_start(24)
+        label.set_margin_end(24)
+        self.window.add(label)
+        self.window.show_all()
+
+    def show_setup(self):
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, margin=28)
+        title = Gtk.Label(label="Set up the download engine", xalign=0)
+        panel.pack_start(title, False, False, 0)
+        panel.pack_start(Gtk.Label(
+            label=f"SteamCMD installs the free dedicated server here. Allow about 20 GB.\n{HOME}",
+            xalign=0, wrap=True,
+        ), False, False, 0)
+        self.install = Gtk.Button(label="Install engine", halign=Gtk.Align.START)
+        self.install.connect("clicked", self.start_setup)
+        panel.pack_start(self.install, False, False, 0)
+        scroller = Gtk.ScrolledWindow()
+        self.output = Gtk.TextView(editable=False, cursor_visible=False, monospace=True)
+        scroller.add(self.output)
+        panel.pack_start(scroller, True, True, 0)
+        self.window.add(panel)
+
+    def start_setup(self, _button):
+        steamcmd = shutil.which("steamcmd")
+        if not steamcmd and Path("/usr/games/steamcmd").is_file():
+            steamcmd = "/usr/games/steamcmd"
+        if not steamcmd:
+            self.append_setup("Install SteamCMD from your Linux distribution, then try again.\n")
+            return
+        self.installing = True
+        self.install.set_sensitive(False)
+        self.pool.submit(self.install_engine, steamcmd).add_done_callback(
+            lambda future: GLib.idle_add(self.setup_finished, future)
+        )
+
+    def append_setup(self, line):
+        buffer = self.output.get_buffer()
+        buffer.insert(buffer.get_end_iter(), line)
+        self.output.scroll_to_iter(buffer.get_end_iter(), 0, False, 0, 0)
+
+    def install_engine(self, steamcmd):
+        ENGINE.parent.mkdir(parents=True, exist_ok=True)
+        with subprocess.Popen(
+            [steamcmd, "+force_install_dir", str(ENGINE.parent), "+login", "anonymous",
+             "+app_update", "1874900", "validate", "+quit"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+        ) as process:
+            for line in process.stdout:
+                GLib.idle_add(self.append_setup, line)
+            if process.wait() or not os.access(ENGINE, os.X_OK):
+                raise RuntimeError("Setup did not finish. Review the SteamCMD output and try again.")
+
+    def setup_finished(self, future):
+        self.installing = False
+        try:
+            future.result()
+        except Exception as error:
+            self.append_setup(f"\n{error}\n")
+            self.install.set_sensitive(True)
+            return
+        for child in self.window.get_children():
+            self.window.remove(child)
+        self.open_dashboard()
+        self.window.show_all()
+
+    def open_dashboard(self):
+        try:
+            self.worker = Worker()
+        except OSError as error:
+            self.show_error(str(error))
+            return
+        context = WebKit2.WebContext.new_ephemeral()
+        context.get_security_manager().register_uri_scheme_as_secure("rfmm")
+        context.register_uri_scheme("rfmm", self.serve_page)
+        manager = WebKit2.UserContentManager()
+        manager.register_script_message_handler("request")
+        manager.connect("script-message-received::request", self.handle_request)
+        self.view = WebKit2.WebView(web_context=context, user_content_manager=manager)
+        settings = self.view.get_settings()
+        settings.set_enable_developer_extras(False)
+        settings.set_hardware_acceleration_policy(WebKit2.HardwareAccelerationPolicy.NEVER)
+        self.view.connect("decide-policy", self.navigation_policy)
+        self.window.add(self.view)
+        self.view.load_uri(ORIGIN)
+
+    def navigation_policy(self, _view, decision, kind):
+        if kind in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
+            action = decision.get_navigation_action()
+            uri = action.get_request().get_uri()
+            if kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION and uri.split("#", 1)[0] == ORIGIN:
+                return False
+            decision.ignore()
+            if action.is_user_gesture() and uri == "https://github.com/goranbalsic/arma-reforger-mod-downloader":
+                Gio.AppInfo.launch_default_for_uri(uri, None)
+            return True
+        return False
+
+    def serve_page(self, request):
+        if request.get_uri() != ORIGIN:
+            request.finish(Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(b"")), 0, "text/plain")
+            return
+        self.pool.submit(self.worker.request, "/").add_done_callback(
+            lambda future: GLib.idle_add(self.finish_page, request, future)
+        )
+
+    def finish_page(self, request, future):
+        try:
+            reply = future.result()
+            if reply["status"] != 200:
+                raise RuntimeError(reply["body"])
+            html = reply["body"].replace("</head>", BRIDGE + "</head>", 1).encode("utf-8")
+        except Exception as error:
+            html = GLib.markup_escape_text(str(error)).encode("utf-8")
+        request.finish(Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(html)), len(html), "text/html")
+
+    def handle_request(self, _manager, message):
+        if self.view.get_uri().split("#", 1)[0] != ORIGIN:
+            return
+        args = json.loads(message.get_js_value().to_json(0))
+        path, method, identity = args["path"], args["method"], args["id"]
+        if not path.startswith("/") or path.startswith("//") or urlsplit(path).netloc or method not in ("GET", "POST"):
+            return
+        self.pool.submit(self.worker.request, path, method).add_done_callback(
+            lambda future: GLib.idle_add(self.deliver_reply, identity, future)
+        )
+
+    def deliver_reply(self, identity, future):
+        try:
+            reply = future.result()
+        except Exception as error:
+            reply = {"status": 503, "type": "application/json", "body": json.dumps({"error": str(error)})}
+        self.view.evaluate_javascript(f"window.receiveReply({int(identity)}, {json.dumps(reply)})",
+                                      -1, None, ORIGIN, None, None, None)
+
+    def do_shutdown(self):
+        self.pool.shutdown(wait=True, cancel_futures=True)
+        if self.worker:
+            self.worker.close()
+        Gtk.Application.do_shutdown(self)
+
+
+if __name__ == "__main__":
+    sys.exit(Downloader().run(sys.argv))

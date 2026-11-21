@@ -9,13 +9,11 @@ param([switch]$Check, [switch]$Desktop)
 $ErrorActionPreference = 'Stop'
 $Root    = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
 $Data    = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
-$Exe     = "$Root\armar-server\ArmaReforgerServer.exe"
-$Cfg     = "$Data\batch1-serverconfig.json"
-$Sizes   = "$Data\batch1-sizes.json"
-$ServersPath = "$Data\batch1-servers.json"
-$DsProfile = "$Root\serverprofile"
-$Addons  = "$DsProfile\addons"
-$ClientAddons = "$env:USERPROFILE\Documents\My Games\ArmaReforger\addons"
+$Cfg     = Join-Path $Data 'batch1-serverconfig.json'
+$Sizes   = Join-Path $Data 'batch1-sizes.json'
+$ServersPath = Join-Path $Data 'batch1-servers.json'
+$DsProfile = Join-Path $Root 'serverprofile'
+$Addons  = Join-Path $DsProfile 'addons'
 $Url     = 'http://localhost:8123/'
 
 # shared helpers (Save-Json, Read-Json, Test-AddonComplete): one copy for every
@@ -23,6 +21,8 @@ $Url     = 'http://localhost:8123/'
 . "$PSScriptRoot\state.ps1"
 
 . "$PSScriptRoot\dashboard-core.ps1"
+$Exe = Get-EngineExecutable $Root
+$ClientAddons = Get-ClientAddons $DsProfile
 
 # first run on any machine: create empty state files instead of failing
 if (-not (Test-Path $Data)) { New-Item -ItemType Directory -Force $Data | Out-Null }
@@ -33,7 +33,18 @@ if (-not (Test-Path $ServersPath)) { '{"servers":[]}'           | Set-Content $S
 # The engine can only assemble mods inside its own profile, and the game reads its
 # own addons folder. A directory junction makes those one folder: each mod is
 # stored once, where the game looks, instead of downloaded here and copied there.
-if (-not (Initialize-AddonsLink $Addons $ClientAddons $Cfg)) {
+if ($IsLinux) {
+  if ($Addons -cne $ClientAddons) {
+    $current = Get-Item -LiteralPath $Addons -Force -ErrorAction SilentlyContinue
+    if ($current -and (!$current.LinkType -or $current.ResolveLinkTarget($true).FullName -cne $ClientAddons)) {
+      throw "The engine already stores addons at $Addons. Use that folder or choose a fresh engine directory before linking a game profile."
+    }
+    if (!$current) {
+      New-Item -ItemType Directory -Path $DsProfile,$ClientAddons -Force | Out-Null
+      New-Item -ItemType SymbolicLink -Path $Addons -Target $ClientAddons | Out-Null
+    }
+  }
+} elseif (-not (Initialize-AddonsLink $Addons $ClientAddons $Cfg)) {
   Write-Host 'the engine folder could not be linked to the game addons folder - mods are kept here and copied there'
 }
 
@@ -95,6 +106,11 @@ $script:modUpdateJob = $null
 
 function Start-DownloadHelpers {
   if ($Desktop) { $env:RFMM_DESKTOP_OWNER_PID = [string]$PID }
+  if ($IsLinux) {
+    $helper = Join-Path $PSScriptRoot 'watchdog.ps1'
+    Start-Process (Join-Path $PSHOME 'pwsh') -ArgumentList ('-NoProfile -File "{0}"' -f $helper) -RedirectStandardInput '/dev/null' -RedirectStandardOutput (Join-Path $Data 'watchdog-output.log') -RedirectStandardError (Join-Path $Data 'watchdog-error.log')
+    return
+  }
   $shell = Join-Path $PSHOME 'powershell.exe'
   if (!(Test-Path $shell)) { $shell = Join-Path $PSHOME 'pwsh.exe' }
   $addonsItem = Get-Item $Addons -Force -ErrorAction SilentlyContinue
@@ -310,7 +326,8 @@ function Invoke-DashboardRequest($ctx) {
 }
 
 if ($Desktop) {
-  Add-Type -AssemblyName System.Web
+  if ($IsLinux) { Add-Type -AssemblyName System.Web.HttpUtility }
+  else { Add-Type -AssemblyName System.Web }
   Start-DownloadHelpers
   # One request and one reply per line. Other output is diagnostic text.
   $utf8 = [Text.UTF8Encoding]::new($false)

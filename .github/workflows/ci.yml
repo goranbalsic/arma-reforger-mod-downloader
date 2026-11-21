@@ -2,11 +2,32 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, linux-desktop]
   pull_request:
   workflow_dispatch:
 
 jobs:
+  linux-desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK and WebKit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gir1.2-gtk-3.0 gir1.2-webkit2-4.1 python3-gi xvfb xauth
+      - name: Package Linux desktop app
+        run: sh linux/package.sh
+      - name: Open the packaged app with a fixture queue
+        run: |
+          tar xzf dist/ReforgerModDownloader-linux-x64.tar.gz -C "$RUNNER_TEMP"
+          cp linux/test-desktop.py "$RUNNER_TEMP/ReforgerModDownloader/"
+          xvfb-run -a /usr/bin/python3 "$RUNNER_TEMP/ReforgerModDownloader/test-desktop.py"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReforgerModDownloader-linux-x64
+          path: dist/ReforgerModDownloader-linux-x64.tar.gz
+          if-no-files-found: error
+
   desktop:
     runs-on: windows-latest
     permissions:
