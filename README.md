@@ -2,7 +2,7 @@
 
 Download **Arma Reforger Workshop mods before joining a multiplayer server**. Search for a server to queue its full mod list, or find a single mod by name, author, or Workshop ID. The desktop app skips installed mods when building a server queue, checks for updates, and creates launcher presets from installed mods.
 
-[**Download for Windows x64**](https://github.com/goranbalsic/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader.exe) · [**Linux x64 preview**](#install-on-linux-x64) · [**Release notes**](../../releases/latest)
+[**Download for Windows x64**](https://github.com/goranbalsic/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader.exe) · [**Download for Linux x64**](https://github.com/goranbalsic/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader-linux-x64.tar.gz) · [**Release notes**](../../releases/latest)
 
 ## Install on Windows x64
 
@@ -16,7 +16,7 @@ The app uses the Microsoft Edge WebView2 Runtime for its window. If Windows is m
 
 ## Install on Linux x64
 
-Open the latest successful run on `main` in [GitHub Actions](https://github.com/goranbalsic/arma-reforger-mod-downloader/actions/workflows/ci.yml?query=branch%3Amain). Download the **ReforgerModDownloader-linux-x64** artifact, extract it and the included TAR archive, then run `./ReforgerModDownloader` from the extracted app folder. Linux uses native SteamCMD and the native Arma Reforger dedicated server.
+Download **ReforgerModDownloader-linux-x64.tar.gz** from the [latest release](../../releases/latest). Extract it, then run `./ReforgerModDownloader` from the extracted app folder. Linux uses native SteamCMD and the native Arma Reforger dedicated server.
 
 Install PowerShell 7 (`pwsh`), SteamCMD, and the GTK 3 and WebKitGTK 4.1 Python bindings from your distribution. The Ubuntu and Debian packages for the window are `python3-gi`, `gir1.2-gtk-3.0`, and `gir1.2-webkit2-4.1`. Select **Install engine** on first launch.
 
@@ -36,7 +36,7 @@ Once the downloads finish, close Arma Reforger and click **Make preset** next to
 
 In **Library**, use **Update installed mods**, **Update tracked servers’ mods**, or **Update mods** next to a server. To update a single mod, select **Update** under **Completed**. These actions check Workshop versions in the background and download newer revisions when available.
 
-In current desktop builds from [GitHub Actions](https://github.com/goranbalsic/arma-reforger-mod-downloader/actions/workflows/ci.yml?query=branch%3Amain), select **Cancel updates** to stop a check or remove its queued updates. Finished updates, partial files, and unrelated downloads stay on disk or in the queue.
+Select **Cancel updates** to stop a check or remove its queued updates. Finished updates, partial files, and unrelated downloads stay on disk or in the queue.
 
 ## Frequently asked questions
 
@@ -81,10 +81,10 @@ Windows builds are unsigned. You can build the executable from the tagged source
 
 ```powershell
 Get-FileHash .\ReforgerModDownloader.exe -Algorithm SHA256
-gh release view v1.1.0 --repo goranbalsic/arma-reforger-mod-downloader --json assets --jq '.assets[] | select(.name == "ReforgerModDownloader.exe") | .digest'
+gh release view --repo goranbalsic/arma-reforger-mod-downloader --json assets --jq '.assets[] | select(.name == "ReforgerModDownloader.exe") | .digest'
 ```
 
-The desktop CI workflow tests and attests the executable it builds on `main`. For that workflow’s artifact, run `gh attestation verify .\ReforgerModDownloader.exe -R goranbalsic/arma-reforger-mod-downloader`. The v1.1.0 release was built locally, so use the SHA-256 check for it.
+The desktop CI workflow tests and attests Windows builds on `main`. To verify the v1.2.0 Windows release, run `gh attestation verify .\ReforgerModDownloader.exe -R goranbalsic/arma-reforger-mod-downloader`.
 
 The desktop interface talks to its PowerShell worker over standard input and output. Workshop and server data come from ReforgerMods.net, and initial engine setup downloads SteamCMD from Steam. The dedicated server fetches mod files. Build dependencies, runtime scripts, and tests are in this repository.
 

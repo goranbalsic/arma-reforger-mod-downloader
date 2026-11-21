@@ -1,9 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 - Cancel a mod update check or remove its unfinished updates while preserving unrelated downloads and local files.
-- Attest Windows executables built by the `main` branch CI workflow.
+- Add a Linux x64 desktop build that reuses the downloader and supports the native dedicated server.
+- Add Windows app update checks and verify the SHA-256 digest before replacing the executable on exit. Attest Windows CI builds.
+- Detect dedicated servers already installed through Steam. Show a progress bar during first-run setup and retry when SteamCMD needs fresh app metadata.
+- Use the dedicated server’s transfer readings for progress, speed, and estimated time remaining. Show individual downloads as they start, handle sizes above 2 GB, and stop showing activity when the server is idle.
+- Preserve partials on **Clear queue**. Restore an individual partial from **Verify mods**, or use **Cancel downloads** to remove tracked partial files.
+- Stop the app’s dedicated server on close or force-close and preserve the queue.
+- Preserve multilingual server and mod names. Save presets in the background with shorter app messages.
+- Refuse queue writes when its configuration is unreadable, and block engine startup when queue preparation fails.
 
 ## 1.1.0
 
