@@ -10,6 +10,36 @@ function Reset-QueueRevision {
   # Background checks started before a queue edit cannot undo that edit.
   [IO.File]::WriteAllText((Join-Path $Data 'queue-revision.txt'), [guid]::NewGuid().ToString('N'))
 }
+function Get-PendingModUpdates($Queue) {
+  $batch = Read-Json (Join-Path $Data 'mod-update-batch.json') $null
+  $targets = @{}
+  foreach ($update in $batch.updates) { $targets[$update.modId] = $update.version }
+  $Queue | Where-Object { $_.version -and $targets[$_.id] -eq $_.version }
+}
+function Invoke-CancelModUpdates {
+  $ctl = Lock-Engine
+  if (!$ctl) { throw 'The downloader is busy. Try cancelling again.' }
+  try {
+    Reset-QueueRevision
+    $batchPath = Join-Path $Data 'mod-update-batch.json'
+    $batch = Read-Json $batchPath $null
+    $targets = @{}
+    foreach ($update in $batch.updates) { $targets[$update.modId] = $update.version }
+    $pending = @((Get-Cfg).game.mods | Where-Object { $_.version -and $targets[$_.modId] -eq $_.version })
+    if ($pending.Count) {
+      $engine = Get-DS -Fresh
+      if ($null -eq $engine) { throw 'Cannot check whether the downloader is running. Try cancelling again.' }
+      if (@($engine).Count) { Stop-DS | Out-Null }
+      Update-Cfg {
+        param($cfg)
+        $cfg.game.mods = @($cfg.game.mods | Where-Object { !$_.version -or $targets[$_.modId] -ne $_.version })
+      } $Cfg | Out-Null
+      if (@($engine).Count -and @((Get-Cfg).game.mods).Count) { Start-DS | Out-Null }
+    }
+    if (Test-Path -LiteralPath $batchPath) { Remove-Item -LiteralPath $batchPath -Force }
+    'Mod updates cancelled.'
+  } finally { $ctl.ReleaseMutex() }
+}
 function Get-SkippedNames {
   # written by watchdog.ps1 when the Workshop refuses a mod three times in a row
   if (((Get-Date) - $script:skippedAt).TotalSeconds -lt 10) { return $script:skipped }
@@ -245,7 +275,7 @@ function Get-Status {
       $doneBytes += $expected
     } else {
       if ($dir -and !$mod.version) { $doneBytes += [Math]::Min([double]$dir.bytes, $expected) }
-      @{ id = $id; name = $mod.name }
+      @{ id = $id; name = $mod.name; version = $mod.version }
     }
   })
   # Temporary fragments disappear during assembly, so keep a high-water mark

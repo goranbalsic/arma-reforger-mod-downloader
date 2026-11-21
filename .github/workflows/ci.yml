@@ -9,6 +9,10 @@ on:
 jobs:
   desktop:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - name: Build desktop executable
@@ -17,6 +21,11 @@ jobs:
       - name: Test the desktop transport
         shell: powershell
         run: .\desktop\Test.ps1
+      - name: Attest the executable built on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/ReforgerModDownloader.exe
       - uses: actions/upload-artifact@v4
         with:
           name: ReforgerModDownloader-windows-x64

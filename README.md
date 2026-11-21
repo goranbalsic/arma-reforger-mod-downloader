@@ -22,6 +22,8 @@ Once the downloads finish, close Arma Reforger and click **Make preset** next to
 
 In **Library**, use **Update installed mods**, **Update tracked servers’ mods**, or **Update mods** next to a server. To update a single mod, select **Update** under **Completed**. These actions check Workshop versions in the background and download newer revisions when available.
 
+Select **Cancel updates** to stop a check or remove its queued updates. Finished updates, partial files, and unrelated downloads stay on disk or in the queue.
+
 ## Files, updates, and shutdown
 
 Your mods live in `Documents\My Games\ArmaReforger\addons`. The download engine and queue are saved in the folder selected during setup. The default is `%LOCALAPPDATA%\Reforger Mod Downloader\downloads`.
@@ -42,5 +44,18 @@ Active downloads can finish in the background after you close the app. To stop t
 Run `powershell -NoProfile -ExecutionPolicy Bypass -File desktop\Build.ps1` to build `dist\ReforgerModDownloader.exe`. The executable bundles the existing PowerShell scripts, the interface, and the WebView2 SDK files. It uses a private process stream for desktop requests.
 
 Run `powershell -File test-units.ps1` for the offline unit suite. See the [testing guide](docs/TESTING.md) before running the live tests.
+
+## Verify a download
+
+Windows builds are unsigned. You can build the executable from the tagged source, or compare a release download’s SHA-256 with the digest GitHub records for that asset:
+
+```powershell
+Get-FileHash .\ReforgerModDownloader.exe -Algorithm SHA256
+gh release view v1.1.0 --repo goranbalsic/arma-reforger-mod-downloader --json assets --jq '.assets[] | select(.name == "ReforgerModDownloader.exe") | .digest'
+```
+
+The desktop CI workflow tests and attests the executable it builds on `main`. For that workflow’s artifact, run `gh attestation verify .\ReforgerModDownloader.exe -R goranbalsic/arma-reforger-mod-downloader`. The v1.1.0 release was built locally, so use the SHA-256 check for it.
+
+The desktop interface talks to its PowerShell worker over standard input and output. Workshop and server data come from ReforgerMods.net, and initial engine setup downloads SteamCMD from Steam. The dedicated server fetches mod files. Build dependencies, runtime scripts, and tests are in this repository.
 
 [Architecture](docs/ARCHITECTURE.md) · [Engineering audit](docs/ENGINEERING_AUDIT.md) · [Security audit](docs/SECURITY_AUDIT.md) · [Changelog](CHANGELOG.md) · [PolyForm Noncommercial 1.0.0](LICENSE) · [Copyright notice](NOTICE)

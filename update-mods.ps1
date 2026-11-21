@@ -49,9 +49,17 @@ if ($updates.Count) {
       Write-Output "$result The queue changed during the check. No updates were queued."
       return
     }
+    # Preserve any existing queue entries so cancelling this batch cannot
+    # remove a download the user queued before the update check.
+    foreach ($mod in (Get-Cfg).game.mods) { $updates.Remove([string]$mod.modId) }
+    if (!$updates.Count) {
+      Write-Output "$result The updates are already represented in the queue."
+      return
+    }
     $engine = Get-DS -Fresh
     if ($null -eq $engine) { throw 'Cannot inspect the download engine.' }
     if (@($engine).Count) { Stop-DS | Out-Null }
+    Save-Json @{ updates = @($updates.Values) } (Join-Path $Data 'mod-update-batch.json')
     Update-Cfg {
       param($cfg)
       $cfg.game.mods = @($cfg.game.mods | Where-Object { !$updates.ContainsKey($_.modId) }) + @($updates.Values)

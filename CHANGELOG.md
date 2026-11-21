@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Cancel a mod update check or remove its unfinished updates while preserving unrelated downloads and local files.
+- Attest Windows executables built by the `main` branch CI workflow.
+
 ## 1.1.0
 
 - Add a standalone Windows desktop executable with built-in engine setup.

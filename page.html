@@ -70,7 +70,7 @@ ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#
  <div id="mres" class="dim" style="margin-top:8px">type a mod name, an author, or a mod id and press Enter</div>
  <div id="mpager" style="margin-top:6px"></div>
 </details>
-</section><section class="view" id="library"><h2>Library</h2><div><button onclick="updateMods('all','',event)">Update installed mods</button> <button onclick="updateMods('tracked','',event)">Update tracked servers&rsquo; mods</button></div><details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span><button class="mini" onclick="refreshSrv(event)" title="re-read disk + pull fresh modlists from reforgermods.net">Refresh all</button></h2></summary><div id="srv" class="dim" style="margin-top:8px">loading server lists...</div></details>
+</section><section class="view" id="library"><h2>Library</h2><div><button onclick="updateMods('all','',event)">Update installed mods</button> <button onclick="updateMods('tracked','',event)">Update tracked servers&rsquo; mods</button> <button id="cancelModUpdates" onclick="cancelModUpdates(this)" hidden>Cancel updates</button></div><details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span><button class="mini" onclick="refreshSrv(event)" title="re-read disk + pull fresh modlists from reforgermods.net">Refresh all</button></h2></summary><div id="srv" class="dim" style="margin-top:8px">loading server lists...</div></details>
 <details class="card wide"><summary><h2 style="font-size:18px">Completed <span id="reccount" class="dim"></span></h2></summary>
  <input class="f" id="fr" aria-label="Filter completed mods" placeholder="Filter completed mods" oninput="FILTER.rec=this.value;renderAll()">
  <ul id="rec"></ul></details>
@@ -270,6 +270,7 @@ async function tick(){
   if(s.error)throw new Error(s.error);
   if(s.tok)T=s.tok;
   showNotice('modUpdate',s.modUpdate||'');
+  document.getElementById('cancelModUpdates').hidden=!s.modUpdateCancellable;
   const boot=document.getElementById('boot'); if(boot)boot.remove();
   const hasQueue=s.queue.length>0;
   if(hasQueue){
@@ -346,6 +347,11 @@ async function updateMods(scope,id,event){
  event.preventDefault();
  event.stopPropagation();
  await post('update-mods?scope='+scope+'&id='+encodeURIComponent(id));
+}
+async function cancelModUpdates(button){
+ button.disabled=true;
+ try{await post('cancel-mod-updates');}
+ finally{button.disabled=false;}
 }
 async function queueSrv(id,ev){
  ev.stopPropagation();

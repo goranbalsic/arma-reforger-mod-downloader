@@ -90,7 +90,7 @@ if ($Check) {
 # per-run token: the 13 state-changing endpoints only answer requests that carry
 # it, so another website open in the browser cannot drive this server (CSRF)
 $token = [guid]::NewGuid().ToString('N')
-$mutating = '/update-mods','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/remove-queued-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
+$mutating = '/update-mods','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/remove-queued-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
 $script:modUpdateJob = $null
 
 function Start-DownloadHelpers {
@@ -145,6 +145,9 @@ function Invoke-DashboardRequest($ctx) {
           $status.modUpdate = if ($modUpdateJob.State -eq 'Failed') { "Update failed: $($child.JobStateInfo.Reason.Message)" }
             elseif ($child.Output.Count) { [string]$child.Output[$child.Output.Count-1] } else { 'Checking installed mods...' }
         }
+        $pendingUpdates = @(Get-PendingModUpdates $status.queue).Count
+        $status.modUpdateCancellable = $status.modUpdateRunning -or $pendingUpdates -gt 0
+        if (!$status.modUpdate -and $pendingUpdates) { $status.modUpdate = "$pendingUpdates mod updates pending." }
         $b = [Text.Encoding]::UTF8.GetBytes(($status | ConvertTo-Json -Depth 5 -Compress))
         $ctx.Response.ContentType = 'application/json'
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
@@ -214,6 +217,15 @@ function Invoke-DashboardRequest($ctx) {
       }
       '/add-mod' { $msg = Invoke-AddMod $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/add-server'   { $msg = Invoke-AddServer $ctx.Request.QueryString['id'];   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
+      '/cancel-mod-updates' {
+        $msg = Invoke-CancelModUpdates
+        if ($modUpdateJob) {
+          # The queue change is complete and the worker's revision is invalidated.
+          Stop-Job $modUpdateJob -ErrorAction SilentlyContinue
+          Remove-Job $modUpdateJob -Force
+          $script:modUpdateJob = $null
+        }
+      }
       '/update-mods' {
         $scope = [string]$ctx.Request.QueryString['scope']
         $id = [string]$ctx.Request.QueryString['id']
@@ -230,6 +242,8 @@ function Invoke-DashboardRequest($ctx) {
           default { throw 'Unknown update scope.' }
         }
         if ($modUpdateJob -and $modUpdateJob.State -in 'Running','NotStarted') { throw 'An update check is already running.' }
+        $pending = (Get-Status).queue
+        if (@(Get-PendingModUpdates $pending).Count) { throw 'Mod updates are already queued. Finish or cancel them before checking again.' }
         if ($modUpdateJob) { Remove-Job $modUpdateJob }
         $script:modUpdateJob = Start-Job -ScriptBlock {
           param($scriptPath,$scope,$ids,$root,$data,$api,$agent,$queueRevision)

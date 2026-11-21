@@ -57,6 +57,19 @@ try {
   if ($after.queue.Count -or $after.totalB -or $after.doneB -or $after.pct -or !(Test-Path $partial)) {
     throw 'The queue or progress did not reset, or the partial files were removed.'
   }
+  '{"game":{"name":"Test","scenarioId":"fixture","mods":[{"modId":"ABCDEF0123456789","name":"Sample","version":"2.0.0"},{"modId":"0011223344556677","name":"Other"}]}}' |
+    Set-Content -LiteralPath $cfg -Encoding UTF8
+  '{"updates":[{"modId":"ABCDEF0123456789","version":"2.0.0"}]}' |
+    Set-Content -LiteralPath (Join-Path $data 'mod-update-batch.json') -Encoding UTF8
+  $updating = (Send-Request '/status').body | ConvertFrom-Json
+  if (!$updating.modUpdateCancellable) { throw 'Pending updates could not be cancelled.' }
+  $cancelled = Send-Request "/cancel-mod-updates?t=$($before.tok)" 'POST'
+  $afterCancel = (Send-Request '/status').body | ConvertFrom-Json
+  if ($cancelled.status -ne 200 -or $afterCancel.modUpdateCancellable -or
+      $afterCancel.queue.Count -ne 1 -or $afterCancel.queue[0].id -ne '0011223344556677' -or
+      $afterCancel.queueRevision -eq $updating.queueRevision -or !(Test-Path $partial)) {
+    throw "Cancelling updates changed unrelated downloads, removed files, or left the batch active: $($cancelled.body)"
+  }
   'Desktop transport and queue checks passed.'
 } finally {
   $backend.StandardInput.Close()
