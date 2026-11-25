@@ -1,0 +1,247 @@
+# Keeps the dedicated server (used as a downloader) alive.
+#
+# The DS downloads the queued mods, then exits: it cannot create a game world
+# while mods are still missing. It can also hang for minutes when the Workshop
+# API/CDN fails. This process restarts it, and skips a mod the Workshop keeps
+# refusing so one bad mod cannot stall the whole queue.
+#
+# Started by download-web.ps1. Single instance (named mutex).
+$ErrorActionPreference = 'Continue'
+$Root = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
+$Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
+. (Join-Path $PSScriptRoot 'state.ps1')
+$Cfg = Join-Path $Data 'batch1-serverconfig.json'
+$Exe = Get-EngineExecutable $Root
+$DsProfile = Join-Path $Root 'serverprofile'
+$Addons = Join-Path $DsProfile 'addons'
+$LogFile = Join-Path $Data 'watchdog.log'
+$PauseFlag = Join-Path $Data 'paused.flag'
+$SkipFile = Join-Path $Data 'skipped.json'
+
+function Write-Wd([string]$t) { try { "[$(Get-Date -f HH:mm:ss)] $t" | Add-Content $LogFile } catch { } }
+function Get-LatestLog {
+  Get-ChildItem -LiteralPath (Join-Path $DsProfile 'logs') -Recurse -Filter console.log -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+}
+
+function Start-EngineLocked {
+  # the dashboard can start the engine at the same moment: a named mutex + a
+  # re-check means never two processes on one profile
+  $ctl = Lock-Engine
+  if (-not $ctl) { return $false }
+  try {
+    if ((Test-Path -LiteralPath $PauseFlag) -or !((Get-Queued $Cfg).Count)) { return $false }
+    $cur = Get-OwnEngine $Cfg
+    if ($null -eq $cur) { return $false }   # cannot ask: do not risk a second engine
+    if ($cur -or (Get-EngineProcesses)) { return $false }
+    Start-DownloadEngine
+    return $true
+  } finally { $ctl.ReleaseMutex() }
+}
+
+function Stop-OwnerlessDownloads {
+  $ctl = Lock-Engine
+  if (!$ctl) { return $false }
+  try {
+    $marker = Read-Json (Join-Path $Data 'desktop-owner.json') $null
+    if ($marker -and $marker.token -ne $env:RFMM_DESKTOP_OWNER_TOKEN) { return $true }
+    New-Item -ItemType File -Force (Join-Path $Data 'paused.flag') | Out-Null
+    $engine = Get-OwnEngine $Cfg
+    if ($null -eq $engine) { return $false }
+    foreach ($process in $engine) {
+      Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
+    $remaining = Get-OwnEngine $Cfg
+    if ($null -eq $remaining -or @($remaining).Count) { return $false }
+    Write-Wd 'desktop closed - download engine stopped; queue kept'
+    return $true
+  } finally { $ctl.ReleaseMutex() }
+}
+
+$owner = if ($env:RFMM_DESKTOP_OWNER_PID) {
+  Get-Process -Id $env:RFMM_DESKTOP_OWNER_PID -ErrorAction SilentlyContinue
+}
+$mutexName = 'ReforgerDownloaderWatchdog'
+if ($env:RFMM_DESKTOP_OWNER_TOKEN) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    $path = [IO.Path]::GetFullPath($Cfg)
+    if (!$IsLinux) { $path = $path.ToUpperInvariant() }
+    $key = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($path))).Replace('-', '')
+    $mutexName += "-desktop-$key"
+  } finally { $sha.Dispose() }
+}
+if ($IsLinux) {
+  $mutex = Enter-DownloaderFileLock (Get-DownloaderLockPath $mutexName) 5000
+  if (!$mutex) { exit 0 }
+} else {
+  $mutex = [System.Threading.Mutex]::new($false, $mutexName)
+  if (-not $mutex.WaitOne(5000)) { exit 0 }
+}
+
+$fail = @{}
+$scanFile = ''      # log file the failure scan is reading
+$scanAt = 0         # lines of that file already counted
+$scanCur = $null    # mod id whose outcome is still pending
+$saidEmpty = $false   # "queue empty" is logged once per transition, not every 15 s
+$saidBlind = $false   # same for "cannot read the process list"
+$saidPause = $false   # and for "paused": silent skipping looked exactly like a hung watchdog
+$saidUnreadable = $false  # and for "config cannot be read": never treat it as "queue empty"
+while ($true) {
+  if ($env:RFMM_DESKTOP_OWNER_PID) {
+    if (!$owner -or $owner.WaitForExit(15000)) {
+      if (Stop-OwnerlessDownloads) { break }
+      Start-Sleep 2
+      continue
+    }
+  } else { Start-Sleep 15 }
+  if (-not (Test-Path $Cfg)) { continue }
+  if (Test-Path $PauseFlag) {
+    if (-not $saidPause) { Write-Wd 'paused - not restarting anything until the queue is started again'; $saidPause = $true }
+    continue
+  }
+  if ($saidPause) { Write-Wd 'pause cleared - watching again'; $saidPause = $false }
+  $queued = Get-Queued $Cfg
+  # a read/parse failure is not an empty queue: skipping the tick prevents the
+  # "queue empty - done" path from stopping a running engine
+  if ($null -eq $queued) {
+    if (-not $saidUnreadable) { Write-Wd 'cannot read the queue config right now - waiting for it to become readable'; $saidUnreadable = $true }
+    continue
+  }
+  if ($saidUnreadable) { Write-Wd 'queue config readable again'; $saidUnreadable = $false }
+  $ds = Get-OwnEngine $Cfg
+  # log the transition, not every tick: a busy machine made this fire 25 times in a
+  # row (25 lines that hid the rest of the log) while nothing was being done
+  if ($null -eq $ds) {
+    if (-not $saidBlind) {
+      Write-Wd 'cannot read the process list right now - waiting for it to recover'
+      $saidBlind = $true
+    }
+    continue
+  }
+  if ($saidBlind) { Write-Wd 'process list readable again'; $saidBlind = $false }
+
+  if (-not $ds.Count) {
+    if ($queued.Count -eq 0) {
+      # log the transition only: this branch runs every 15 s forever once the
+      # batch is done, and used to grow watchdog.log without bound. A finished
+      # batch also forgets the strikes, so a mod re-queued later starts clean.
+      if (-not $saidEmpty) { Write-Wd 'queue empty - downloader done'; $saidEmpty = $true; $fail = @{} }
+      continue
+    }
+    $saidEmpty = $false
+
+    # remember Workshop refusals from the run that just ended. Walk the WHOLE run
+    # log: a refusal follows the "started" line of the mod that caused it, and a
+    # run logs ~20 "started" lines, so a last-80-lines window usually held none and
+    # the skip almost never fired (the 5-minute stall killer did the work instead).
+    # Resumable scan: counting the same lines on every 15 s tick dropped a mod from
+    # the queue after ONE real refusal.
+    $lg = Get-LatestLog
+    if ($lg -and $lg.LastWriteTime -gt (Get-Date).AddMinutes(-20)) {
+      if ($scanFile -ne $lg.FullName) { $scanFile = $lg.FullName; $scanAt = 0; $scanCur = $null }
+      $lines = @(Get-Content $lg.FullName -ErrorAction SilentlyContinue)
+      $scan = Get-WorkshopFailures $lines $scanAt $scanCur
+      $scanAt = $scan.next
+      $scanCur = $scan.current
+      foreach ($k in $scan.counts.Keys) {
+        if ($fail.ContainsKey($k)) { $fail[$k] += $scan.counts[$k] } else { $fail[$k] = $scan.counts[$k] }
+      }
+      if ($fail.Count) {
+        $drop = @($fail.Keys | Where-Object { $fail[$_] -ge 3 })
+        if ($drop.Count) {
+          # serialised read-modify-write; the engine is dead in this branch
+          $gone = @()
+          try {
+            $gone = @(Update-Cfg {
+              param($cfg)
+              $names = @($cfg.game.mods | Where-Object { $drop -contains $_.modId } | ForEach-Object { $_.name })
+              $cfg.game.mods = @($cfg.game.mods | Where-Object { $drop -notcontains $_.modId })
+              $names
+            } $Cfg)
+          } catch {
+            Write-Wd "could not rewrite the queue (skipping this tick): $($_.Exception.Message)"
+            continue
+          }
+          $queued = Get-Queued $Cfg
+          if ($null -eq $queued) { $queued = ,@() }
+          Write-Wd "skipped after 3 Workshop errors: $($gone -join ', ')"
+          try {
+            $prev = if (Test-Path $SkipFile) { @(Get-Content $SkipFile -Raw | ConvertFrom-Json) } else { @() }
+            Save-Json @($prev + $gone | Select-Object -Unique) $SkipFile
+          } catch { Write-Wd "could not save the Workshop skip history: $($_.Exception.Message)" }
+        }
+      }
+    }
+
+    try {
+      $trim = & (Join-Path $PSScriptRoot 'trim-config.ps1')
+      if ($LASTEXITCODE -ne 0) { throw ($trim -join ' ') }
+    }
+    catch { Write-Wd "trim failed: $($_.Exception.Message)"; continue }   # never start an untrimmed list (1 MB trap)
+    $queued = Get-Queued $Cfg
+    if ($null -eq $queued) {
+      if (-not $saidUnreadable) { Write-Wd 'cannot read the queue config right now - waiting for it to become readable'; $saidUnreadable = $true }
+      continue
+    }
+    if ($queued.Count -eq 0) {
+      if (-not $saidEmpty) { Write-Wd 'queue empty - downloader done'; $saidEmpty = $true }
+      continue
+    }
+    if (-not (Start-EngineLocked)) { Write-Wd 'a start/stop is in progress - retrying next tick'; continue }
+    Write-Wd "restarted downloader ($(@($queued).Count) mods left)"
+    continue
+  }
+
+  if ($queued.Count -gt 0) {
+    $lg = Get-LatestLog
+    $runningEngine = $ds | Select-Object -First 1
+    $started = try { $runningEngine.StartTime } catch { $null }
+    $lastWrite = if ($lg) { $lg.LastWriteTimeUtc } else { [datetime]::MinValue }
+    if ($started -and (Test-EngineTransferStalled $started $lastWrite $Addons $queued (Get-Date))) {
+      $ctl = Lock-Engine
+      if ($ctl) {
+        try {
+          $owners = Get-OwnEngine $Cfg
+          $sameEngine = $owners | Where-Object { $_.Id -eq $runningEngine.Id }
+          if (!$sameEngine -or (Test-Path -LiteralPath $PauseFlag) -or !((Get-Queued $Cfg).Count)) { continue }
+          $latest = Get-LatestLog
+          if ($latest) { $lastWrite = $latest.LastWriteTimeUtc }
+          if (!(Test-EngineTransferStalled $started $lastWrite $Addons $queued (Get-Date))) { continue }
+          Write-Wd "downloader inactive 5 min with $($queued.Count) mods queued - restarting it"
+          $sameEngine | Stop-Process -Force
+        } finally { $ctl.ReleaseMutex() }
+      } else {
+        Write-Wd 'cannot take the engine lock - not restarting this time'
+        continue
+      }
+      Start-Sleep 2
+      # trim before restarting: a finished mod left in the list pushes the download
+      # request over the DS's ~1 MB limit, and the restart would insta-crash
+      try {
+        $trim = & (Join-Path $PSScriptRoot 'trim-config.ps1')
+        if ($LASTEXITCODE -ne 0) { throw ($trim -join ' ') }
+      }
+      catch { Write-Wd "trim failed: $($_.Exception.Message)"; continue }
+      $null = Start-EngineLocked
+    }
+    continue
+  }
+
+  # Nothing queued but the engine is still there: the DS does not exit by itself,
+  # so it sat for 6 minutes holding 2 GB, and the next Start found a live engine
+  # that keeps reading its old empty list - the mods queued after it never
+  # downloaded. 30 s of log silence so an assembly that just emptied the list is
+  # never cut off.
+  $lg = Get-LatestLog
+  if ($lg -and $lg.LastWriteTime -gt (Get-Date).AddSeconds(-30)) { continue }
+  $ctl = Lock-Engine
+  try {
+    $now = Get-Queued $Cfg   # $null = unreadable; never stop on an unreadable queue
+    if ($null -eq $now) { continue }
+    if ($ctl -and $now.Count -eq 0) {
+      $ds | Stop-Process -Force
+      Write-Wd 'queue empty - engine stopped'
+    }
+  } finally { if ($ctl) { $ctl.ReleaseMutex() } }
+}

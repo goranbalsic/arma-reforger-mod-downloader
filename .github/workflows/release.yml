@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Build and check the Windows executable
+        shell: powershell
+        run: |
+          .\desktop\Build.ps1
+          .\desktop\Test.ps1
+          .\desktop\Test-AppUpdates.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-windows
+          path: dist/ReforgerModDownloader.exe
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Package and exercise the Linux app
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gir1.2-gtk-3.0 gir1.2-webkit2-4.1 python3-gi xvfb xauth
+          sh linux/package.sh
+          tar xzf dist/ReforgerModDownloader-linux-x64.tar.gz -C "$RUNNER_TEMP"
+          cp linux/test-desktop.py "$RUNNER_TEMP/ReforgerModDownloader/"
+          timeout 90s xvfb-run -a /usr/bin/python3 "$RUNNER_TEMP/ReforgerModDownloader/test-desktop.py"
+          python3 tools/Test-LinuxStart.py "$RUNNER_TEMP/ReforgerModDownloader/lib"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-linux
+          path: dist/ReforgerModDownloader-linux-x64.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
+      - name: Check release version and prepare checksums
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < version.txt)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$GITHUB_REF_NAME" == "v$version" ]]
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          git archive --format=zip --output=dist/ReforgerModDownloader-scripts.zip HEAD
+          cd dist
+          sha256sum ReforgerModDownloader.exe ReforgerModDownloader-linux-x64.tar.gz ReforgerModDownloader-scripts.zip > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: |
+            dist/ReforgerModDownloader.exe
+            dist/ReforgerModDownloader-linux-x64.tar.gz
+            dist/ReforgerModDownloader-scripts.zip
+      - name: Publish, verify downloads, and retire the previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          endpoint="repos/$GH_REPO/releases"
+          previous=""
+          if latest=$(gh api "$endpoint/latest" --jq .tag_name); then
+            previous="$latest"
+          else
+            stable=$(gh release list --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName')
+            [[ -z "$stable" ]]
+          fi
+          if [[ -n "$previous" ]]; then
+            [[ "$previous" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            if [[ $(printf '%s\n' "$previous" "$GITHUB_REF_NAME" | sort -V | tail -1) != "$GITHUB_REF_NAME" ]]; then
+              # Only the initial commit at the tip of main can establish v1.0.0.
+              [[ "$GITHUB_REF_NAME" == v1.0.0 &&
+                "$(git rev-parse HEAD)" == "$(git rev-parse refs/remotes/origin/main)" &&
+                "$(git rev-list --count HEAD)" == 1 ]]
+            fi
+          fi
+          if [[ "$previous" != "$GITHUB_REF_NAME" ]]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --latest \
+              --title "${GITHUB_REF_NAME#v}" --notes-from-tag \
+              dist/ReforgerModDownloader.exe dist/ReforgerModDownloader-linux-x64.tar.gz \
+              dist/ReforgerModDownloader-scripts.zip dist/SHA256SUMS.txt
+          fi
+          [[ $(gh api "$endpoint/latest" --jq .tag_name) == "$GITHUB_REF_NAME" ]]
+          uploaded=$(gh api "$endpoint/tags/$GITHUB_REF_NAME" --jq '.assets[] | select(.state == "uploaded" and .size > 0) | [.name, .digest] | @tsv')
+          for name in ReforgerModDownloader.exe ReforgerModDownloader-linux-x64.tar.gz ReforgerModDownloader-scripts.zip SHA256SUMS.txt; do
+            digest=$(sha256sum "dist/$name" | cut -d ' ' -f 1)
+            grep -Fxq "$name"$'\t'"sha256:$digest" <<< "$uploaded"
+          done
+          if [[ -n "$previous" && "$previous" != "$GITHUB_REF_NAME" ]]; then
+            [[ $(gh api "$endpoint/latest" --jq .tag_name) == "$GITHUB_REF_NAME" ]]
+            gh release delete "$previous" --yes
+          fi

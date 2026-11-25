@@ -1,0 +1,11 @@
+# runtime folders - never committed
+data/
+serverprofile/
+armar-server/
+steamcmd/
+*.log
+*.zip
+
+# Desktop build output
+/.desktop-build/
+/dist/

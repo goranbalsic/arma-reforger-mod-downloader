@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arma Reforger Mod Downloader for Windows and Linux</title>
+  <meta name="description" content="Download Arma Reforger Workshop mods before joining a multiplayer server. Queue a server's mod list, resume downloads, and save presets on Windows or Linux.">
+  <link rel="canonical" href="https://goxy701.github.io/arma-reforger-mod-downloader/">
+  <meta name="theme-color" content="#111b19">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Arma Reforger Mod Downloader for Windows and Linux">
+  <meta property="og:description" content="Queue a multiplayer server's Workshop mods before joining, track downloads, and save presets.">
+  <meta property="og:url" content="https://goxy701.github.io/arma-reforger-mod-downloader/">
+  <meta property="og:image" content="https://goxy701.github.io/arma-reforger-mod-downloader/screenshots/downloads.png">
+  <meta property="og:image:width" content="1056">
+  <meta property="og:image:height" content="750">
+  <meta property="og:image:alt" content="Arma Reforger Mod Downloader showing Workshop download progress, speed, and the mod queue.">
+  <meta name="twitter:card" content="summary_large_image">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Arma Reforger Mod Downloader",
+    "url": "https://goxy701.github.io/arma-reforger-mod-downloader/",
+    "sameAs": "https://github.com/goxy701/arma-reforger-mod-downloader",
+    "description": "A desktop app that downloads Arma Reforger Workshop mods and multiplayer server mod lists before you join.",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "Windows (x64), Linux (x64)",
+    "downloadUrl": "https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest",
+    "image": "https://goxy701.github.io/arma-reforger-mod-downloader/screenshots/downloads.png",
+    "license": "https://github.com/goxy701/arma-reforger-mod-downloader/blob/main/LICENSE"
+  }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #111b19;
+      --text: #f1f5f3;
+      --muted: #bacac4;
+      --line: #3d514a;
+      --accent: #a5ead2;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--background);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    h1, h2, h3, p, figure { margin: 0; }
+    a { color: var(--accent); text-underline-offset: .2em; }
+    a:hover { text-decoration-thickness: .13em; }
+    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+    .container { width: min(100% - 2.5rem, 74rem); margin-inline: auto; }
+    header, footer { border-block: 1px solid var(--line); }
+    header { border-top: 0; }
+    footer { border-bottom: 0; }
+    nav, footer .container {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .65rem 1.5rem;
+      padding-block: 1rem;
+    }
+    nav a, footer a { font-size: .95rem; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+      gap: clamp(1.8rem, 5vw, 4.75rem);
+      align-items: center;
+      padding-block: clamp(2.7rem, 7vw, 6rem);
+    }
+    h1 {
+      max-width: 13ch;
+      font-size: clamp(2.55rem, 5.3vw, 5.15rem);
+      letter-spacing: -.06em;
+      line-height: 1.03;
+    }
+    .lead {
+      margin-block: 1.35rem 1.65rem;
+      max-width: 44ch;
+      font-size: 1.11rem;
+      color: var(--muted);
+    }
+    .downloads { display: flex; flex-wrap: wrap; gap: .7rem; }
+    .download {
+      display: inline-block;
+      padding: .65rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: .35rem;
+      color: var(--text);
+      font-weight: 650;
+      text-decoration: none;
+    }
+    .download:first-child { border-color: var(--accent); background: var(--accent); color: var(--background); }
+    .download:hover { text-decoration: underline; }
+    .release { margin-top: .9rem; font-size: .95rem; }
+    .preview {
+      padding: .6rem;
+      border: 1px solid var(--line);
+      border-radius: .7rem;
+      background: #1a2925;
+    }
+    .preview img { display: block; width: 100%; height: auto; border-radius: .33rem; }
+    .guide {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 1.75rem 3.5rem;
+      padding-block: 2.25rem 3.25rem;
+      border-top: 1px solid var(--line);
+    }
+    h2 { margin-bottom: .75rem; font-size: 1.45rem; line-height: 1.25; }
+    h3 { margin-top: .7rem; font-size: 1rem; }
+    .guide p, .guide li { color: var(--muted); }
+    .guide ol { margin: 0 0 .7rem; padding-inline-start: 1.3rem; }
+    .guide li + li { margin-top: .25rem; }
+    @media (max-width: 46rem) {
+      .hero, .guide { grid-template-columns: minmax(0, 1fr); }
+      h1 { max-width: 15ch; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Project links">
+      <a href="https://github.com/goxy701/arma-reforger-mod-downloader">GitHub repository</a>
+      <a href="#install">Installation</a>
+      <a href="#server-mods">Server mod lists</a>
+    </nav>
+  </header>
+  <main class="container">
+    <section class="hero" aria-labelledby="title">
+      <div>
+        <h1 id="title">Arma Reforger Mod Downloader</h1>
+        <p class="lead">Download a multiplayer server's Workshop mods before joining. Queue the server's public mod list, download individual mods, and resume paused downloads on Windows or Linux.</p>
+        <div class="downloads">
+          <a class="download" href="https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader.exe">Download for Windows x64</a>
+          <a class="download" href="https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader-linux-x64.tar.gz">Download for Linux x64</a>
+        </div>
+        <p class="release"><a href="https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest">Release notes and checksums</a></p>
+      </div>
+      <figure class="preview">
+        <img src="screenshots/downloads.png" width="1056" height="750" alt="Arma Reforger Mod Downloader showing Workshop download progress, speed, and the mod queue.">
+      </figure>
+    </section>
+    <div class="guide">
+      <section id="install">
+        <h2>Install on Windows or Linux</h2>
+        <h3>Windows</h3>
+        <p>Run the downloaded EXE. The app reuses an existing dedicated server when it finds one, or installs one through SteamCMD.</p>
+        <h3>Linux</h3>
+        <p>Extract the archive and run <code>./ReforgerModDownloader</code>. Install PowerShell 7, SteamCMD, and the GTK 3 and WebKitGTK 4.1 Python bindings. <a href="https://github.com/goxy701/arma-reforger-mod-downloader#install-on-windows-or-linux">Read the setup instructions</a>.</p>
+      </section>
+      <section id="server-mods">
+        <h2>Download a server's mod list</h2>
+        <ol>
+          <li>Open <strong>Find mods</strong> and search for your server.</li>
+          <li>Select <strong>Add server</strong> to queue missing Workshop mods from its public list.</li>
+          <li>Watch progress in <strong>Downloads</strong>, then join the server in Arma Reforger.</li>
+        </ol>
+        <p>To save the installed mods as a preset, close the game and choose <strong>Make preset</strong> under <strong>Tracked servers</strong>.</p>
+      </section>
+    </div>
+  </main>
+  <footer>
+    <div class="container">
+      <a href="https://github.com/goxy701/arma-reforger-mod-downloader/issues">Report an issue</a>
+      <a href="https://github.com/goxy701/arma-reforger-mod-downloader/blob/main/LICENSE">Noncommercial license</a>
+    </div>
+  </footer>
+</body>
+</html>

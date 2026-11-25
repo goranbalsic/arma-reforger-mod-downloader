@@ -1,0 +1,115 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux-desktop:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install GTK and WebKit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gir1.2-gtk-3.0 gir1.2-webkit2-4.1 python3-gi xvfb xauth
+      - name: Package Linux desktop app
+        run: sh linux/package.sh
+      - name: Open the packaged app with a fixture queue
+        env:
+          RFMM_SCREENSHOTS: ${{ runner.temp }}/rfmm-ui
+        run: |
+          tar xzf dist/ReforgerModDownloader-linux-x64.tar.gz -C "$RUNNER_TEMP"
+          cp linux/test-desktop.py "$RUNNER_TEMP/ReforgerModDownloader/"
+          timeout 90s xvfb-run -a /usr/bin/python3 "$RUNNER_TEMP/ReforgerModDownloader/test-desktop.py"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: linux-dashboard-layouts
+          path: ${{ runner.temp }}/rfmm-ui/*.png
+          if-no-files-found: error
+      - name: Start and pause with packaged backend
+        run: python3 tools/Test-LinuxStart.py "$RUNNER_TEMP/ReforgerModDownloader/lib"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ReforgerModDownloader-linux-x64
+          path: dist/ReforgerModDownloader-linux-x64.tar.gz
+          if-no-files-found: error
+
+  linux-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Test PowerShell state and units
+        run: |
+          pwsh -NoProfile -File ./test-units.ps1
+          pwsh -NoProfile -File ./tools/Test-StateWrites.ps1
+      - name: Test source Start, Pause, trim and watchdog restart
+        run: python3 tools/Test-LinuxStart.py .
+      - name: Run stress, rules, and torture suites against an isolated mock install
+        run: pwsh -NoProfile -File ./tools/Test-Stress.ps1 -RunHttpSuites
+
+  desktop:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build desktop executable
+        shell: powershell
+        run: .\desktop\Build.ps1
+      - name: Test the desktop transport
+        shell: powershell
+        run: .\desktop\Test.ps1
+      - name: Test the Windows app updater
+        shell: powershell
+        run: .\desktop\Test-AppUpdates.ps1
+      - name: Attest the executable built on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: dist/ReforgerModDownloader.exe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ReforgerModDownloader-windows-x64
+          path: dist/ReforgerModDownloader.exe
+          if-no-files-found: error
+
+  audit:
+    # the tool targets Windows PowerShell 5.1, so the gate runs on Windows
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install PSScriptAnalyzer for Windows PowerShell
+        shell: powershell
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -AllowClobber
+          (Get-Module -ListAvailable PSScriptAnalyzer | Select-Object -First 1).Version
+
+      - name: Audit (parse, analyzer, unit tests)
+        shell: powershell
+        # exit 0 PASS, 1 FAIL, 2 INCOMPLETE (a mandatory check could not run)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\audit.ps1
+
+      - name: Backend stress test (isolated, mock API)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Test-Stress.ps1
+
+      - name: Verify atomic state writes
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Test-StateWrites.ps1
+
+      - name: Audit status semantics (FAIL and INCOMPLETE fixtures)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\test-audit.ps1
