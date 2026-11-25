@@ -1,0 +1,24 @@
+{
+  "url": "https://api.github.com/repos/goxy701/arma-reforger-mod-downloader/releases/454151662",
+  "tag_name": "v1.0.0",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+    {
+      "url": "https://api.github.com/repos/goxy701/arma-reforger-mod-downloader/releases/assets/777654487",
+      "name": "ReforgerModDownloader-linux-x64.tar.gz",
+      "browser_download_url": "https://github.com/goxy701/arma-reforger-mod-downloader/releases/download/v1.0.0/ReforgerModDownloader-linux-x64.tar.gz",
+      "digest": "sha256:b477bf1970a1ed7f08c968207b4a90e0de5d80a64f6940668ae4cfdbd654bccf",
+      "state": "uploaded",
+      "size": 58233
+    },
+    {
+      "url": "https://api.github.com/repos/goxy701/arma-reforger-mod-downloader/releases/assets/777654485",
+      "name": "ReforgerModDownloader.exe",
+      "browser_download_url": "https://github.com/goxy701/arma-reforger-mod-downloader/releases/download/v1.0.0/ReforgerModDownloader.exe",
+      "digest": "sha256:aba9565a1768e9877b24a8927f9ae43fd5a5d4aa17e9dbf90208e40dc1cee597",
+      "state": "uploaded",
+      "size": 384512
+    }
+  ]
+}

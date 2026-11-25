@@ -1,0 +1,647 @@
+<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Arma Reforger Mod Downloader</title>
+<style>
+:root{--ink:#202729;--muted:#596367;--line:#cfd5d4;--accent:#175b51;font:15px/1.5 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:#f6f7f7}
+*{box-sizing:border-box}
+body{margin:0}
+header,main{max-width:1080px;margin:auto;padding-inline:clamp(16px,4vw,48px)}
+header{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding-top:18px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:21px;font-weight:650;letter-spacing:-.03em}
+.version{font-size:13px;color:var(--muted);font-weight:500;letter-spacing:0;white-space:nowrap}
+.repo{grid-column:2;grid-row:1;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);text-decoration:none}
+nav{display:flex;grid-column:1/-1;gap:24px}
+nav a{color:var(--muted);padding:7px 0 10px;border-bottom:3px solid transparent;text-decoration:none}
+nav a[aria-current="page"]{color:var(--accent);border-color:var(--accent);font-weight:600}
+a:hover{text-decoration:underline}
+main{padding-block:24px 48px}
+.view{display:grid;gap:18px;min-width:0}.view[hidden]{display:none}
+.view>h2{font-size:28px;line-height:1.2;letter-spacing:-.035em;margin:0}
+.card{min-width:0;overflow-wrap:anywhere}
+.overview{background:#fff;border:1px solid var(--line);border-radius:6px;padding:18px 22px}
+.overview h2{margin:0;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:15px}
+#st{font-size:13px;font-weight:500}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0}
+.big{font-weight:600;font-size:clamp(20px,3vw,30px);font-variant-numeric:tabular-nums}
+.bar{background:#e2e7e6;height:8px;border-radius:4px;overflow:hidden}.bar>div{height:100%;background:var(--accent);transition:width .25s linear}.bar.amber>div{background:#926500}
+.controls,.search{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.controls{margin-top:14px}
+.queue-tools{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.queue-tools button{font-size:13px}
+#bcancel:enabled{color:#a33731}
+#spd,#act .row>span{white-space:nowrap;font-variant-numeric:tabular-nums}
+#act .row{flex-wrap:wrap;gap:2px 12px;margin-top:12px}
+button,input{font:inherit;border:1px solid #aeb8b6;border-radius:4px;background:#fff;color:var(--ink);padding:6px 11px}
+button{font-size:14px;cursor:pointer}button:hover:enabled{background:#edf2f0}
+#bstart,.search button{color:white;background:var(--accent);border-color:var(--accent)}#bstart:hover,.search button:hover{background:#10453e}
+button:disabled{opacity:.55;cursor:default}.mini{font-size:12px;margin:3px 0 3px 6px;padding:4px 8px}
+input{min-width:0;max-width:100%}.search input{flex:1}.f{width:min(100%,310px);margin:8px 0 10px;font-size:14px}
+input::placeholder{color:var(--muted);opacity:1}
+details.card{border-top:1px solid var(--line);padding-top:12px}
+dialog{width:min(490px,calc(100% - 28px));border:1px solid var(--line);border-radius:8px;padding:24px;background:#fff;color:var(--ink)}dialog::backdrop{background:#20272988}dialog p{margin:12px 0 20px}dialog form{display:flex;justify-content:flex-end;gap:8px}.notice{display:flex;align-items:start;justify-content:space-between;gap:12px}.notice[hidden]{display:none}.notice button{margin:0}.notice + .notice{margin-top:6px}summary{cursor:pointer}summary h2{display:inline;font-size:17px;margin:0}
+ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#bs details{border-bottom:1px solid #e1e5e4;padding:5px 0}
+#queue,#srv,#rec,#act{max-height:360px;overflow:auto}
+#say:empty{display:none}
+.dim{color:var(--muted)}.ok{color:#286345}.warn{color:#83540a}.bad{color:#a33731}
+:focus-visible{outline:2px solid #2468a0;outline-offset:3px}
+@media(min-width:820px){#downloads{grid-template-columns:1fr 1fr}#downloads>h2,#downloads>.overview{grid-column:1/-1}}
+@media(max-width:520px){h1{font-size:17px}.version{display:block}.overview{padding:14px}.repo{font-size:12px}nav{gap:18px}}
+@media(prefers-reduced-motion:reduce){.bar>div{transition:none}}
+</style></head><body>
+<header><h1>Arma Reforger Mod Downloader <small class="version">v__VERSION__</small></h1><nav aria-label="Dashboard sections"><a href="#downloads">Downloads</a><a href="#discover">Find mods</a><a href="#library">Library</a></nav><a class="repo" href="https://github.com/__REPO__" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.5 7.5 0 0 1 8 3.85c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></header><main><div class="notice" id="modUpdateNotice" hidden><span role="status" id="modUpdate" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="modUpdate">Dismiss</button></div><div class="notice" id="sayNotice" hidden><span role="status" id="say" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="say">Dismiss</button></div><div class="notice" id="finishedNotice" hidden><span role="status" id="finished" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="finished">Dismiss</button></div><section class="view" id="downloads"><h2>Downloads</h2><div class="card overview"><h2>Download status <span id="st" role="status"></span></h2>
+ <div class="dim" id="boot">Connecting to the downloader…</div>
+ <p class="bad" id="downloadRefreshError" role="status" hidden>Could not refresh downloads. Retrying… If it keeps failing, check desktop.log.</p>
+ <div class="row"><span id="gbtxt" class="big"></span><span id="spd" class="dim"></span></div>
+ <div class="bar" role="progressbar" aria-label="Batch download progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"><div id="tbar" style="width:0%"></div></div>
+ <div class="row"><span id="cnt" class="dim"></span><span class="dim" id="etabox"></span></div>
+ <div class="controls">
+  <button id="bstart" data-action="queue-control" data-command="start">Start / Resume</button>
+  <button id="bpause" class="grey" data-action="queue-control" data-command="pause">Pause</button>
+  <button id="bresumeall" data-action="queue-control" data-command="resume-all">Queue missing server mods</button>
+ </div>
+ <div class="controls queue-tools">
+  <button id="bverify" class="amber" data-action="queue-control" data-command="verify">Verify mods</button>
+  <button id="bclear" class="grey" data-action="queue-control" data-command="clear-queue">Clear queue</button>
+  <button id="bcancel" class="grey" data-action="queue-control" data-command="cancel-downloads">Cancel downloads</button>
+ </div>
+ <div id="vresNotice" class="notice card" style="margin-top:14px" hidden><div id="vres" role="status"></div><button class="mini" type="button" data-action="dismiss" data-notice="vres">Dismiss</button></div>
+ <div class="dim" id="addonsline" style="font-size:13px;margin-top:6px"></div>
+ 
+ <div class="notice" id="failedNotice" hidden>
+  <span id="failed" class="bad" role="status"></span>
+  <button class="mini" type="button" data-action="dismiss" data-notice="failed">Dismiss</button>
+ </div>
+</div>
+<details class="card" open><summary><h2 style="font-size:18px">Downloading now <span id="actcount" class="dim"></span></h2></summary>
+  <input class="f" id="fa" aria-label="Filter downloads" placeholder="Filter active downloads" data-filter="act">
+  <div id="act">-</div></details>
+<details class="card" open><summary><h2 style="font-size:18px">Queue <span id="qcount" class="dim"></span></h2></summary>
+  <input class="f" id="fq" aria-label="Filter queue" placeholder="Filter queue" data-filter="queue">
+  <div id="queue" class="dim">-</div></details>
+</section><section class="view" id="discover"><h2>Find mods</h2><details class="card" open><summary><h2 style="font-size:18px">Find a server</h2></summary>
+ <div class="search" style="margin-top:8px"><input id="bq" aria-label="Search servers" placeholder="Server name" data-search="servers"><button data-action="search-servers">Search</button></div>
+ <div id="bs" class="dim" style="margin-top:8px">Search for a server to see its mod list.</div>
+</details>
+<details class="card" open><summary><h2 style="font-size:18px">Find a Workshop mod</h2></summary>
+ <div class="search" style="margin-top:8px"><input id="mq" aria-label="Search Workshop mods" placeholder="Name, author, or 16-character mod ID" data-search="mods"><button data-action="search-mods">Search</button></div>
+ <div id="mres" class="dim" style="margin-top:8px">Search the Workshop for mods to add to the queue.</div>
+ <div id="mpager" style="margin-top:6px"></div>
+</details>
+</section><section class="view" id="library"><h2>Library</h2><div><button data-action="update" data-scope="all">Update installed mods</button> <button data-action="update" data-scope="tracked">Update tracked servers&rsquo; mods</button> <button id="cancelModUpdates" data-action="cancel-updates" hidden>Cancel updates</button></div><details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span><button class="mini" data-action="refresh-servers" title="Refresh all tracked server mod lists">Refresh all</button></h2></summary><div id="srv" class="dim" style="margin-top:8px">Loading tracked servers…</div></details>
+<details class="card wide"><summary><h2 style="font-size:18px">Completed <span id="reccount" class="dim"></span></h2></summary>
+ <input class="f" id="fr" aria-label="Filter completed mods" placeholder="Filter completed mods" data-filter="rec">
+ <ul id="rec"></ul></details>
+</section></main><dialog id="confirmAction" aria-labelledby="confirmTitle" aria-describedby="confirmCopy"><h2 id="confirmTitle"></h2><p id="confirmCopy"></p><form method="dialog"><button value="cancel" autofocus>Cancel</button><button id="confirmSubmit" value="confirm">Continue</button></form></dialog><script nonce="__NONCE__">
+function showView(){
+ const links=document.querySelectorAll('nav a');
+ const active=Array.from(links).find(link=>link.hash===location.hash)||links[0];
+ for(const link of links){
+   document.getElementById(link.hash.slice(1)).hidden=link!==active;
+   if(link===active)link.setAttribute('aria-current','page');
+   else link.removeAttribute('aria-current');
+ }
+ window.scrollTo(0,0);
+}
+addEventListener('hashchange',showView);
+showView();
+let T='__T__';   // refreshed from /status so an open page survives dashboard restarts
+const desktopTransport = __DESKTOP__;
+function esc(x){return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function escAttr(x){return esc(x).replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function sz(b){return b>=1073741824?(b/1073741824).toFixed(b>=107374182400?2:3)+' GB':b>=1048576?(b/1048576).toFixed(1)+' MB':b>=1024?(b/1024).toFixed(1)+' KB':Math.round(b)+' B'}
+function left(sec){ if(!Number.isFinite(sec)||sec<=0)return ''; if(sec<60)return Math.ceil(sec)+' sec'; const minutes=Math.ceil(sec/60); return minutes>=60?Math.floor(minutes/60)+'h '+minutes%60+'m':minutes+' min'; }
+let SRV=null,BR=null,lastKey='';
+let RECENT=[],RCREV='',loadingCompleted=false;
+let transferSample=null;
+let FILTER={queue:'',act:'',rec:''},LAST=null;
+function match(name,q){ return !q || String(name).toLowerCase().indexOf(q.toLowerCase())>=0; }
+function sampleTransferRate(previous,status,now){
+ const current=new Map(status.running?(status.active||[]).filter(row=>Number.isFinite(row.b)).map(row=>[row.id,row.b]):[]);
+ const next={revision:status.queueRevision,current,at:now,speed:0,observedAt:now};
+ if(!previous||previous.revision!==next.revision||!current.size)return next;
+ let bytes=0,shared=0;
+ for(const [id,amount] of current){
+  if(previous.current.has(id)){
+   shared++;
+   bytes+=Math.max(0,amount-previous.current.get(id));
+  }
+ }
+ if(!shared)return next;
+ const elapsed=(now-previous.at)/1000;
+ if(elapsed>3)return next;
+ if(bytes>0&&elapsed>=0.15){
+  const rate=bytes/elapsed;
+  next.speed=previous.speed&&now-previous.observedAt<1800?previous.speed*0.35+rate*0.65:rate;
+  return next;
+ }
+ if(bytes===0&&now-previous.observedAt>=2500){
+  next.observedAt=previous.observedAt;
+  return next;
+ }
+ for(const [id,amount] of current){
+  if(previous.current.has(id))next.current.set(id,Math.min(amount,previous.current.get(id)));
+ }
+ next.at=previous.at;
+ next.observedAt=previous.observedAt;
+ next.speed=now-previous.observedAt<2500?previous.speed:0;
+ return next;
+}
+async function loadCompleted(revision){
+ if(loadingCompleted||revision===RCREV)return;
+ loadingCompleted=true;
+ try{
+  const response=await fetch('/completed');
+  const completed=await response.json();
+  if(response.ok&&Array.isArray(completed.recent)){RECENT=completed.recent;RCREV=completed.rev;lastKey='';}
+ }catch(error){
+  console.debug('Completed downloads are not available yet',error);
+ }finally{loadingCompleted=false;}
+}
+function renderActive(list){
+  const el=document.getElementById('act');
+  const shown=list.filter(a=>match(a.name,FILTER.act));
+  document.getElementById('actcount').textContent=list.length?'('+list.length+')':'';
+  // The rows are reused while the same mods are shown, so the bars can animate
+  // between polls instead of being rebuilt four times a second.
+  const key=shown.map(a=>a.name).join('\n');
+  if(el.dataset.key!==key){
+    el.dataset.key=key;
+    if(!shown.length){el.innerHTML='<span class="dim">'+(list.length?'No downloads match the filter':'No active downloads')+'</span>';return;}
+    el.innerHTML=shown.map(a=>'<div class="row"><strong>'+esc(a.name)+'</strong><span class="dim"></span></div>'+
+      '<div class="bar amber" role="progressbar" aria-label="'+escAttr(a.name)+'" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div style="width:0%"></div></div>').join('');
+  }
+  const texts=el.querySelectorAll('.row>span'),bars=el.querySelectorAll('.bar');
+  shown.forEach((a,i)=>{
+    const text=texts[i],bar=bars[i]; if(!text||!bar)return;
+    const hasB=Number.isFinite(a.b);
+    const total=a.expB>0?sz(a.expB):'size unknown';
+    const pct=hasB&&Number.isFinite(a.pct)?Math.max(0,Math.min(100,a.pct)):0;
+    const hasPercent=hasB&&a.expB>0;
+    const label=(hasB?sz(a.b)+(hasPercent?' / '+total:' transferred'):total)+(hasPercent?' \u00b7 '+pct+'%':'');
+    if(text.textContent!==label)text.textContent=label;
+    const fill=bar.firstElementChild,w=pct+'%';
+    if(fill&&fill.style.width!==w)fill.style.width=w;
+    if(hasPercent)bar.setAttribute('aria-valuenow',String(pct));
+    else bar.removeAttribute('aria-valuenow');
+  });
+}
+function renderQueue(queue,A){
+  const el=document.getElementById('queue'); if(!el)return;
+  document.getElementById('qcount').textContent='('+queue.length+')';
+
+  const shown=queue.filter(q=>match(q.name,FILTER.queue));
+  el.innerHTML=shown.length
+   ?'<ol>'+shown.map(q=>'<li>'+(A[q.id]?'<span class="warn">&#10227;</span> ':'')+esc(q.name)+' <button type="button" class="mini grey" aria-label="Remove '+escAttr(q.name)+' from queue" data-id="'+escAttr(q.id)+'" data-action="remove-queued">Remove</button></li>').join('')+'</ol>'
+   :'<span class="dim">'+(queue.length?'no mod matches the filter':'No mods queued')+'</span>';
+}
+function renderRec(recent){
+  const el=document.getElementById('rec'); if(!el)return;
+  document.getElementById('reccount').textContent='('+recent.length+')';
+  const shown=recent.filter(r=>match(r.name,FILTER.rec)).slice(0,400);
+  el.innerHTML=shown.length
+   ?shown.map(r=>'<li class="ok">&#10003; '+esc(r.name)+' <span class="dim">'+sz(r.b)+'</span> <button class="mini" data-action="update" data-scope="mod" data-id="'+escAttr(r.id)+'">Update</button></li>').join('')
+   :'<li class="dim">'+(recent.length?'nothing matches the filter':'nothing finished yet')+'</li>';
+}
+function renderAll(){
+  if(!LAST)return;
+  renderActive(LAST.active);
+  renderQueue(LAST.queue,LAST.A);
+  renderRec(LAST.recent);
+}
+let SRVAt=0;
+async function loadSrv(){
+ // /servers costs a full disk scan: retry at most every 5 s, and never accept an
+ // error body - a 500 body parses as json, which made SRV truthy and froze the
+ // servers card (renderSrv threw on SRV.servers) for the rest of the session
+ if(Date.now()-SRVAt<5000)return; SRVAt=Date.now();
+ try{const r=await fetch('/servers'),j=await r.json(); if(r.ok&&j&&j.servers){SRV=j;lastKey='';}}catch(e){}
+}
+function renderSrv(D,A,B){
+ if(!SRV)return;
+ document.getElementById('srvcount').textContent='('+SRV.servers.length+')';
+ if(!SRV.servers.length){
+  document.getElementById('srv').textContent='No servers tracked. Add one from Find mods.';
+  return;
+ }
+ const expanded=new Set(Array.from(document.querySelectorAll('#srv details[open]'),d=>d.dataset.server));
+ document.getElementById('srv').innerHTML=SRV.servers.map(v=>{
+  const done=LAST?.inventoryPending&&v.haveCount!=null?v.haveCount:v.mods.filter(m=>D[m.id]).length;
+  return '<details data-server="'+escAttr(v.id)+'"'+(expanded.has(String(v.id))?' open':'')+'><summary>'+esc(v.name)+' <span class="dim">'+done+' / '+v.mods.length+' downloaded</span>'+
+  (v.changed?('<span class="warn" style="font-size:12px"> modlist changed +'+v.changed.added+' -'+v.changed.removed+' - Make preset updates it</span>'):'')+
+   '<button class="mini" data-action="update" data-scope="server" data-id="'+escAttr(v.id)+'">Update mods</button>'+
+   '<button class="mini" data-action="queue-server" data-id="'+escAttr(v.id)+'">Queue first</button>'+
+   '<button class="mini amber" data-action="preset" data-id="'+escAttr(v.id)+'">Make preset</button>'+
+  '<button class="mini grey" data-action="refresh-one" data-id="'+escAttr(v.id)+'" title="Check this server for new mods and add them to the queue">Refresh</button>'+
+  '<button class="mini grey" data-action="remove-server" data-id="'+escAttr(v.id)+'" title="Stop tracking this server. Keep its mods on disk.">Remove</button></summary><ul>'+
+   v.mods.map(m=>{
+    const t=D[m.id]?'<span class="ok">&#10003;</span>':A[m.id]?'<span class="warn">&#10227;</span>':'<span class="dim">&#8226;</span>';
+    const s2=B[m.id]!=null?sz(B[m.id]):(m.e>0?sz(m.e):'');
+    return '<li>'+t+' '+esc(m.name)+' <span class="dim">'+s2+'</span></li>';
+   }).join('')+'</ul></details>';
+ }).join('');
+}
+async function browse(){
+ const q=document.getElementById('bq').value.trim();
+ const el=document.getElementById('bs');
+ if(!q){ BR=null; el.innerHTML='<span class="dim">Search for a server to see its mod list.</span>'; return; }
+ el.textContent='Searching servers…';
+ try{
+  const r=await (await fetch('/browse?q='+encodeURIComponent(q))).json();
+  if(r.error)throw new Error(r.error);
+  if(!r.servers)throw new Error('unexpected response');
+  BR=r.servers; renderBrowse();
+ }catch(e){ el.innerHTML='<span class="bad">Search failed: '+esc(String(e))+'</span>'; }
+}
+function browseCleared(){
+ if(document.getElementById('bq').value.trim())return;
+ BR=null;
+ document.getElementById('bs').innerHTML='<span class="dim">Search for a server to see its mod list.</span>';
+}
+function renderBrowse(){
+ const el=document.getElementById('bs');
+ if(!BR||!BR.length){el.innerHTML='<span class="dim">No servers found</span>';return;}
+ el.innerHTML=BR.map(v=>{
+  const pl=(v.players==null?'?':v.players)+'/'+(v.maxPlayers==null?'?':v.maxPlayers)+' players';
+  const md=v.haveCount>=0 ? v.haveCount+'/'+v.totalMods+' on disk' : v.modCount+' mods';
+  return '<details data-browse-id="'+escAttr(v.id)+'"><summary>'+esc(v.name)+
+  ' <span class="dim">'+esc(pl)+(v.online?'':' &middot; offline')+' &middot; '+esc(md)+'</span>'+
+  '<button class="mini" data-action="add-server" data-id="'+escAttr(v.id)+'">Add server</button></summary>'+
+  '<div class="bs" data-id="'+escAttr(v.id)+'"><span class="dim">Loading mod list…</span></div></details>';
+ }).join('');
+}
+function bsToggle(d,id){ if(d.open&&!d.dataset.l)loadBS(id,d); }
+async function loadBS(id,d){
+ const box=d.querySelector('.bs');
+ try{
+   const j=await (await fetch('/browse-server?id='+encodeURIComponent(id))).json();
+  if(j.error)throw new Error(j.error);       // e.g. "no modlist (offline or password protected)"
+  if(!j.mods)throw new Error('unexpected response');
+  const ok=j.mods.filter(m=>m.have).length;
+  d.dataset.l=1;   // Reopening retries a failed request.
+  box.innerHTML='<div class="dim">'+ok+' / '+j.mods.length+' mods on disk - '+sz(j.missingBytes||0)+' to download</div><ul>'+
+   j.mods.map(m=>'<li>'+(m.have?'<span class="ok">&#10003;</span>':'<span class="dim">&#8226;</span>')+' '+esc(m.name)+' <span class="dim">'+(m.expB>0?sz(m.expB):'')+'</span></li>').join('')+'</ul>';
+ }catch(e){ box.innerHTML='<span class="bad">'+esc(String(e).replace('Error: ',''))+'</span>'; }
+}
+const noticeTexts=new Map();
+function showNotice(id,message){
+ const text=document.getElementById(id);
+ const notice=document.getElementById(id+'Notice');
+ if(!text||!notice)return;
+ if(noticeTexts.get(id)===message)return;
+ noticeTexts.set(id,message);
+ text.textContent=message;
+ notice.hidden=!message;
+}
+function dismissNotice(id){document.getElementById(id+'Notice').hidden=true;}
+function say(t,ok){
+ const text=document.getElementById('say');
+ text.className=ok===false?'bad':ok===true?'ok':'dim';
+ noticeTexts.delete('say');
+ showNotice('say',t||'');
+}
+let verifyAt=null;
+let batchWasRunning=false, finishingBatch=null;
+let MRES=null;
+const MHINT='Search the Workshop for mods to add to the queue.';
+async function searchMods(p){
+ const q=document.getElementById('mq').value.trim();
+ const el=document.getElementById('mres');
+ if(!q)return;                 // Keep existing results on an empty submission.
+ el.className='dim'; el.textContent='Searching Workshop…';
+ document.getElementById('mpager').innerHTML='';
+ try{
+  const r=await (await fetch('/search-mods?q='+encodeURIComponent(q)+'&page='+(p||1))).json();
+  if(r.error)throw new Error(r.error);
+  MRES=r; renderMods();
+ }catch(e){ el.className='bad'; el.innerHTML='Search failed: '+esc(e.message); }
+}
+function modsCleared(){
+ if(document.getElementById('mq').value.trim())return;
+ MRES=null;
+ const el=document.getElementById('mres');
+ el.className='dim'; el.textContent=MHINT;
+ document.getElementById('mpager').innerHTML='';
+}
+function renderMods(){
+ const el=document.getElementById('mres'); if(!MRES)return;
+ if(!MRES.mods.length){el.innerHTML='<span class="dim">No mods found</span>';el.className='dim';return;}
+ el.className='';
+ el.innerHTML=MRES.mods.map(m=>{
+  const inst=LAST&&LAST.D[m.id];
+  const queued=LAST&&LAST.queue.some(q=>q.id===m.id);
+  return '<div class="row"><div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.name)+'</div>'+
+   '<div class="dim" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+esc(m.author||'')+' &middot; '+sz(m.size)+(m.version?' &middot; v'+esc(m.version):'')+'</div></div>'+
+   '<span>'+(inst?'<span class="ok">Installed</span>':queued?'<span class="dim">Queued</span>':'<button class="mini" data-action="add-mod" data-id="'+escAttr(m.id)+'">Queue</button>')+'</span></div>';
+ }).join('');
+ document.getElementById('mpager').innerHTML = '<span class="dim">'+esc(MRES.total)+' mods</span>' +
+  (MRES.pages>1?(' <button class="mini grey" '+(MRES.page<=1?'disabled':'')+' data-action="search-mods" data-result-page="'+(MRES.page-1)+'">&larr; Previous</button> <span class="dim">page '+MRES.page+' / '+MRES.pages+'</span> <button class="mini grey" '+(MRES.page>=MRES.pages?'disabled':'')+' data-action="search-mods" data-result-page="'+(MRES.page+1)+'">Next &rarr;</button>'):'');
+}
+async function addMod(id,button){
+ button.disabled=true;
+ await post('add-mod?id='+encodeURIComponent(id));
+ if(MRES)renderMods();
+}
+async function addSrv(id,ev){
+ ev.stopPropagation();
+ const b=ev.target; b.disabled=true; b.textContent='Adding…';
+ say('Adding server…');
+ await post('add-server?id='+id);
+ b.disabled=false; b.textContent='Add server';
+ loadSrv();
+}
+let statusPoll=null;
+function tick(afterPending=false){
+ if(statusPoll)return afterPending?statusPoll.then(()=>tick()):statusPoll;
+ statusPoll=refreshStatus().finally(()=>{statusPoll=null;});
+ return statusPoll;
+}
+async function refreshStatus(){
+ try{
+  if(!SRV&&location.hash==='#library')loadSrv();
+  const s=await (await fetch('/status')).json();
+  if(s.error)throw new Error(s.error);
+  if(s.tok)T=s.tok;
+  loadCompleted(s.recentRev);
+  showNotice('modUpdate',s.modUpdate||'');
+  document.getElementById('cancelModUpdates').hidden=!s.modUpdateCancellable;
+  const boot=document.getElementById('boot'); if(boot)boot.remove();
+  const hasQueue=s.queue.length>0;
+  if(hasQueue){
+   finishingBatch=null;
+   if(!LAST?.queue.length)showNotice('finished','');
+   batchWasRunning=batchWasRunning||(s.running&&!s.inventoryPending);
+  }else if(LAST?.queue.length){
+   if(batchWasRunning&&LAST.queueRevision===s.queueRevision)finishingBatch={mods:LAST.queue,revision:s.queueRevision};
+   batchWasRunning=false;
+  }
+  if(finishingBatch){
+   const installed=new Set([...(s.installedIds||[]),...(s.cl||[])]);
+   if(finishingBatch.revision!==s.queueRevision||finishingBatch.mods.some(mod=>(s.failed||[]).includes(mod.name)))finishingBatch=null;
+   else if(finishingBatch.mods.every(mod=>installed.has(mod.id))){
+    showNotice('finished','Downloads finished.');
+    finishingBatch=null;
+   }
+  }
+  transferSample=sampleTransferRate(transferSample,s,performance.now());
+  const reported=s.running&&s.active.length&&s.speedAge<=4?Number(s.speedB)||0:0;
+  const useMeasured=transferSample.speed>0&&(!reported||s.speedAge>1);
+  const speed=useMeasured?transferSample.speed:reported;
+  const transferring=speed>0||s.active.some(a=>a.cacheGrowing);
+  const preparing=s.active.some(a=>!Number.isFinite(a.b)||a.b===0);
+  const finishing=s.active.length&&s.active.every(a=>a.expB>0&&a.b>=a.expB);
+  const status=finishing?'Finishing':transferring?'Downloading':s.active.some(a=>a.age>=4)?'Waiting for Workshop':
+    preparing?'Starting mod':s.active.length?'Downloading':
+    !hasQueue?'Idle':s.paused?'Paused':s.running?'Waiting for next mod':'Ready to start';
+   const statusLabel=document.getElementById('st');
+   if(statusLabel.textContent!==status)statusLabel.textContent=status;
+   statusLabel.className=s.active.length?'ok':'dim';
+  const totalKnown=s.totalB>0&&!s.unknownSizes&&!s.inventoryPending;
+  const totalLabel=(s.estimatedSizes?'~':'')+sz(s.totalB);
+  document.getElementById('gbtxt').textContent=s.inventoryPending?'Checking installed mods…':hasQueue
+    ?(totalKnown?sz(s.doneB)+' / '+totalLabel:sz(s.doneB)+' transferred · total unknown')
+    :'No downloads queued';
+  const bar=document.getElementById('tbar');
+  const progress=s.pctF??s.pct;
+  bar.style.width=progress+'%';
+  if(totalKnown||!hasQueue)bar.parentElement.setAttribute('aria-valuenow',progress);
+  else bar.parentElement.removeAttribute('aria-valuenow');
+  document.getElementById('spd').textContent=(!finishing&&speed>0)?(useMeasured?'~':'')+sz(speed)+'/s':'';
+  document.getElementById('cnt').textContent=hasQueue&&!s.inventoryPending?(s.doneCount+' of '+s.totalMods+' mods complete'):'';
+  const remaining=totalKnown&&hasQueue?Math.max(0,s.totalB-s.doneB):0;
+  const eta=s.running&&speed>0?left(remaining/speed):'';
+  document.getElementById('etabox').textContent=remaining>0?sz(remaining)+' left'+(eta?' · ~'+eta:''):'';
+  queueControls(s);
+  const D={},A={},B={};
+  RECENT.forEach(r=>{B[r.id]=r.b});
+  (s.installedIds||[]).forEach(id=>{D[id]=1;});
+  s.active.forEach(a=>{A[a.id]=1});
+  (s.cl||[]).forEach(id=>{D[id]=1});   // installed client-side before the batch counts as on disk
+  LAST={recent:RECENT,active:s.active||[],queue:s.queue||[],D:D,A:A,B:B,running:!!s.running,queueRevision:s.queueRevision,inventoryPending:s.inventoryPending};
+  renderActive(s.active||[]);
+  const key=[RCREV,s.inventoryPending,Object.keys(D).sort().join(','),LAST.queue.map(q=>q.id).join(','),s.active.map(a=>a.id).join(',')].join('|');
+  if(key!==lastKey){          // lists only re-render when something actually finished/started
+   lastKey=key;
+   renderQueue(LAST.queue,A);
+   renderRec(LAST.recent);
+   renderSrv(D,A,B);
+  }
+  showNotice('failed',s.failed?.length===1?'Workshop skipped '+s.failed[0]+'.':s.failed?.length?s.failed.length+' mods skipped after Workshop errors.':'');
+  const al=document.getElementById('addonsline');
+  if(al)al.textContent=s.inventoryPending?'':'In your addons folder: '+sz(s.addonsB||0);
+  const v=document.getElementById('vres');
+  if(!s.verify){verifyAt=null;document.getElementById('vresNotice').hidden=true;}
+  if(s.verify&&verifyAt!==(s.verify.id||s.verify.at)){const x=s.verify;
+   verifyAt=x.id||x.at;
+   document.getElementById('vresNotice').hidden=false;
+   let t='<b>Verify '+esc(x.at)+'</b> - <span class="ok">'+esc(x.ok)+' ok</span>, '+esc(x.partial)+' partial, '+esc(x.pending)+' pending';
+   if(x.suspects&&x.suspects.length){t+='<br><span class="bad">Incomplete downloads you can put back in the queue</span><ul>'+
+     x.suspects.map(z=>'<li>'+esc(z.name)+' · '+sz(z.actB)+' on disk'+
+       (z.expB?' · about '+sz(z.expB)+' total':'')+
+       ' <button class="mini" data-id="'+escAttr(z.id)+'" data-action="requeue-partial">Put back in queue</button></li>').join('')+'</ul>';}
+   else t+='<br><span class="ok">No unqueued partial downloads.</span>';
+    v.innerHTML=t;}
+  document.getElementById('downloadRefreshError').hidden=true;
+  return s;
+ }catch(error){
+  const notice=document.getElementById('downloadRefreshError');
+  if(notice.hidden)console.warn('Download status refresh failed', error);
+  notice.hidden=false;
+ }
+}
+function actionRequest(path){
+ if(desktopTransport)return fetch(path+(path.includes('?')?'&':'?')+'t='+T,{method:'POST'});
+ return fetch(path,{method:'POST',headers:{'X-RFMM-Token':T}});
+}
+async function post(w){
+ const send=async()=>{
+  const r=await actionRequest('/'+w);
+  return {r:r, j:await r.json()};
+ };
+ try{
+  let res=await send();
+  if(desktopTransport && res.r.status===403 && /token/i.test(String(res.j.error||""))){
+   // the worker pair restarted or the token changed: refresh it and retry once
+   const s=await tick(true);
+   if(s?.tok)res=await send();
+  }
+  if(res.j.error)say(String(res.j.error).split(/\r?\n/)[0],false);
+  else if(res.j.msg)say(String(res.j.msg),true);
+  await tick(true);
+  return res.j;
+ }catch(e){say("Could not reach the downloader.",false); return null;}
+}
+async function jobPoll(id){
+ // a refresh runs in one background job; this asks until it is finished
+ while(true){
+  try{
+   const r=await actionRequest('/job?id='+encodeURIComponent(id));
+   const j=await r.json();
+   if(j.state!=='running')return j;
+  }catch(e){return {state:'failed',error:String(e)};}
+  await new Promise(r=>setTimeout(r,700));
+ }
+}
+async function updateMods(scope,id,event){
+ event.preventDefault();
+ event.stopPropagation();
+ const b=event.target; const label=b.textContent;
+ b.disabled=true; b.dataset.watch="1"; b.textContent="Checking...";
+ const r=await post("update-mods?scope="+scope+"&id="+encodeURIComponent(id));
+ if(!r||r.error){ b.disabled=false; delete b.dataset.watch; b.textContent=label; return; }
+ // The job checks one installed mod per second (Workshop rate limit), so show what
+ // it is doing instead of leaving the button static.
+ for(let i=0;i<3600;i++){
+  await new Promise(r=>setTimeout(r,1000));
+  const s=await tick();
+  if(!s)break;
+  const p=s.modUpdateProgress;
+  if(p&&p.total) b.textContent="Checking "+p.checked+"/"+p.total;
+  if(!s.modUpdateRunning) break;
+ }
+ b.disabled=false; delete b.dataset.watch; b.textContent=label;
+ await tick();
+}
+async function cancelModUpdates(button){
+ button.disabled=true;
+ try{await post('cancel-mod-updates');}
+ finally{button.disabled=false;}
+}
+async function queueSrv(id,ev){
+ ev.stopPropagation();
+ const b=ev.target; b.disabled=true; b.textContent='queuing...';
+ say('Reordering queue…');
+ await post('queue-server?id='+id);
+ b.disabled=false; b.textContent='Queue first';
+}
+async function presetSrv(id,ev){
+ ev.stopPropagation();
+ const b=ev.target; b.disabled=true; b.textContent='building...';
+ say('Saving preset…');
+ const response=await post('make-preset?id='+encodeURIComponent(id)+'&background=1');
+ if(response?.job){
+  const result=await jobPoll(response.job);
+  if(result.state==='done')say(result.msg,true);
+  else say(result.error||'Could not save the preset.',false);
+ }
+ b.disabled=false; b.textContent='Make preset';
+}
+async function refreshSrv(ev){
+ ev.stopPropagation();   // the button sits inside the card's <summary>
+ const b=ev.target; b.disabled=true; b.textContent='refreshing...';
+ const r=await post('refresh-servers');
+ b.disabled=false; b.textContent='Refresh all';
+ if(!r||!r.job)return;
+ say('Refreshing servers…');
+ const j=await jobPoll(r.job);
+ if(j.state==='done')say(j.msg||'refresh done',true);
+ else say('refresh failed: '+(j.error||'unknown'),false);
+ SRV=null; SRVAt=0; await loadSrv();
+ if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+ await tick();
+}
+async function refreshOne(id,ev){
+ ev.stopPropagation();
+ const b=ev.target; b.disabled=true; b.textContent='refreshing...';
+ const r=await post('refresh-server?id='+encodeURIComponent(id));
+ b.disabled=false; b.textContent='Refresh';
+ if(!r||!r.job)return;
+ say('Refreshing server…');
+ const j=await jobPoll(r.job);
+ if(j.state==='done')say(j.msg||'refresh done',true);
+ else say('refresh failed: '+(j.error||'unknown'),false);
+ SRV=null; SRVAt=0; await loadSrv();
+ if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+ await tick();
+}
+async function removeSrv(id,ev){
+ ev.stopPropagation();
+ if(!await confirmAction('Remove tracked server?', 'Queued and installed mods stay where they are.', 'Remove server'))return;
+ const b=ev.target; b.disabled=true; b.textContent='removing...';
+ await post('remove-server?id='+id);
+ SRV=null; SRVAt=0; await loadSrv();
+ if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+}
+async function requeuePartial(button){
+ button.disabled=true;
+ try{await post('requeue-partial-mod?id='+encodeURIComponent(button.dataset.id));}
+ finally{button.disabled=false;}
+}
+async function removeQueuedMod(button){
+ button.disabled=true;
+ await post('remove-queued-mod?id='+encodeURIComponent(button.dataset.id));
+ button.disabled=false;
+}
+function confirmAction(title,copy,action){
+ const dialog=document.getElementById('confirmAction');
+ document.getElementById('confirmTitle').textContent=title;
+ document.getElementById('confirmCopy').textContent=copy;
+ document.getElementById('confirmSubmit').textContent=action;
+ dialog.returnValue='cancel';
+ dialog.showModal();
+ return new Promise(resolve=>dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true}));
+}
+let busyAction=false, queueStatus=null;
+function queueControls(status){
+ queueStatus=status;
+ document.getElementById('bstart').disabled=busyAction||!status||status.running||!status.queue.length;
+ document.getElementById('bpause').disabled=busyAction||!status||(!status.running&&(!status.queue.length||status.paused)&&!status.modUpdateRunning);
+ document.getElementById('bclear').disabled=busyAction||!status||(!status.queue.length&&!status.modUpdateRunning);
+ document.getElementById('bresumeall').disabled=busyAction;
+ document.getElementById('bverify').disabled=busyAction;
+ document.getElementById('bcancel').disabled=busyAction||!status;
+}
+const actionLabels={start:'Starting downloads…',pause:'Pausing…','clear-queue':'Clearing queue…','resume-all':'Queueing missing server mods…',verify:'Verifying mods…','cancel-downloads':'Cancelling downloads…'};
+async function act(w){
+ if(w==='clear-queue'&&!await confirmAction('Clear download queue?', 'Partial files and installed mods stay on disk.', 'Clear queue'))return;
+ if(w==='cancel-downloads'&&!await confirmAction('Cancel downloads?', 'This clears the queue and deletes partial downloads. Installed mods stay on disk.', 'Cancel downloads'))return;
+ busyAction=true;
+ queueControls(queueStatus);
+ say(actionLabels[w]);
+ await post(w);
+ busyAction=false;
+ queueControls(queueStatus);
+}
+queueControls(null);
+document.addEventListener('click',event=>{
+ const button=event.target.closest('button[data-action]');
+ if(!button||button.disabled)return;
+ if(button.closest('summary'))event.preventDefault();
+ const {action,id,notice,scope,command,resultPage}=button.dataset;
+ switch(action){
+  case 'dismiss': return dismissNotice(notice);
+  case 'queue-control': return act(command);
+  case 'search-servers': return browse();
+  case 'search-mods': return searchMods(Number(resultPage)||1);
+  case 'update': return updateMods(scope,id||'',event);
+  case 'cancel-updates': return cancelModUpdates(button);
+  case 'queue-server': return queueSrv(id,event);
+  case 'preset': return presetSrv(id,event);
+  case 'refresh-servers': return refreshSrv(event);
+  case 'refresh-one': return refreshOne(id,event);
+  case 'remove-server': return removeSrv(id,event);
+  case 'add-server': return addSrv(id,event);
+  case 'add-mod': return addMod(id,button);
+  case 'remove-queued': return removeQueuedMod(button);
+  case 'requeue-partial': return requeuePartial(button);
+ }
+});
+document.addEventListener('input',event=>{
+ const {filter,search}=event.target.dataset;
+ if(filter){FILTER[filter]=event.target.value;renderAll();}
+ if(search==='servers')browseCleared();
+ if(search==='mods')modsCleared();
+});
+document.addEventListener('keydown',event=>{
+ if(event.key!=='Enter'||event.isComposing)return;
+ if(event.target.dataset.search==='servers')browse();
+ if(event.target.dataset.search==='mods')searchMods(1);
+});
+document.addEventListener('toggle',event=>{
+ const details=event.target;
+ if(details.matches('details[data-browse-id]'))bsToggle(details,details.dataset.browseId);
+},true);
+(async function loop(){
+ const start=performance.now();
+ await tick();
+  const interval=document.hidden?4000:((LAST&&LAST.running)?250:1200);
+ setTimeout(loop,Math.max(0,interval-(performance.now()-start)));
+})();
+</script></body></html>
