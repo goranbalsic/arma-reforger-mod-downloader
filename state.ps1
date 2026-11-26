@@ -56,8 +56,23 @@ function Get-GameProfile {
 }
 function Get-ClientAddons([string]$EngineProfile) {
   $game = Get-GameProfile
-  if ($game) { return (Join-Path $game 'addons') }
+  if ($game -and [IO.Directory]::Exists($game)) { return (Join-Path $game 'addons') }
   Join-Path $EngineProfile 'addons'
+}
+function Initialize-EngineAddonsDirectory([string]$Path) {
+  $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  if ($item.LinkType -in 'Junction', 'SymbolicLink') {
+    # Windows can report that a junction exists even when its target is gone.
+    try {
+      $null = [IO.Directory]::EnumerateFileSystemEntries($Path) | Select-Object -First 1
+      return
+    } catch [IO.DirectoryNotFoundException] {
+      if ($IsLinux) { [IO.File]::Delete($Path) }
+      else { [IO.Directory]::Delete($Path) }
+      Write-Host 'The game addons folder is missing. Downloads will use the downloader folder.'
+    }
+  }
+  [void][IO.Directory]::CreateDirectory($Path)
 }
 function Get-EngineExecutable([string]$InstallRoot) {
   if ($env:RFMM_ENGINE_EXE) { return $env:RFMM_ENGINE_EXE }

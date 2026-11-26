@@ -182,7 +182,11 @@ sys.exit(3)
                       renderSrv({}, {}, {});
                       MRES = {mods:[{id, name, author:name, size:1}], page:1, pages:1, total:1};
                       renderMods();
-                      probe.textOnly = ['#act','#queue','#rec','#bs','#srv','#mres'].every(inText);
+                      availableUpdates = [{modId:id, name, version:'2.0.0'}];
+                      renderAvailableUpdates();
+                      probe.textOnly = ['#act','#queue','#rec','#bs','#srv','#mres','#availableUpdatesList'].every(inText);
+                      probe.updateControls = document.getElementById('applyAllUpdates').textContent === 'Update all' &&
+                          document.querySelector('#availableUpdatesList button').dataset.id === id;
                       probe.noInlineHandlers = ![...document.querySelectorAll('*')].some(element =>
                         [...element.attributes].some(attr => /^on[a-z]+$/i.test(attr.name)));
                       const dialog = document.getElementById('confirmAction');
@@ -197,7 +201,7 @@ sys.exit(3)
                         probe.elapsed = performance.now() - start;
                         probe.passed = response.ok && !probe.actionDone && probe.elapsed < 1000 &&
                                        probe.textOnly && probe.noInlineHandlers && probe.confirmed && probe.speed &&
-                                       probe.sharedPoll && probe.unknownSize && probe.liveServerCount;
+                                       probe.sharedPoll && probe.unknownSize && probe.liveServerCount && probe.updateControls;
                         probe.finished = true;
                       }, 150);
                     })()

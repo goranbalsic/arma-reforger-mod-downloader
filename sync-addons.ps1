@@ -5,7 +5,6 @@ $Root = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
 . (Join-Path $PSScriptRoot 'state.ps1')
 $profile = Join-Path $Root 'serverprofile'
 $src = Join-Path $profile 'addons'
-$dst = Get-ClientAddons $profile
 $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
 
 # Skip copying when the engine and game share the same folder.
@@ -13,6 +12,8 @@ $srcItem = Get-Item $src -Force -ErrorAction SilentlyContinue
 if ($srcItem -and $srcItem.LinkType) { exit 0 }
 
 function Sync-Completed {
+  $dst = Get-ClientAddons $profile
+  if ($src -eq $dst) { return $true }
   $quietBefore = (Get-Date).AddMinutes(-2)
   $copiesOk = $true
   Get-ChildItem $src -Directory -ErrorAction SilentlyContinue |

@@ -140,6 +140,10 @@ def run(lib, root):
     subprocess.run(["cc", "-o", binary, source], check=True)
     env = dict(os.environ, RFMM_HOME=str(root), RFMM_DATA=str(data), RFMM_ENGINE_EXE=str(binary))
     env.pop("RFMM_GAME_PROFILE", None)
+    # The game profile was removed after it had been linked to the downloader.
+    addons = root / "serverprofile" / "addons"
+    addons.parent.mkdir()
+    addons.symlink_to(root / "removed-game" / "addons", target_is_directory=True)
     command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(lib / "download-web.ps1")]
     watchdog = None
     replies = Queue()
@@ -155,6 +159,7 @@ def run(lib, root):
             start = request(worker, replies, f"/start?t={token}", "POST")
             assert start["status"] == 200, start["body"]
             first = wait_for("Start did not launch the fixture ELF engine", lambda: next(fixture_engines(binary), None))
+            assert addons.is_dir() and not addons.is_symlink() and not (root / "removed-game").exists()
             trimmed = json.loads(config.read_text(encoding="utf-8-sig"))
             assert trimmed["game"]["mods"] == [valid], trimmed
             assert trimmed["bindAddress"] == "127.0.0.1"

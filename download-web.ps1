@@ -79,7 +79,8 @@ if (!$ReadOnly -and $IsLinux) {
       New-Item -ItemType SymbolicLink -Path $Addons -Target $ClientAddons | Out-Null
     }
   }
-} elseif (!$ReadOnly -and !$IsLinux -and -not (Initialize-AddonsLink $Addons $ClientAddons $Cfg)) {
+} elseif (!$ReadOnly -and !$IsLinux -and $Addons -ne $ClientAddons -and
+    -not (Initialize-AddonsLink $Addons $ClientAddons $Cfg)) {
   Write-Host 'the engine folder could not be linked to the game addons folder - mods are kept here and copied there'
 }
 
@@ -138,7 +139,7 @@ if ($Check) {
   exit 0
 }
 
-$mutating = '/update-mods','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/cancel-downloads','/remove-queued-mod','/requeue-partial-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
+$mutating = '/update-mods','/apply-mod-updates','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/cancel-downloads','/remove-queued-mod','/requeue-partial-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
 $script:modUpdateJob = $null
 
 function Start-DownloadHelpers {
@@ -266,9 +267,17 @@ function Invoke-DashboardRequest($ctx) {
           } elseif ($up.text) { $status.modUpdate = [string]$up.text }
         }
         $pendingUpdates = @(Get-PendingModUpdates $status.queue).Count
+        $available = [IO.FileInfo]::new((Join-Path $Data 'mod-update-available.json'))
+        if ($available.Exists) { $status.modUpdatesRevision = "$($available.LastWriteTimeUtc.Ticks)|$($available.Length)" }
         $status.modUpdateCancellable = $status.modUpdateRunning -or $pendingUpdates -gt 0
         if (!$status.modUpdate -and $pendingUpdates) { $status.modUpdate = "$pendingUpdates mod updates pending." }
         $b = [Text.Encoding]::UTF8.GetBytes(($status | ConvertTo-Json -Depth 5 -Compress))
+        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.OutputStream.Write($b, 0, $b.Length)
+      }
+      '/available-mod-updates' {
+        $available = @{ updates = @((Get-AvailableModUpdates).Values | Sort-Object name) }
+        $b = [Text.Encoding]::UTF8.GetBytes(($available | ConvertTo-Json -Depth 4 -Compress))
         $ctx.Response.ContentType = 'application/json'
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
@@ -361,9 +370,12 @@ function Invoke-DashboardRequest($ctx) {
         $msg = Invoke-CancelModUpdates
         Stop-ModUpdateCheck
       }
+      '/apply-mod-updates' { $msg = Add-ModUpdateBatch (Get-AvailableModUpdates $ctx.Request.QueryString['id']) }
       '/update-mods' {
         $scope = [string]$ctx.Request.QueryString['scope']
         $id = [string]$ctx.Request.QueryString['id']
+        $checkOnly = $ctx.Request.QueryString['check'] -eq '1'
+        $automatic = $checkOnly -and $ctx.Request.QueryString['auto'] -eq '1'
         $ids = @()
         switch ($scope) {
           'all' {}
@@ -376,15 +388,23 @@ function Invoke-DashboardRequest($ctx) {
           }
           default { throw 'Unknown update scope.' }
         }
-        if ($modUpdateJob -and $modUpdateJob.State -in 'Running','NotStarted') { throw 'An update check is already running.' }
-        $pending = (Get-Status).queue
-        if (@(Get-PendingModUpdates $pending).Count) { throw 'Mod updates are already queued. Finish or cancel them before checking again.' }
-        if ($modUpdateJob) { Remove-Job $modUpdateJob }
-        $script:modUpdateJob = Start-Job -ScriptBlock {
-          param($scriptPath,$scope,$ids,$root,$data,$api,$agent,$queueRevision)
-          & $scriptPath -Scope $scope -Ids $ids -Root $root -Data $data -ApiBase $api -UserAgent $agent -QueueRevision $queueRevision
-        } -ArgumentList (Join-Path $PSScriptRoot 'update-mods.ps1'),$scope,$ids,$Root,$Data,$ApiBase,$UserAgent,([string](Get-QueueRevision))
-        $msg = 'Checking installed mod versions...'
+        $snapshotFile = [IO.FileInfo]::new((Join-Path $Data 'mod-update-available.json'))
+        if ($automatic -and $snapshotFile.Exists -and $snapshotFile.LastWriteTimeUtc -gt [datetime]::UtcNow.AddHours(-1)) {
+          $msg = 'Recent update results are available.'
+        } else {
+          if ($modUpdateJob -and $modUpdateJob.State -in 'Running','NotStarted') { throw 'An update check is already running.' }
+          if (!$checkOnly -and @(Get-PendingModUpdates (Get-Status).queue).Count) {
+            throw 'Mod updates are already queued. Finish or cancel them before checking again.'
+          }
+          if ($modUpdateJob) { Remove-Job $modUpdateJob }
+          Save-Json @{ phase = 'checking'; checked = 0; total = 0; found = 0
+            text = 'Checking installed mod versions...'; at = [datetime]::UtcNow.ToString('o') } (Join-Path $Data 'update-progress.json')
+          $script:modUpdateJob = Start-Job -ScriptBlock {
+            param($scriptPath,$scope,$ids,$root,$data,$api,$agent,$queueRevision,$checkOnly)
+            & $scriptPath -Scope $scope -Ids $ids -Root $root -Data $data -ApiBase $api -UserAgent $agent -QueueRevision $queueRevision -CheckOnly:$checkOnly
+          } -ArgumentList (Join-Path $PSScriptRoot 'update-mods.ps1'),$scope,$ids,$Root,$Data,$ApiBase,$UserAgent,([string](Get-QueueRevision)),$checkOnly
+          $msg = 'Checking installed mod versions...'
+        }
       }
       '/refresh-servers' {
         $r = Start-RefreshJob @($serverList | ForEach-Object { $_.id })

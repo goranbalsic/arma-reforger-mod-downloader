@@ -22,6 +22,7 @@ try {
     "engine is running - config and partial folders left alone"
     exit 1
   }
+  Initialize-EngineAddonsDirectory $addons
   $j = Read-EngineConfig $cfgPath
 
   $done = @{}

@@ -15,6 +15,7 @@ $tmp = Join-Path ([IO.Path]::GetTempPath()) ('rfmm-stress-' + [guid]::NewGuid().
 $installRoot = Join-Path $tmp 'home'
 $data = Join-Path $installRoot 'data'
 $game = Join-Path $tmp 'game'
+$gameAddons = Join-Path $game 'addons'
 $profile = Join-Path $installRoot 'serverprofile'
 $engineDir = Join-Path $installRoot 'armar-server'
 $configFile = Join-Path $data 'batch1-serverconfig.json'
@@ -43,7 +44,7 @@ function Cleanup {
 trap { "STRESS ERROR: $($_.Exception.Message)"; Cleanup; exit 1 }
 
 if (Get-EngineProcesses) { "A dedicated server is already running. Close it before the stress test."; exit 2 }
-New-Item -ItemType Directory -Force $data, $profile, $engineDir, (Join-Path $game 'addons') | Out-Null
+New-Item -ItemType Directory -Force $data, $profile, $engineDir, $gameAddons | Out-Null
 $script:gameRunning = @(Get-Process -Name 'ArmaReforger*' -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -notlike 'ArmaReforgerSer*' }).Count -gt 0
 
 # --- stub engine: a process named ArmaReforgerServer.exe that only sleeps ----------
@@ -85,7 +86,12 @@ while ($listener.IsListening) {
   try {
     $path = $ctx.Request.Url.AbsolutePath
     $body = '{"error":"not found"}'
-    if ($path -eq '/v2/mods' -or $path -eq '/v2/mods/') {
+    if ($path -eq '/v2/mods' -and $ctx.Request.QueryString['sort'] -eq 'recently-updated') {
+      $body = @{ meta = @{ totalPages = 1 }; data = @(
+        @{ id = 'AAAAAAAAAAAAAAA1'; name = 'Alpha'; version = '2.1.0'; size = 1048576 },
+        @{ id = 'EEEEEEEEEEEEEEEE'; name = 'Not installed'; version = '3.0.0'; size = 50 }
+      ) } | ConvertTo-Json -Depth 5
+    } elseif ($path -eq '/v2/mods' -or $path -eq '/v2/mods/') {
       $body = @{ meta = @{ totalMods = $fx.mods.Count; totalPages = 1 }; data = @($fx.mods) } | ConvertTo-Json -Depth 5
     } elseif ($path -match '^/v2/mods/([0-9A-Fa-f]{16})/dependencies$') {
       $id = $Matches[1].ToUpperInvariant()
@@ -238,7 +244,7 @@ Check 'verify reports a result through the read-only worker' ($v.status -eq 200 
 $conf = Join-Path $tmp 'ReforgerGameSettings.conf'
 "GameUserSettings {`r`n  SCR_WorkshopAddonManagerPresetStorage SCR_WorkshopAddonManagerPresetStorage `"{6AEA4081FE80EE32}`" {`r`n  }`r`n}" | Set-Content $conf
 foreach ($m in $fixture.mods) {
-  $dir = Join-Path $addonsDir ("$($m.name)_$($m.id)")
+  $dir = Join-Path $gameAddons ("$($m.name)_$($m.id)")
   New-Item -ItemType Directory -Force $dir | Out-Null
   [IO.File]::WriteAllText((Join-Path $dir 'data.pak'), 'x')
   $ver = if ($m.id -eq 'AAAAAAAAAAAAAAA2') { '1.0.0' } else { $m.version }
@@ -269,12 +275,43 @@ Check 'a newer Workshop version is queued with its version' ($updEntry -eq 1)
 Check 'the update result is shown' ([bool]$st.json.modUpdate) $st.json.modUpdate
 Check 'cancel updates removes the pending batch' ((Ask $main "/cancel-mod-updates?t=$tok" 'POST').status -eq 200)
 
+$autoCheck = Ask $main "/update-mods?scope=all&check=1&auto=1&t=$tok" 'POST'
+Check 'automatic update detection starts without queueing mods' ($autoCheck.status -eq 200 -and @(QueueIds).Count -eq 0)
+$preview = $null
+for ($i = 0; $i -lt 60; $i++) {
+  Start-Sleep -Milliseconds 250
+  $preview = Ask $main '/available-mod-updates'
+  if ($preview.json.updates.modId -contains 'AAAAAAAAAAAAAAA1') { break }
+}
+Check 'recent catalog exposes an installed mod update before the check changes any queue entries' (
+  @($preview.json.updates | Where-Object { $_.modId -eq 'AAAAAAAAAAAAAAA1' -and $_.version -eq '2.1.0' }).Count -eq 1 -and
+  @($preview.json.updates | Where-Object modId -eq 'EEEEEEEEEEEEEEEE').Count -eq 0 -and @(QueueIds).Count -eq 0) $preview.body
+Check 'applying detected updates requires the action token' ((Ask $main '/apply-mod-updates' 'POST').status -eq 403)
+$one = Ask $main "/apply-mod-updates?id=AAAAAAAAAAAAAAA1&t=$tok" 'POST'
+Check 'an individual detection can be queued without the other updates' (
+  $one.status -eq 200 -and @((Cfg).game.mods).Count -eq 1 -and (Cfg).game.mods[0].version -eq '2.1.0') $one.body
+for ($i = 0; $i -lt 60; $i++) {
+  $st = Ask $read '/status'
+  if ($st.json.modUpdateProgress.phase -eq 'done' -and $st.json.modUpdatesRevision) { break }
+  Start-Sleep -Milliseconds 250
+}
+$preview = Ask $main '/available-mod-updates'
+Check 'detail lookup finds an update missing from the recent catalog' (
+  @($preview.json.updates | Where-Object { $_.modId -eq 'AAAAAAAAAAAAAAA2' -and $_.version -eq '1.1.0' }).Count -eq 1) $preview.body
+$all = Ask $main "/apply-mod-updates?t=$tok" 'POST'
+Check 'update all appends the remaining update without duplicating the first' (
+  $all.status -eq 200 -and @((Cfg).game.mods).Count -eq 2 -and (QueueIds) -contains 'AAAAAAAAAAAAAAA2') $all.body
+$cancelAgain = Ask $main "/cancel-mod-updates?t=$tok" 'POST'
+Check 'cancelling clears updates applied in separate requests' ($cancelAgain.status -eq 200 -and @(QueueIds).Count -eq 0)
+$recentAuto = Ask $main "/update-mods?scope=all&check=1&auto=1&t=$tok" 'POST'
+Check 'automatic checks reuse recent results across requests' ((ReplyText $recentAuto) -match 'Recent update results')
+
 "== cancel downloads"
 $partialId = 'AAAAAAAAAAAAAAA3'
-$partial = Join-Path $addonsDir "Gamma_$partialId"
+$partial = Join-Path $gameAddons "Gamma_$partialId"
 [IO.File]::WriteAllText((Join-Path $partial 'data.pak'), 'half')
 Remove-Item (Join-Path $partial 'meta') -Force -ErrorAction SilentlyContinue
-$keep = Join-Path $addonsDir 'Alpha_AAAAAAAAAAAAAAA1'
+$keep = Join-Path $gameAddons 'Alpha_AAAAAAAAAAAAAAA1'
 $cd = Ask $main "/cancel-downloads?t=$tok" 'POST'
 $gameNow = @(Get-Process -Name 'ArmaReforger*' -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -notlike 'ArmaReforgerSer*' }).Count -gt 0
 if ($gameNow) {

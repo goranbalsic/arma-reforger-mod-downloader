@@ -85,7 +85,13 @@ ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#
  <div id="mres" class="dim" style="margin-top:8px">Search the Workshop for mods to add to the queue.</div>
  <div id="mpager" style="margin-top:6px"></div>
 </details>
-</section><section class="view" id="library"><h2>Library</h2><div><button data-action="update" data-scope="all">Update installed mods</button> <button data-action="update" data-scope="tracked">Update tracked servers&rsquo; mods</button> <button id="cancelModUpdates" data-action="cancel-updates" hidden>Cancel updates</button></div><details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span><button class="mini" data-action="refresh-servers" title="Refresh all tracked server mod lists">Refresh all</button></h2></summary><div id="srv" class="dim" style="margin-top:8px">Loading tracked servers…</div></details>
+</section><section class="view" id="library"><h2>Library</h2>
+<div><button id="checkModUpdates" data-action="check-updates">Check for updates</button> <button data-action="update" data-scope="tracked">Update tracked servers&rsquo; mods</button> <button id="cancelModUpdates" data-action="cancel-updates" hidden>Cancel updates</button></div>
+<section class="card" id="availableUpdates" aria-labelledby="availableUpdatesTitle" hidden>
+ <div class="row"><h2 id="availableUpdatesTitle" style="font-size:18px">Available updates <span id="availableUpdatesCount" class="dim"></span></h2><button id="applyAllUpdates" data-action="apply-updates">Update all</button></div>
+ <ul id="availableUpdatesList"></ul>
+</section>
+<details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span><button class="mini" data-action="refresh-servers" title="Refresh all tracked server mod lists">Refresh all</button></h2></summary><div id="srv" class="dim" style="margin-top:8px">Loading tracked servers…</div></details>
 <details class="card wide"><summary><h2 style="font-size:18px">Completed <span id="reccount" class="dim"></span></h2></summary>
  <input class="f" id="fr" aria-label="Filter completed mods" placeholder="Filter completed mods" data-filter="rec">
  <ul id="rec"></ul></details>
@@ -110,6 +116,7 @@ function sz(b){return b>=1073741824?(b/1073741824).toFixed(b>=107374182400?2:3)+
 function left(sec){ if(!Number.isFinite(sec)||sec<=0)return ''; if(sec<60)return Math.ceil(sec)+' sec'; const minutes=Math.ceil(sec/60); return minutes>=60?Math.floor(minutes/60)+'h '+minutes%60+'m':minutes+' min'; }
 let SRV=null,BR=null,lastKey='';
 let RECENT=[],RCREV='',loadingCompleted=false;
+let availableUpdates=[],availableRevision='',loadingUpdates=false,updatesKey='',automaticUpdateCheck=false,applyingUpdates=false;
 let transferSample=null;
 let FILTER={queue:'',act:'',rec:''},LAST=null;
 function match(name,q){ return !q || String(name).toLowerCase().indexOf(q.toLowerCase())>=0; }
@@ -154,6 +161,39 @@ async function loadCompleted(revision){
  }catch(error){
   console.debug('Completed downloads are not available yet',error);
  }finally{loadingCompleted=false;}
+}
+function renderAvailableUpdates(){
+ const queued=new Set((LAST?.queue||[]).map(mod=>mod.id));
+ const available=availableUpdates.filter(mod=>!queued.has(mod.modId));
+ const list=document.getElementById('availableUpdatesList');
+ const key=JSON.stringify(available);
+ const changed=key!==updatesKey;
+ if(changed){
+  updatesKey=key;
+  document.getElementById('availableUpdates').hidden=!available.length;
+  document.getElementById('availableUpdatesCount').textContent='('+available.length+')';
+  list.innerHTML=available.map(mod=>'<li class="row"><span>'+esc(mod.name||mod.modId)+' <span class="dim">v'+esc(mod.version)+'</span></span>'+
+   '<button class="mini" data-action="apply-updates" data-id="'+escAttr(mod.modId)+'" aria-label="Update '+escAttr(mod.name||mod.modId)+'">Update</button></li>').join('');
+ }
+ const applyAll=document.getElementById('applyAllUpdates');
+ if(changed||applyAll.disabled!==applyingUpdates){
+  applyAll.disabled=applyingUpdates;
+  for(const button of list.querySelectorAll('button'))button.disabled=applyingUpdates;
+ }
+}
+async function loadAvailableUpdates(revision){
+ if(loadingUpdates||revision===availableRevision)return;
+ loadingUpdates=true;
+ try{
+  const response=await fetch('/available-mod-updates');
+  const snapshot=await response.json();
+  if(response.ok&&Array.isArray(snapshot.updates)){
+   availableUpdates=snapshot.updates;
+   availableRevision=revision;
+   renderAvailableUpdates();
+  }
+ }catch(error){console.debug('Mod updates are not available yet',error);}
+ finally{loadingUpdates=false;}
 }
 function renderActive(list){
   const el=document.getElementById('act');
@@ -361,7 +401,15 @@ async function refreshStatus(){
   if(s.tok)T=s.tok;
   loadCompleted(s.recentRev);
   showNotice('modUpdate',s.modUpdate||'');
+  document.getElementById('checkModUpdates').disabled=!!s.modUpdateRunning;
   document.getElementById('cancelModUpdates').hidden=!s.modUpdateCancellable;
+  if(!automaticUpdateCheck&&!s.inventoryPending&&((s.installedIds||[]).length||(s.cl||[]).length)){
+   automaticUpdateCheck=true;
+   if(!s.modUpdateRunning) actionRequest('/update-mods?scope=all&check=1&auto=1').catch(error=>console.debug('Automatic update check failed',error));
+  }
+  if(s.modUpdatesRevision&&location.hash==='#library'){
+   loadAvailableUpdates([s.modUpdatesRevision,s.recentRev,s.queue.map(mod=>mod.id).join(',')].join('|'));
+  }
   const boot=document.getElementById('boot'); if(boot)boot.remove();
   const hasQueue=s.queue.length>0;
   if(hasQueue){
@@ -415,6 +463,7 @@ async function refreshStatus(){
   s.active.forEach(a=>{A[a.id]=1});
   (s.cl||[]).forEach(id=>{D[id]=1});   // installed client-side before the batch counts as on disk
   LAST={recent:RECENT,active:s.active||[],queue:s.queue||[],D:D,A:A,B:B,running:!!s.running,queueRevision:s.queueRevision,inventoryPending:s.inventoryPending};
+  renderAvailableUpdates();
   renderActive(s.active||[]);
   const key=[RCREV,s.inventoryPending,Object.keys(D).sort().join(','),LAST.queue.map(q=>q.id).join(','),s.active.map(a=>a.id).join(',')].join('|');
   if(key!==lastKey){          // lists only re-render when something actually finished/started
@@ -486,8 +535,6 @@ async function updateMods(scope,id,event){
  b.disabled=true; b.dataset.watch="1"; b.textContent="Checking...";
  const r=await post("update-mods?scope="+scope+"&id="+encodeURIComponent(id));
  if(!r||r.error){ b.disabled=false; delete b.dataset.watch; b.textContent=label; return; }
- // The job checks one installed mod per second (Workshop rate limit), so show what
- // it is doing instead of leaving the button static.
  for(let i=0;i<3600;i++){
   await new Promise(r=>setTimeout(r,1000));
   const s=await tick();
@@ -498,6 +545,13 @@ async function updateMods(scope,id,event){
  }
  b.disabled=false; delete b.dataset.watch; b.textContent=label;
  await tick();
+}
+async function applyModUpdates(id){
+ if(applyingUpdates)return;
+ applyingUpdates=true;
+ renderAvailableUpdates();
+ try{await post('apply-mod-updates'+(id?'?id='+encodeURIComponent(id):''));}
+ finally{applyingUpdates=false;renderAvailableUpdates();}
 }
 async function cancelModUpdates(button){
  button.disabled=true;
@@ -610,6 +664,8 @@ document.addEventListener('click',event=>{
   case 'queue-control': return act(command);
   case 'search-servers': return browse();
   case 'search-mods': return searchMods(Number(resultPage)||1);
+  case 'check-updates': return post('update-mods?scope=all&check=1');
+  case 'apply-updates': return applyModUpdates(id);
   case 'update': return updateMods(scope,id||'',event);
   case 'cancel-updates': return cancelModUpdates(button);
   case 'queue-server': return queueSrv(id,event);

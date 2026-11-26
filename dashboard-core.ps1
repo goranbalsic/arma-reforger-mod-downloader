@@ -28,6 +28,66 @@ function Get-PendingModUpdates($Queue) {
   foreach ($update in $batch.updates) { $targets[$update.modId] = $update.version }
   $Queue | Where-Object { $_.version -and $targets[$_.id] -eq $_.version }
 }
+function Get-InstalledModsForUpdate([string[]]$Ids, [switch]$All) {
+  $installed = @{}
+  $wanted = @{}
+  foreach ($id in $Ids) { $wanted[$id] = $true }
+  $folders = @((Join-Path $DsProfile 'addons'), (Get-ClientAddons $DsProfile)) | Select-Object -Unique
+  foreach ($folder in $folders) {
+    if (!$All -and $installed.Count -eq $wanted.Count) { break }
+    foreach ($dir in (Get-AddonDirectories $folder)) {
+      if ($dir.Name -notmatch '_([a-f0-9]{16})$') { continue }
+      $id = $Matches[1].ToUpperInvariant()
+      if (($All -or $wanted.ContainsKey($id)) -and !$installed.ContainsKey($id) -and
+          (Test-AddonComplete $dir.FullName $dir.LastWriteTime)) { $installed[$id] = $dir.FullName }
+    }
+  }
+  $installed
+}
+function Add-ModUpdateBatch([hashtable]$Updates, [string]$QueueRevision) {
+  if (!$Updates.Count) { return 'No newer versions to queue.' }
+  $lock = Lock-Engine
+  if (!$lock) { throw 'Engine busy. Try again.' }
+  try {
+    if ($PSBoundParameters.ContainsKey('QueueRevision') -and $QueueRevision -ne [string](Get-QueueRevision)) {
+      return 'The queue changed during the check. No updates were queued.'
+    }
+    $queue = @((Get-Cfg).game.mods)
+    $queuedIds = @{}
+    foreach ($mod in $queue) { if ($mod.modId) { $queuedIds[$mod.modId] = $mod.version } }
+    $newUpdates = @($Updates.Values | Where-Object { !$queuedIds.ContainsKey($_.modId) })
+    if (!$newUpdates.Count) { return 'Those mods are already in the queue.' }
+    $engine = Get-DS -Fresh
+    if ($null -eq $engine) { throw 'Cannot inspect the download engine.' }
+    if (@($engine).Count) { Stop-DS | Out-Null }
+    $batchPath = Join-Path $Data 'mod-update-batch.json'
+    $batch = Read-Json $batchPath $null
+    $previous = @($batch.updates | Where-Object { $_.version -and $queuedIds[$_.modId] -eq $_.version })
+    Save-Json @{ updates = @($previous + $newUpdates) } $batchPath
+    Update-Cfg {
+      param($cfg)
+      $cfg.game.mods = @($cfg.game.mods) + $newUpdates
+    } $Cfg | Out-Null
+    $startText = try { Start-DS } catch { "Could not start: $($_.Exception.Message)" }
+    "Queued $($newUpdates.Count) updates. $startText"
+  } finally { $lock.ReleaseMutex() }
+}
+function Get-AvailableModUpdates([string]$Id) {
+  if ($Id -and !(Test-ModId $Id)) { throw 'Invalid mod ID.' }
+  $snapshot = Read-Json (Join-Path $Data 'mod-update-available.json') $null
+  $selected = @($snapshot.updates | Where-Object { (Test-ModId $_.modId) -and (!$Id -or $_.modId -eq $Id) })
+  if (!$selected.Count) { return @{} }
+  $installed = Get-InstalledModsForUpdate $selected.modId
+  $updates = @{}
+  foreach ($update in $selected) {
+    if (!$installed.ContainsKey($update.modId)) { continue }
+    $local = Get-InstalledVersion $installed[$update.modId]
+    try {
+      if ($local -and (Compare-WorkshopVersion $update.version $local) -gt 0) { $updates[$update.modId] = $update }
+    } catch { continue }
+  }
+  $updates
+}
 function Invoke-CancelModUpdates {
   $ctl = Lock-Engine
   if (!$ctl) { throw 'The downloader is busy. Try cancelling again.' }
@@ -98,17 +158,20 @@ function Get-AddonsBytes {
   $script:clBytes = $sum; $script:clBytesAt = Get-Date
   $sum
 }
+function Get-AddonDirectories([string]$Path, [string]$Pattern = '*') {
+  $root = [IO.DirectoryInfo]::new($Path)
+  if (!$root.Exists) { return }
+  try { $root.EnumerateDirectories($Pattern) }
+  catch [IO.DirectoryNotFoundException] { } # The game profile can be removed between polls.
+}
 function Get-ClientIds {
   # Count an addon only when every file matches its metadata. Test-AddonComplete caches the result.
   if (((Get-Date) - $script:clCacheAt).TotalSeconds -lt 10) { return $script:clCache }
   $ids = [Collections.Generic.List[string]]::new()
-  $root = [IO.DirectoryInfo]::new((Get-ClientAddons $DsProfile))
-  if ($root.Exists) {
-    foreach ($d in $root.EnumerateDirectories()) {
-      $m = [regex]::Match($d.Name, '_([0-9A-F]{16})$')
-      if (-not $m.Success) { continue }
-      if (Test-AddonComplete $d.FullName $d.LastWriteTime) { $ids.Add($m.Groups[1].Value) }
-    }
+  foreach ($d in (Get-AddonDirectories (Get-ClientAddons $DsProfile))) {
+    $m = [regex]::Match($d.Name, '_([0-9A-F]{16})$')
+    if (-not $m.Success) { continue }
+    if (Test-AddonComplete $d.FullName $d.LastWriteTime) { $ids.Add($m.Groups[1].Value) }
   }
   $script:clCache = $ids.ToArray(); $script:clCacheAt = Get-Date
   $script:clCache
@@ -624,9 +687,9 @@ function Get-Status {
         if ($expected -gt 0) { $row.pct = [Math]::Round(100 * $latest.b / $expected, 1) }
       }
       $path = $dir.path
-      if (!$path -and [IO.Directory]::Exists($Addons)) {
+      if (!$path) {
         # A mod can start before the background library scan reaches its folder.
-        $path = [IO.Directory]::EnumerateDirectories($Addons, "*_$id") | Select-Object -First 1
+        $path = Get-AddonDirectories $Addons "*_$id" | Select-Object -First 1 -ExpandProperty FullName
       }
       $row.cachedB = Get-TransferCacheBytes $path
       if ($null -ne $row.cachedB) {
@@ -821,13 +884,10 @@ function Get-HaveIds {
     if (Test-AddonComplete $e.Value.path $e.Value.mtime) { $have[$e.Key] = $true }
   }
   # client copies: same exact check (the launcher reads that folder)
-  $croot = [IO.DirectoryInfo]::new((Get-ClientAddons $DsProfile))
-  if ($croot.Exists) {
-    foreach ($d in $croot.EnumerateDirectories()) {
-      $m = [regex]::Match($d.Name, '_([0-9A-F]{16})$')   # not $Matches: it does not survive a function call
-      if (-not $m.Success) { continue }
-      if (Test-AddonComplete $d.FullName $d.LastWriteTime) { $have[$m.Groups[1].Value] = $true }
-    }
+  foreach ($d in (Get-AddonDirectories (Get-ClientAddons $DsProfile))) {
+    $m = [regex]::Match($d.Name, '_([0-9A-F]{16})$')
+    if (-not $m.Success) { continue }
+    if (Test-AddonComplete $d.FullName $d.LastWriteTime) { $have[$m.Groups[1].Value] = $true }
   }
   $script:haveCache = $have; $script:haveAt = Get-Date
   $have

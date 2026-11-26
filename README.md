@@ -2,6 +2,8 @@
 
 Queue a server's Arma Reforger Workshop mods before you join. You can also search for individual mods and resume paused downloads on Windows and Linux.
 
+You can download mods without installing the game. The downloader uses the free Arma Reforger dedicated server.
+
 [Download for Windows x64](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader.exe) · [Download for Linux x64](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader-linux-x64.tar.gz) · [Project website](https://goxy701.github.io/arma-reforger-mod-downloader/) · [Releases](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest)
 
 ## Install on Windows or Linux
@@ -13,6 +15,8 @@ Queue a server's Arma Reforger Workshop mods before you join. You can also searc
 ## Download a server's mod list
 
 Open **Find mods**, search for your server, and select **Add server**. Follow the queue under **Downloads**. To save a preset after the queue finishes, close the game and select **Make preset** under **Tracked servers**.
+
+The app checks for mod updates when it opens. In **Library**, choose **Update all** or update individual mods as they appear. Recent Workshop releases show up first. A full check can take longer for large libraries.
 
 On Linux, set `RFMM_GAME_PROFILE` to the game's profile folder to share mods and save presets. For Steam Proton, this is usually `steamapps/compatdata/1874880/pfx/drive_c/users/steamuser/Documents/My Games/ArmaReforger` inside the game's Steam library. Set `RFMM_HOME` to change the engine folder or `RFMM_DATA` to change the queue and log folder.
 

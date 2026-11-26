@@ -257,6 +257,34 @@ if ($IsLinux) {
   Check 'leaves no empty copy in the game folder' (-not (Test-Path (Join-Path $game2 'Locked_EEEEFFFF00001111')))
 }
 
+Write-Host 'downloads without a game profile'
+$standalone = Join-Path $tmp 'standalone'
+$standaloneProfile = Join-Path $standalone 'serverprofile'
+$standaloneAddons = Join-Path $standaloneProfile 'addons'
+$standaloneData = Join-Path $standalone 'data'
+$removedGame = Join-Path $standalone 'removed-game'
+$formerAddons = Join-Path $removedGame 'addons'
+New-Item -ItemType Directory -Path $standaloneProfile,$standaloneData,$formerAddons -Force | Out-Null
+$linkType = if ($IsLinux) { 'SymbolicLink' } else { 'Junction' }
+New-Item -ItemType $linkType -Path $standaloneAddons -Target $formerAddons | Out-Null
+[IO.Directory]::Delete($formerAddons)
+[IO.Directory]::Delete($removedGame)
+$standaloneCfg = Join-Path $standaloneData 'batch1-serverconfig.json'
+'{"game":{"name":"Test","scenarioId":"fixture","mods":[{"modId":"ABCDEF0123456789","name":"Pending"}]}}' |
+  Set-Content -LiteralPath $standaloneCfg -Encoding UTF8
+$oldHome = $env:RFMM_HOME; $oldData = $env:RFMM_DATA; $oldProfile = $env:RFMM_GAME_PROFILE
+try {
+  $env:RFMM_HOME = $standalone; $env:RFMM_DATA = $standaloneData; $env:RFMM_GAME_PROFILE = $removedGame
+  Check 'a missing game profile uses downloader storage' ((Get-ClientAddons $standaloneProfile) -eq $standaloneAddons)
+  & (Join-Path $PSScriptRoot 'trim-config.ps1') | Out-Null
+  $localAddons = Get-Item -LiteralPath $standaloneAddons -Force
+  Check 'start preparation replaces a dangling addons link with a local folder' ($LASTEXITCODE -eq 0 -and $localAddons.PSIsContainer -and !$localAddons.LinkType)
+  Check 'recovering the addons folder keeps the queued mod and leaves the game profile absent' (
+    (Get-Queued $standaloneCfg)[0].modId -eq 'ABCDEF0123456789' -and !(Test-Path -LiteralPath $removedGame))
+} finally {
+  $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData; $env:RFMM_GAME_PROFILE = $oldProfile
+}
+
 Write-Host 'dashboard handlers (stubbed API and engine)'
 $hd = Join-Path $tmp 'handlers'
 New-Item -ItemType Directory -Force (Join-Path $hd 'data') | Out-Null
