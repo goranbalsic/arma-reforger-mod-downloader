@@ -281,6 +281,36 @@ try {
   Check 'start preparation replaces a dangling addons link with a local folder' ($LASTEXITCODE -eq 0 -and $localAddons.PSIsContainer -and !$localAddons.LinkType)
   Check 'recovering the addons folder keeps the queued mod and leaves the game profile absent' (
     (Get-Queued $standaloneCfg)[0].modId -eq 'ABCDEF0123456789' -and !(Test-Path -LiteralPath $removedGame))
+  if (!$IsLinux) {
+    $modName = 'Restored_ABCDEF0123456789'
+    $privateMod = Join-Path $standaloneAddons $modName
+    $privateSaves = Join-Path $standaloneAddons 'saves'
+    New-Item -ItemType Directory -Path $privateMod,$privateSaves -Force | Out-Null
+    'mod files' | Set-Content -LiteralPath (Join-Path $privateMod 'data.pak')
+    'preserve local saves' | Set-Content -LiteralPath (Join-Path $privateSaves 'pending.txt')
+    & (Join-Path $PSScriptRoot 'sync-addons.ps1')
+    Check 'sync retains the mod locally while the game profile is absent' (
+      $LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $privateMod) -and !(Test-Path -LiteralPath $removedGame))
+    New-Item -ItemType Directory -Path (Join-Path $formerAddons 'saves') -Force | Out-Null
+    & (Join-Path $PSScriptRoot 'sync-addons.ps1')
+    $syncCode = $LASTEXITCODE
+    $preserved = @(Get-ChildItem -LiteralPath $standaloneProfile -Directory -Filter 'addons-before-link-*')
+    Check 'sync moves private mods into the restored game folder and links the engine' (
+      $syncCode -eq 0 -and (Get-Item -LiteralPath $standaloneAddons -Force).LinkType -eq 'Junction' -and
+      (Test-Path -LiteralPath (Join-Path (Join-Path $formerAddons $modName) 'data.pak')) -and
+      @(Get-ChildItem -LiteralPath $formerAddons -Directory -Filter '*_ABCDEF0123456789').Count -eq 1)
+    Check 'sync preserves unrelated downloader files outside the linked folder' (
+      $preserved.Count -eq 1 -and (Test-Path -LiteralPath (Join-Path $preserved[0].FullName 'saves/pending.txt')) -and
+      @(Get-ChildItem -LiteralPath $preserved[0].FullName -Directory -Filter '*_ABCDEF0123456789').Count -eq 0)
+
+    $duplicateAddons = Join-Path $standalone 'duplicate-profile/addons'
+    $existingMod = Join-Path $formerAddons 'GameName_AAAABBBB00001111'
+    $duplicateMod = Join-Path $duplicateAddons 'OtherName_AAAABBBB00001111'
+    New-Item -ItemType Directory -Path $existingMod,$duplicateMod -Force | Out-Null
+    Check 'migration never creates a second game folder for the same Workshop ID' (
+      !(Initialize-AddonsLink $duplicateAddons $formerAddons $standaloneCfg) -and
+      (Test-Path -LiteralPath $duplicateMod) -and @(Get-ChildItem -LiteralPath $formerAddons -Directory -Filter '*_AAAABBBB00001111').Count -eq 1)
+  }
 } finally {
   $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData; $env:RFMM_GAME_PROFILE = $oldProfile
 }

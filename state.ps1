@@ -406,49 +406,66 @@ function Test-AddonComplete([string]$Path, $Mtime, [switch]$Fresh) {
 }
 
 function Initialize-AddonsLink([string]$Addons, [string]$ClientAddons, [string]$ConfigPath) {
-  # Place a junction at the engine addons path so both the engine and game use the same files.
-  $item = Get-Item $Addons -Force -ErrorAction SilentlyContinue
-  if ($item -and $item.LinkType) { return $true }   # already one folder
-  $own = Get-OwnEngine $ConfigPath
-  if ($null -eq $own) { return $false }             # cannot ask: never move files blindly
-  if (@($own).Count) { return $false }              # never move files under a live engine
-  if (-not (Test-Path $ClientAddons)) { New-Item -ItemType Directory -Force $ClientAddons | Out-Null }
-  New-Item -ItemType Directory -Force (Split-Path $Addons -Parent) | Out-Null
-  if ($item) {
-    # Keep existing client copies. Count a move only when its source is gone.
-    $had = @{}
-    foreach ($d in @(Get-ChildItem $Addons -Force -ErrorAction SilentlyContinue)) {
-      $had[$d.Name] = Test-Path (Join-Path $ClientAddons $d.Name)
-    }
-    $failed = @()
-    foreach ($d in @(Get-ChildItem $Addons -Force -ErrorAction SilentlyContinue)) {
-      $target = Join-Path $ClientAddons $d.Name
-      if (-not $had[$d.Name]) {
-        Move-Item -LiteralPath $d.FullName -Destination $target -Force -ErrorAction SilentlyContinue
-        if (Test-Path $d.FullName) {
-          if (-not @(Get-ChildItem $target -Force -ErrorAction SilentlyContinue).Count) {
-            Remove-Item $target -Force -ErrorAction SilentlyContinue
-          }
-          $failed += $d.Name
-        }
+  $lock = Lock-Engine 0
+  if (!$lock) { return $false }
+  try {
+    $item = Get-Item -LiteralPath $Addons -Force -ErrorAction SilentlyContinue
+    if ($item.LinkType) { return $true }
+    $own = Get-OwnEngine $ConfigPath
+    if ($null -eq $own -or @($own).Count) { return $false }
+    [void][IO.Directory]::CreateDirectory($ClientAddons)
+    [void][IO.Directory]::CreateDirectory((Split-Path $Addons -Parent))
+    $backup = $null
+    if ($item) {
+      $ids = @{}
+      $idPattern = '_([A-Fa-f0-9]{16})$'
+      foreach ($dir in (Get-ChildItem -LiteralPath $ClientAddons -Directory -Force -ErrorAction Stop)) {
+        if ($dir.Name -match $idPattern) { $ids[$Matches[1]] = $true }
       }
+      $failed = @()
+      foreach ($dir in (Get-ChildItem -LiteralPath $Addons -Force -ErrorAction Stop)) {
+        $id = if ($dir.PSIsContainer -and $dir.Name -match $idPattern) { $Matches[1] }
+        if (!$id -or $dir.LinkType -or $ids[$id]) { continue }
+        $target = Join-Path $ClientAddons $dir.Name
+        if (Test-Path -LiteralPath $target) { continue }
+        if ([IO.Path]::GetPathRoot($dir.FullName) -eq [IO.Path]::GetPathRoot($target)) {
+          try { [IO.Directory]::Move($dir.FullName, $target) }
+          catch [IO.IOException] { $failed += $dir.Name; continue }
+        } else {
+          Move-Item -LiteralPath $dir.FullName -Destination $target -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $dir.FullName) {
+          if (!(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+            Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+          }
+          $failed += $dir.Name
+        } else { $ids[$id] = $true }
+      }
+      if ($failed.Count) {
+        Write-Host "Could not move these mods into the game addons folder: $($failed -join ', ')." -ForegroundColor Yellow
+        return $false
+      }
+      $remaining = @(Get-ChildItem -LiteralPath $Addons -Force -ErrorAction Stop)
+      if ($remaining | Where-Object { $_.PSIsContainer -and $_.Name -match $idPattern }) { return $false }
+      if ($remaining.Count) {
+        $backup = "$Addons-before-link-$([guid]::NewGuid().ToString('N'))"
+        [IO.Directory]::Move($Addons, $backup)
+      } else { [IO.Directory]::Delete($Addons) }
     }
-    if ($failed.Count) {
-      Write-Host "could not move $($failed.Count) item(s) into the game addons folder - nothing was deleted: $($failed -join ', ')" -ForegroundColor Yellow
+    try {
+      New-Item -ItemType Junction -Path $Addons -Target $ClientAddons -ErrorAction Stop | Out-Null
+      return $true
+    } catch {
+      if ($backup -and !(Get-Item -LiteralPath $Addons -Force -ErrorAction SilentlyContinue)) {
+        [IO.Directory]::Move($backup, $Addons)
+      }
+      Write-Host "Could not link the game addons folder: $($_.Exception.Message)" -ForegroundColor Yellow
       return $false
     }
-    if (@(Get-ChildItem -LiteralPath $Addons -Force -ErrorAction Stop).Count) {
-      Write-Host 'Existing addon copies were kept. Completed downloads will be synced separately.' -ForegroundColor Yellow
-      return $false
-    }
-    Remove-Item -LiteralPath $Addons -Force -ErrorAction SilentlyContinue
-    if (Test-Path $Addons) {
-      Write-Host 'the old engine addons folder could not be removed - not linking' -ForegroundColor Yellow
-      return $false
-    }
-  }
-  New-Item -ItemType Junction -Path $Addons -Target $ClientAddons -ErrorAction SilentlyContinue | Out-Null
-  [bool](Get-Item $Addons -Force -ErrorAction SilentlyContinue).LinkType
+  } catch {
+    Write-Host "Could not move the addons into the game folder: $($_.Exception.Message)" -ForegroundColor Yellow
+    return $false
+  } finally { $lock.ReleaseMutex() }
 }
 
 function Get-InstalledVersion([string]$Directory) {

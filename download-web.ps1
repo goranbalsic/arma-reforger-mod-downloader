@@ -81,7 +81,7 @@ if (!$ReadOnly -and $IsLinux) {
   }
 } elseif (!$ReadOnly -and !$IsLinux -and $Addons -ne $ClientAddons -and
     -not (Initialize-AddonsLink $Addons $ClientAddons $Cfg)) {
-  Write-Host 'the engine folder could not be linked to the game addons folder - mods are kept here and copied there'
+  Write-Host 'Could not link the addons folders yet. The downloader will retry when the engine is idle.'
 }
 
 
@@ -159,10 +159,7 @@ function Start-DownloadHelpers {
   }
   $shell = Join-Path $PSHOME 'powershell.exe'
   if (!(Test-Path $shell)) { $shell = Join-Path $PSHOME 'pwsh.exe' }
-  $addonsItem = Get-Item $Addons -Force -ErrorAction SilentlyContinue
-  if (!($addonsItem -and $addonsItem.LinkType)) {
-    Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -Loop' -f (Join-Path $PSScriptRoot 'sync-addons.ps1'))
-  }
+  Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -Loop' -f (Join-Path $PSScriptRoot 'sync-addons.ps1'))
   Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $PSScriptRoot 'watchdog.ps1'))
 }
 function Stop-ModUpdateCheck {

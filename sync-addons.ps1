@@ -1,63 +1,35 @@
-# Copies completed mods into the client addons folder using the shared package check.
+# Rejoin the game addons folder when the downloader was started without it.
 param([switch]$Loop)
 
-$Root = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
 . (Join-Path $PSScriptRoot 'state.ps1')
-$profile = Join-Path $Root 'serverprofile'
-$src = Join-Path $profile 'addons'
-$Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
+$root = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
+$data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
+$profile = Join-Path $root 'serverprofile'
+$addons = Join-Path $profile 'addons'
+$config = Join-Path $data 'batch1-serverconfig.json'
 
-# Skip copying when the engine and game share the same folder.
-$srcItem = Get-Item $src -Force -ErrorAction SilentlyContinue
-if ($srcItem -and $srcItem.LinkType) { exit 0 }
+function Sync-AddonsFolder {
+  $client = Get-ClientAddons $profile
+  if ($client -eq $addons) { return $true }
+  if ((Get-Item -LiteralPath $addons -Force -ErrorAction SilentlyContinue).LinkType) { return $true }
 
-function Sync-Completed {
-  $dst = Get-ClientAddons $profile
-  if ($src -eq $dst) { return $true }
-  $quietBefore = (Get-Date).AddMinutes(-2)
-  $copiesOk = $true
-  Get-ChildItem $src -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '_([0-9A-F]{16})$' -and $_.LastWriteTime -le $quietBefore -and
-      (Test-AddonComplete $_.FullName $_.LastWriteTime) } |
-    ForEach-Object {
-      $dir = $_
-      $id = [regex]::Match($dir.Name, '(?i)_([0-9A-F]{16})$').Groups[1].Value
-      # Reuse the game's folder name for the same Workshop ID.
-      $same = @(Get-ChildItem $dst -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "_$id$" })
-      $target = if ($same.Count) { $same[0].FullName } else { Join-Path $dst $dir.Name }
-      if ($same.Count -and $same[0].LinkType) { return }
-      if ($same.Count -and (Test-AddonComplete $target $same[0].LastWriteTime)) {
-        $sourceVersion = $null
-        $targetVersion = $null
-        if ([version]::TryParse((Get-InstalledVersion $dir.FullName), [ref]$sourceVersion) -and
-            [version]::TryParse((Get-InstalledVersion $target), [ref]$targetVersion) -and
-            $sourceVersion -le $targetVersion) { return }
-      }
-      robocopy $dir.FullName $target /E /XJ /R:2 /W:2 /NFL /NDL /NJH /NJS | Out-Null
-      if ($LASTEXITCODE -ge 8) { $copiesOk = $false; Write-Host "copy failed: $($dir.Name)" -ForegroundColor Red }
-    }
-  $copiesOk
+  try { Initialize-AddonsLink $addons $client $config }
+  catch {
+    Write-Warning "Could not link the game addons folder: $($_.Exception.Message)"
+    $false
+  }
 }
 
-# Serialize manual and background copies into the same game addons folder.
-$mutex = [System.Threading.Mutex]::new($false, 'ReforgerSyncLoop')
-if (-not $mutex.WaitOne(0)) { Write-Host 'another sync is already running' -ForegroundColor Yellow; exit 0 }
+if (!$Loop) { if (Sync-AddonsFolder) { exit 0 } else { exit 1 } }
 
-if (-not $Loop) { if (Sync-Completed) { exit 0 } else { Write-Host 'sync failed' -ForegroundColor Red; exit 1 } }
-
-$miss = 0
 $closedIdlePasses = 0
 while ($true) {
-  if (Sync-Completed) { $miss = 0 }
-  else {
-    $miss++
-    if ($miss -eq 3) { Write-Host "sync failed - still retrying every 60 s" -ForegroundColor Yellow }
-  }
+  $null = Sync-AddonsFolder
   if ($env:RFMM_DESKTOP_OWNER_PID -and !(Get-Process -Id $env:RFMM_DESKTOP_OWNER_PID -ErrorAction SilentlyContinue)) {
-    $queued = Get-Queued (Join-Path $Data 'batch1-serverconfig.json')
-    if ((Test-Path -LiteralPath (Join-Path $Data 'paused.flag')) -or !$queued.Count) { $closedIdlePasses++ }
+    $queued = Get-Queued $config
+    if ((Test-Path -LiteralPath (Join-Path $data 'paused.flag')) -or !$queued.Count) { $closedIdlePasses++ }
     else { $closedIdlePasses = 0 }
     if ($closedIdlePasses -ge 3) { break }
   }
-  Start-Sleep 60
+  Start-Sleep -Seconds 10
 }
