@@ -22,9 +22,9 @@ Select **Join** in Servers or Library to open the server's Steam invite. Arma Re
 
 **Workshop** searches by name, author, tag, or mod ID. Open an item for screenshots, dependencies, version history, and release notes. You can copy mod-list JSON from Workshop and server details.
 
-The packaged app's **Uninstall** menu can remove the downloader with or without the dedicated server it installed. Both options keep your game mods and presets.
+The **App** menu has both uninstall options. On Windows, it also has **Check for app updates**. Uninstalling keeps your game mods and presets.
 
-The app checks for mod updates when it opens. In **Library**, choose **Update all** or update individual mods as they appear. Recent Workshop releases show up first. A full check can take longer for large libraries.
+In **Library**, select **Check for mod updates**, then update all or individual mods. Expand a saved server to see its current scenario, region, platforms, and player count. Open **Player history & live mods** for the full report.
 
 On Linux, the desktop app finds the game's Steam Proton profile. Its default is `steamapps/compatdata/1874880/pfx/drive_c/users/steamuser/Documents/My Games/ArmaReforger` inside the Steam library. Set `RFMM_GAME_PROFILE` for a custom profile, `RFMM_HOME` for the engine folder, or `RFMM_DATA` for the queue and log folder.
 

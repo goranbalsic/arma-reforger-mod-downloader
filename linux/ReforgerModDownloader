@@ -282,7 +282,7 @@ class Downloader(Gtk.Application):
                 item = Gtk.MenuItem(label=label)
                 item.connect("activate", self.confirm_uninstall, engine)
                 menu.append(item)
-            button = Gtk.MenuButton(label="Uninstall", popup=menu)
+            button = Gtk.MenuButton(label="App", popup=menu)
             header.pack_end(button)
             menu.show_all()
             header.show_all()

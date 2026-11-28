@@ -33,8 +33,8 @@ internal sealed class DownloadWindow : Form
     private bool installing;
     private bool stoppingDownloads;
     private bool downloadsStopped;
-    private readonly MenuStrip menu = new MenuStrip();
-    private readonly ToolStripMenuItem checkUpdates = new ToolStripMenuItem("Check for updates");
+    private readonly Panel content = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+    private readonly ToolStripMenuItem checkUpdates = new ToolStripMenuItem("Check for app updates");
     private AppUpdates.Pending pendingAppUpdate;
     private bool restartForUpdate;
     private bool uninstallRequested;
@@ -52,17 +52,24 @@ internal sealed class DownloadWindow : Form
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(610, 460);
         ClientSize = new Size(1024, 740);
+        var menu = new MenuStrip { Dock = DockStyle.Fill, Margin = Padding.Empty };
+        var appMenu = new ToolStripMenuItem("&App");
+        appMenu.DropDownItems.Add(checkUpdates);
+        checkUpdates.Click += (sender, args) => CheckForAppUpdates(true);
+        appMenu.DropDownItems.Add(new ToolStripSeparator());
+        appMenu.DropDownItems.Add("Uninstall downloader", null, (sender, args) => ConfirmUninstall(false));
+        appMenu.DropDownItems.Add("Uninstall downloader and engine", null, (sender, args) => ConfirmUninstall(true));
+        menu.Items.Add(appMenu);
+        MainMenuStrip = menu;
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.Controls.Add(menu, 0, 0);
+        layout.Controls.Add(content, 0, 1);
+        Controls.Add(layout);
         ShowSetup();
         if (engineInstalled) setup.Hide();
-        menu.Items.Add(checkUpdates);
-        checkUpdates.Click += (sender, args) => CheckForAppUpdates(true);
-        var maintenance = new ToolStripMenuItem("Uninstall");
-        maintenance.DropDownItems.Add("Uninstall downloader", null, (sender, args) => ConfirmUninstall(false));
-        maintenance.DropDownItems.Add("Uninstall downloader and engine", null, (sender, args) => ConfirmUninstall(true));
-        menu.Items.Add(maintenance);
-        MainMenuStrip = menu;
-        Controls.Add(menu);
-        menu.BringToFront();
         Shown += async (sender, args) =>
         {
             CheckForAppUpdates(false);
@@ -204,7 +211,7 @@ internal sealed class DownloadWindow : Form
         progressArea.Controls.Add(progressPanel);
         progressArea.Controls.Add(setupProgress);
         setup.Controls.Add(progressArea);
-        Controls.Add(setup);
+        content.Controls.Add(setup);
         RefreshSetupLocation();
         browse.Click += async (sender, args) =>
         {
@@ -332,9 +339,7 @@ internal sealed class DownloadWindow : Form
         install.Enabled = browse.Enabled = false;
         setup.Hide();
         view = new WebView2 { Dock = DockStyle.Fill };
-        Controls.Add(view);
-        view.BringToFront();
-        menu.BringToFront();
+        content.Controls.Add(view);
         try
         {
             Directory.CreateDirectory(root);

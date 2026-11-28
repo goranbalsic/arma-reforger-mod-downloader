@@ -337,6 +337,9 @@ Check 'a preset is created from installed mods' ((($pout -join ' ') -match 'OK -
 "== updates"
 "  (clear the queue first so a queued server mod cannot hide the update)"
 $null = Ask $main "/clear-queue?t=$tok" 'POST'
+$auto = Ask $main "/update-mods?scope=all&check=1&auto=1&t=$tok" 'POST'
+Check 'a stale dashboard cannot launch an automatic update check' ($auto.status -eq 400 -and
+  !(Test-Path -LiteralPath (Join-Path $data 'update-progress.json')))
 $u = Ask $main "/update-mods?scope=tracked&t=$tok" 'POST'
 Check 'the update check starts' ($u.status -eq 200) $u.body
 $sawProgress = $false; $upDone = $false
@@ -353,8 +356,8 @@ Check 'a newer Workshop version is queued with its version' ($updEntry -eq 1)
 Check 'the update result is shown' ([bool]$st.json.modUpdate) $st.json.modUpdate
 Check 'cancel updates removes the pending batch' ((Ask $main "/cancel-mod-updates?t=$tok" 'POST').status -eq 200)
 
-$autoCheck = Ask $main "/update-mods?scope=all&check=1&auto=1&t=$tok" 'POST'
-Check 'automatic update detection starts without queueing mods' ($autoCheck.status -eq 200 -and @(QueueIds).Count -eq 0)
+$manualCheck = Ask $main "/update-mods?scope=all&check=1&t=$tok" 'POST'
+Check 'manual update detection starts without queueing mods' ($manualCheck.status -eq 200 -and @(QueueIds).Count -eq 0)
 $preview = $null
 for ($i = 0; $i -lt 60; $i++) {
   Start-Sleep -Milliseconds 250
@@ -381,8 +384,6 @@ Check 'update all appends the remaining update without duplicating the first' (
   $all.status -eq 200 -and @((Cfg).game.mods).Count -eq 2 -and (QueueIds) -contains 'AAAAAAAAAAAAAAA2') $all.body
 $cancelAgain = Ask $main "/cancel-mod-updates?t=$tok" 'POST'
 Check 'cancelling clears updates applied in separate requests' ($cancelAgain.status -eq 200 -and @(QueueIds).Count -eq 0)
-$recentAuto = Ask $main "/update-mods?scope=all&check=1&auto=1&t=$tok" 'POST'
-Check 'automatic checks reuse recent results across requests' ((ReplyText $recentAuto) -match 'Recent update results')
 
 "== cancel downloads"
 $partialId = 'AAAAAAAAAAAAAAA3'

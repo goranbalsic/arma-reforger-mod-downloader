@@ -156,7 +156,19 @@ sys.exit(3)
         assert not launcher.exists() and not private.exists() and not (data / "batch1-serverconfig.json").exists()
         assert engine.exists() != remove_engine and (game / "keep.pak").is_file() and unrelated.is_file()
 
+    game = Path(fixture) / "test-game"
+    os.environ["RFMM_GAME_PROFILE"] = str(game)
+    addon = game / "addons" / f"FieldRadio_{MOD_ID}"
+    addon.mkdir(parents=True)
+    (addon / "data.pak").write_bytes(b"x")
+    (addon / "meta").write_text(
+        '{"meta":{"selectedRev":0,"versions":[{"version":"1.0.0","package":{"files":[{"name":"data.pak","size":1}]}}]}}',
+        encoding="utf-8",
+    )
     app.DATA.mkdir(exist_ok=True)
+    (app.DATA / "batch1-servers.json").write_text(json.dumps({
+        "servers": [{"id": SERVER_ID, "name": SERVER["name"], "mods": SERVER["mods"]}],
+    }), encoding="utf-8")
     (app.DATA / "batch1-serverconfig.json").write_text(json.dumps({
         "game": {"name": "Test", "scenarioId": "fixture", "mods": [
             {"modId": "ABCDEF0123456789", "name": "Linux fixture", "size": 128}
@@ -168,6 +180,7 @@ sys.exit(3)
         probe_started = False
         screenshots_started = False
         screenshots_done = False
+        update_requests = []
         observed = "The WebView has not evaluated a document yet."
 
         def do_activate(self):
@@ -184,12 +197,19 @@ sys.exit(3)
                 return
             app.GLib.timeout_add(500, self.check_queue)
 
+        def handle_request(self, manager, message):
+            path = urlsplit(json.loads(message.get_js_value().to_json(0))["path"])
+            if path.path == "/update-mods":
+                self.update_requests.append(parse_qs(path.query))
+            super().handle_request(manager, message)
+
         def check_queue(self):
             self.view.evaluate_javascript(
                 "JSON.stringify({uri:location.href, queue:document.getElementById('queue')?.textContent,"
                 " notice:document.getElementById('say')?.textContent, title:document.title,"
                 " bridge:typeof window.receiveReply, text:document.body?.textContent.slice(0, 100),"
-                " probe:window.statusProbe, checking:document.getElementById('gbtxt')?.textContent.startsWith('Checking')})",
+                " probe:window.statusProbe, checking:document.getElementById('gbtxt')?.textContent.startsWith('Checking'),"
+                " installed:!!LAST?.D.BBBBBBBBBBBBBBBB})",
                 -1, None, app.ORIGIN, None, self.check_result, None,
             )
             return not self.passed
@@ -205,6 +225,10 @@ sys.exit(3)
             if probe and probe.get("finished") and not probe.get("passed"):
                 self.window.close()
             elif probe and probe.get("passed"):
+                if len(self.update_requests) != 1 or self.update_requests[0].get("check") != ["1"] or "auto" in self.update_requests[0]:
+                    self.observed += f"\nUnexpected mod update requests: {len(self.update_requests)}."
+                    self.window.close()
+                    return
                 if self.screenshots_done:
                     self.passed = True
                     self.window.close()
@@ -212,7 +236,7 @@ sys.exit(3)
                     self.screenshots_started = True
                     self.capture_layouts()
             elif ("Linux fixture" in state.get("queue", "") and not state.get("notice")
-                  and not state.get("checking") and not self.probe_started):
+                  and not state.get("checking") and state.get("installed") and not self.probe_started):
                 self.probe_started = True
                 self.view.evaluate_javascript("""
                     (() => {
@@ -321,6 +345,19 @@ sys.exit(3)
                         await waitFor('#mres .mod-card [data-id="BBBBBBBBBBBBBBBB"]', 'Field Radio');
                         if (!document.getElementById('mres').textContent.includes('Équipe')) throw new Error('Workshop name is unreadable.');
                         if (document.querySelector('#mstatus span').textContent !== '1 mod') throw new Error('Workshop count label is incorrect.');
+                        SRVAt=0;await loadSrv();
+                        document.querySelector('nav a[href="#library"]').click();
+                        const tracked = await waitFor('#srv [data-server="' + serverId + '"]');
+                        tracked.open=true;
+                        await waitFor('#srv .library-preview', '87 / 128 players');
+                        const preview=document.querySelector('#srv .library-preview');
+                        if (!preview.textContent.includes('Conflict - Everon') || !preview.textContent.includes('London') ||
+                            !preview.textContent.includes('PlayStation')) throw new Error('The saved server preview is incomplete.');
+                        document.querySelector('#srv [data-action="server-details"]').click();
+                        await waitFor('#historyPlot canvas');
+                        document.getElementById('inspection').close();
+                        document.getElementById('checkModUpdates').click();
+                        await waitFor('#availableUpdatesList li', 'Field Radio');
                         document.querySelector('nav a[href="#downloads"]').click();
                       }
                     })()

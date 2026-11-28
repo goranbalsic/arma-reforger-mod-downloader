@@ -363,10 +363,13 @@ function Invoke-DashboardRequest($ctx) {
       }
       '/apply-mod-updates' { $msg = Add-ModUpdateBatch (Get-AvailableModUpdates $ctx.Request.QueryString['id']) }
       '/update-mods' {
+        if ($ctx.Request.QueryString['auto'] -eq '1') {
+          Write-DashboardError $ctx.Response 400 'Use Check for mod updates in Library to start a check.'
+          return
+        }
         $scope = [string]$ctx.Request.QueryString['scope']
         $id = [string]$ctx.Request.QueryString['id']
         $checkOnly = $ctx.Request.QueryString['check'] -eq '1'
-        $automatic = $checkOnly -and $ctx.Request.QueryString['auto'] -eq '1'
         $ids = @()
         switch ($scope) {
           'all' {}
@@ -379,23 +382,18 @@ function Invoke-DashboardRequest($ctx) {
           }
           default { throw 'Unknown update scope.' }
         }
-        $snapshotFile = [IO.FileInfo]::new((Join-Path $Data 'mod-update-available.json'))
-        if ($automatic -and $snapshotFile.Exists -and $snapshotFile.LastWriteTimeUtc -gt [datetime]::UtcNow.AddHours(-1)) {
-          $msg = 'Recent update results are available.'
-        } else {
-          if ($modUpdateJob -and $modUpdateJob.State -in 'Running','NotStarted') { throw 'An update check is already running.' }
-          if (!$checkOnly -and @(Get-PendingModUpdates (Get-Status).queue).Count) {
-            throw 'Mod updates are already queued. Finish or cancel them before checking again.'
-          }
-          if ($modUpdateJob) { Remove-Job $modUpdateJob }
-          Save-Json @{ phase = 'checking'; checked = 0; total = 0; found = 0
-            text = 'Checking installed mod versions...'; at = [datetime]::UtcNow.ToString('o') } (Join-Path $Data 'update-progress.json')
-          $script:modUpdateJob = Start-Job -ScriptBlock {
-            param($scriptPath,$scope,$ids,$root,$data,$api,$agent,$queueRevision,$checkOnly)
-            & $scriptPath -Scope $scope -Ids $ids -Root $root -Data $data -ApiBase $api -UserAgent $agent -QueueRevision $queueRevision -CheckOnly:$checkOnly
-          } -ArgumentList (Join-Path $PSScriptRoot 'update-mods.ps1'),$scope,$ids,$Root,$Data,$ApiBase,$UserAgent,([string](Get-QueueRevision)),$checkOnly
-          $msg = 'Checking installed mod versions...'
+        if ($modUpdateJob -and $modUpdateJob.State -in 'Running','NotStarted') { throw 'An update check is already running.' }
+        if (!$checkOnly -and @(Get-PendingModUpdates (Get-Status).queue).Count) {
+          throw 'Mod updates are already queued. Finish or cancel them before checking again.'
         }
+        if ($modUpdateJob) { Remove-Job $modUpdateJob }
+        Save-Json @{ phase = 'checking'; checked = 0; total = 0; found = 0
+          text = 'Checking installed mod versions...'; at = [datetime]::UtcNow.ToString('o') } (Join-Path $Data 'update-progress.json')
+        $script:modUpdateJob = Start-Job -ScriptBlock {
+          param($scriptPath,$scope,$ids,$root,$data,$api,$agent,$queueRevision,$checkOnly)
+          & $scriptPath -Scope $scope -Ids $ids -Root $root -Data $data -ApiBase $api -UserAgent $agent -QueueRevision $queueRevision -CheckOnly:$checkOnly
+        } -ArgumentList (Join-Path $PSScriptRoot 'update-mods.ps1'),$scope,$ids,$Root,$Data,$ApiBase,$UserAgent,([string](Get-QueueRevision)),$checkOnly
+        $msg = 'Checking installed mod versions...'
       }
       '/refresh-servers' {
         $r = Start-RefreshJob @($serverList | ForEach-Object { $_.id })

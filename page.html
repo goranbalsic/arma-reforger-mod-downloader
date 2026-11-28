@@ -114,6 +114,11 @@ button.tag:hover:enabled{text-decoration:underline}
 #srv details{padding:8px 0}#srv details:last-child{border-bottom:0}
 .library-row .library-actions{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}
 .library-row .library-actions .mini{margin:0}
+.library-preview{padding:10px 0}
+.library-preview .inspection-summary{grid-template-columns:auto minmax(0,1fr)}
+.library-preview .cover{width:clamp(56px,13vw,110px)}
+.library-preview h3{margin:0 0 4px;font-size:15px}
+.library-row[open] [data-library-scenario],[data-library-scenario]:empty{display:none}
 @media(min-width:820px){#downloads{grid-template-columns:1fr 1fr}#downloads>.view-head,#downloads>.overview{grid-column:1/-1}}
 @media(max-width:730px){.server-row{grid-template-columns:minmax(0,1fr) auto auto;gap:5px 10px}.server-labels{display:none}.server-name{grid-column:1/-1}.server-actions{grid-column:1/-1;justify-content:flex-start}.server-pop{grid-column:2}.mod-filters{grid-template-columns:1fr 1fr}.mod-filters label:last-child{grid-column:1/-1}}
 @media(max-width:520px){h1{font-size:17px}.version{display:block}.overview{padding:14px}.repo{font-size:12px}.inspection-summary{grid-template-columns:1fr}.inspection-summary .cover{max-width:230px}}
@@ -230,7 +235,7 @@ function sz(b){return b>=1073741824?(b/1073741824).toFixed(b>=107374182400?2:3)+
 function left(sec){ if(!Number.isFinite(sec)||sec<=0)return ''; if(sec<60)return Math.ceil(sec)+' sec'; const minutes=Math.ceil(sec/60); return minutes>=60?Math.floor(minutes/60)+'h '+minutes%60+'m':minutes+' min'; }
 let SRV=null,BR=null,lastKey='';
 let RECENT=[],RCREV='',loadingCompleted=false;
-let availableUpdates=[],availableRevision='',loadingUpdates=false,updatesKey='',automaticUpdateCheck=false,applyingUpdates=false;
+let availableUpdates=[],availableRevision='',loadingUpdates=false,updatesKey='',applyingUpdates=false;
 let transferSample=null;
 let FILTER={queue:'',act:'',rec:'',srv:''},LAST=null;
 function match(name,q){ return !q || String(name).toLowerCase().indexOf(q.toLowerCase())>=0; }
@@ -361,6 +366,7 @@ function renderAll(){
   renderRec(LAST.recent);
 }
 let SRVAt=0;
+const libraryPreviews=new Map();
 async function loadSrv(){
  // /servers costs a full disk scan: retry at most every 5 s, and never accept an
  // error body - a 500 body parses as json, which made SRV truthy and froze the
@@ -380,12 +386,14 @@ function renderSrv(D,A,B){
  if(!visible.length){document.getElementById('srv').textContent='No tracked servers match this filter.';return;}
  document.getElementById('srv').innerHTML=visible.map(v=>{
   const done=LAST?.inventoryPending&&v.haveCount!=null?v.haveCount:v.mods.filter(m=>D[m.id]).length;
+  const scenario=libraryPreviews.get(v.id)?.details?.scenarioName;
   return '<details class="library-row" data-server="'+escAttr(v.id)+'"'+(expanded.has(String(v.id))?' open':'')+'><summary><b>'+esc(v.name)+'</b> <span class="dim">'+
    (v.mods.length?done+' / '+v.mods.length+' downloaded':'Vanilla')+'</span>'+
+   '<span class="subline" data-library-scenario>'+esc(scenario||'')+'</span>'+
    (v.changed?'<span class="warn subline">Mod list changed +' +Number(v.changed.added)+' −'+Number(v.changed.removed)+'</span>':'')+
-   '</summary><div class="library-actions">'+
+   '</summary><div class="library-preview" role="status"></div><div class="library-actions">'+
    (desktopTransport?actionButton('Join','join-server',v.id,'mini primary'):'')+
-   actionButton('Server details','server-details',v.id)+
+   actionButton('Player history & live mods','server-details',v.id)+
    (v.mods.length?actionButton('Update mods','update',v.id,'mini','data-scope="server"')+actionButton('Queue first','queue-server',v.id)+actionButton('Make preset','preset',v.id):'')+
    actionButton('Refresh','refresh-one',v.id)+actionButton('Remove','remove-server',v.id)+'</div><ul>'+
    v.mods.map(m=>{
@@ -394,6 +402,24 @@ function renderSrv(D,A,B){
     return '<li>'+t+' '+esc(m.name)+' <span class="dim">'+s2+'</span></li>';
    }).join('')+'</ul></details>';
  }).join('');
+}
+async function loadLibraryPreview(row){
+ const id=row.dataset.server,preview=row.querySelector('.library-preview');
+ let entry=libraryPreviews.get(id);
+ if(!entry||Date.now()>=entry.expires){
+  entry={expires:Date.now()+30000,request:directoryGet('/browse-server',{id})};
+  libraryPreviews.set(id,entry);
+ }
+ if(!entry.details)preview.textContent='Loading live server details…';
+ try{
+  const details=entry.details=await entry.request;
+  if(!row.isConnected)return;
+  row.querySelector('[data-library-scenario]').textContent=details.scenarioName||'';
+  preview.innerHTML=serverOverview(details);
+ }catch{
+  if(libraryPreviews.get(id)===entry)libraryPreviews.delete(id);
+  if(row.isConnected)preview.textContent='Live details are unavailable. The saved mod list is below.';
+ }
 }
 const regions={frankfurt:'Frankfurt',london:'London',los_angeles:'Los Angeles',miami:'Miami',new_york:'New York',singapore:'Singapore',sydney:'Sydney',tokyo:'Tokyo'};
 const platformNames={pc:'PC',xbox:'Xbox',psn:'PlayStation'};
@@ -604,6 +630,15 @@ const inspectionBody=document.getElementById('inspectionBody');
 let inspectionRevision=0,inspectionResult=null,inspectionPath=[];
 inspection.addEventListener('close',()=>{if(!inspection.open){inspectionRevision++;inspectionResult=null;inspectionPath=[];}});
 function factList(items){return '<div class="fact-list">'+items.filter(Boolean).map(item=>'<span>'+esc(item)+'</span>').join('')+'</div>';}
+function serverOverview(server,actions=''){
+ const population=server.online&&server.players!=null&&server.maxPlayers!=null?playerCount(server)+' players':playerCount(server);
+ return '<section class="inspection-summary">'+cover(server.image,server.scenarioName||server.name)+
+  '<div><h3>'+esc(server.scenarioName||'Unknown scenario')+'</h3>'+factList([
+   regionLabel(server.region),regionPing(server.region),platformLabel(server),population,server.queue>0?server.queue+' waiting':'',
+   server.official===true?'Official':server.official===false?'Community':'',server.locked?'Password protected':'',
+   server.battleye===true?'BattlEye enabled':server.battleye===false?'BattlEye disabled':'',server.gameVersion?'Game '+server.gameVersion:''])+
+  populationBar(server)+(actions?'<div class="detail-tools">'+actions+'</div>':'')+'</div></section>';
+}
 async function inspect(kind,id,{back=false,retry=false}={}){
  if(back){inspectionPath.pop();({kind,id}=inspectionPath.at(-1)||{});if(!id)return;}
  else if(!retry){
@@ -642,10 +677,7 @@ function renderServerDetails(server){
  const summary=server.hasModList
   ? (mods.length?server.haveCount+' of '+mods.length+' on disk · '+missing:'This server runs without Workshop mods.')
   : 'This server has no public mod list in the current snapshot.';
- return '<section class="inspection-summary">'+cover(server.image,server.scenarioName||server.name)+
-  '<div><h3>'+esc(server.scenarioName||'Unknown scenario')+'</h3>'+factList([regionLabel(server.region),regionPing(server.region),platformLabel(server),playerCount(server)+(server.online?' players':''),server.queue>0?server.queue+' waiting':'',
-   server.official?'Official':'Community',server.locked?'Password protected':'',server.battleye===true?'BattlEye enabled':server.battleye===false?'BattlEye disabled':'',server.gameVersion?'Game '+server.gameVersion:''])+
-  '<div class="detail-tools">'+joinButton(server)+queue+tracked+'</div></div></section>'+
+ return serverOverview(server,joinButton(server)+queue+tracked)+
   '<section id="activity" data-id="'+escAttr(server.id)+'"><div class="detail-tools"><h3>Player history</h3><label>Range <select id="historyRange"><option value="6h">6 hours</option><option value="24h" selected>24 hours</option><option value="7d">7 days</option><option value="30d">30 days</option></select></label></div>'+
   '<div id="historyPlot" role="status">Loading player history…</div></section>'+
   '<section><div class="detail-tools"><h3>Server mods</h3>'+(mods.length?'<button class="mini" data-action="export-config">Copy config JSON</button>':'')+'</div><p class="dim">'+esc(summary)+'</p>'+
@@ -800,10 +832,6 @@ async function refreshStatus(){
   showNotice('modUpdate',s.modUpdate||'');
   document.getElementById('checkModUpdates').disabled=!!s.modUpdateRunning;
   document.getElementById('cancelModUpdates').hidden=!s.modUpdateCancellable;
-  if(!automaticUpdateCheck&&!s.inventoryPending&&((s.installedIds||[]).length||(s.cl||[]).length)){
-   automaticUpdateCheck=true;
-   if(!s.modUpdateRunning) actionRequest('/update-mods?scope=all&check=1&auto=1').catch(error=>console.debug('Automatic update check failed',error));
-  }
   if(s.modUpdatesRevision&&location.hash==='#library'){
    loadAvailableUpdates([s.modUpdatesRevision,s.recentRev,s.queue.map(mod=>mod.id).join(',')].join('|'));
   }
@@ -978,16 +1006,16 @@ async function presetSrv(id,ev){
  b.disabled=false; b.textContent='Make preset';
 }
 async function refreshSrv(ev){
- ev.stopPropagation();   // the button sits inside the card's <summary>
+ ev.stopPropagation();
  const b=ev.target; b.disabled=true; b.textContent='refreshing...';
  const r=await post('refresh-servers');
- b.disabled=false; b.textContent='Refresh all';
+ b.disabled=false; b.textContent='Refresh lists';
  if(!r||!r.job)return;
  say('Refreshing servers…');
  const j=await jobPoll(r.job);
  if(j.state==='done')say(j.msg||'refresh done',true);
  else say('refresh failed: '+(j.error||'unknown'),false);
- SRV=null; SRVAt=0; await loadSrv();
+ libraryPreviews.clear(); SRVAt=0; await loadSrv();
  if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
  await tick();
 }
@@ -1001,7 +1029,7 @@ async function refreshOne(id,ev){
  const j=await jobPoll(r.job);
  if(j.state==='done')say(j.msg||'refresh done',true);
  else say('refresh failed: '+(j.error||'unknown'),false);
- SRV=null; SRVAt=0; await loadSrv();
+ libraryPreviews.delete(id); SRVAt=0; await loadSrv();
  if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
  await tick();
 }
@@ -1010,6 +1038,7 @@ async function removeSrv(id,ev){
  if(!await confirmAction('Remove tracked server?', 'Queued and installed mods stay where they are.', 'Remove server'))return;
  const b=ev.target; b.disabled=true; b.textContent='removing...';
  await post('remove-server?id='+id);
+ libraryPreviews.delete(id);
  SRV=null; SRVAt=0; await loadSrv();
  if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
  refreshTrackedRows();
@@ -1130,6 +1159,7 @@ inspection.addEventListener('change',event=>{
 inspection.addEventListener('click',event=>{if(event.target.closest('a[href="#library"]'))inspection.close();});
 document.addEventListener('toggle',event=>{
  const details=event.target;
+ if(details.matches('details[data-server]')&&details.open&&details.isConnected)loadLibraryPreview(details);
  if(details.matches('details[data-versions-id]')&&details.open)loadVersions(details);
 },true);
 document.addEventListener('error',event=>{if(event.target.matches?.('.cover img'))event.target.hidden=true;},true);
