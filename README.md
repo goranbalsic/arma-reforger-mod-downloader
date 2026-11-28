@@ -34,6 +34,8 @@ On Linux, the desktop app finds the game's Steam Proton profile. Its default is 
 
 ![Download progress, speed, and queued Workshop mods](docs/screenshots/downloads.png)
 
-![Search for Arma Reforger servers and Workshop mods](docs/screenshots/discover.png)
+![Live server browser with region, platform, and mod filters](docs/screenshots/servers.png)
 
-![Library showing tracked servers and completed mods](docs/screenshots/library.png)
+![Workshop search with category and tag filters](docs/screenshots/discover.png)
+
+![Library showing updates and live details for a saved server](docs/screenshots/library.png)
