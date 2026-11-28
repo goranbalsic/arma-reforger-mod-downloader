@@ -279,6 +279,9 @@ sys.exit(3)
                       probe.unknownSize = !activeBar.hasAttribute('aria-valuenow') &&
                                           document.getElementById('act').textContent.includes('12 B transferred');
                       renderQueue([{id, name}], {});
+                      document.querySelector('#queue button').focus();
+                      renderQueue([{id, name}], {});
+                      probe.queueFocus = document.activeElement.dataset.id === id;
                       renderRec([{id, name, b:1}]);
                       BR = [{id, name, players:0, maxPlayers:1, modCount:1}];
                       renderBrowse();
@@ -315,7 +318,7 @@ sys.exit(3)
                         const statusPassed = response.ok && !probe.actionDone && probe.elapsed < 1000 &&
                                        probe.textOnly && probe.noInlineHandlers && probe.confirmed && probe.speed &&
                                        probe.sharedPoll && probe.unknownSize && probe.liveServerCount && probe.updateControls &&
-                                       probe.mediaOrigins;
+                                       probe.mediaOrigins && probe.queueFocus;
                         try {
                           await checkDirectory();
                           probe.passed = statusPassed;

@@ -37,6 +37,7 @@ main{min-width:0;width:100%;max-width:1440px;margin:0 auto;padding:28px clamp(20
   body{display:grid;grid-template-columns:176px minmax(0,1fr)}
   .shell{position:sticky;inset-block-start:0;height:100vh;display:flex;flex-direction:column;overflow:auto}
   .shell-footer{margin-block-start:auto;padding-top:16px}
+  .wordmark h1 span{font-size:16px;white-space:nowrap}
 }
 
 /* Controls and feedback */
@@ -81,8 +82,8 @@ li:last-child{border-bottom:0}
 .transfer-controls{margin-top:20px}
 .transfer button{background:#353e4c;color:#faf8f2;border-color:#69717e}
 .transfer button:hover:enabled{background:#485260}
-.transfer #bstart{background:#f3b08c;color:#31231d;border-color:#f3b08c}
-.transfer #bstart:hover:enabled{background:#f6c5aa}
+.transfer #bstart:enabled,.transfer[data-running="true"] #bpause:enabled{background:#f3b08c;color:#31231d;border-color:#f3b08c}
+.transfer #bstart:hover:enabled,.transfer[data-running="true"] #bpause:hover:enabled{background:#f6c5aa}
 .transfer .notice{background:#373e49;margin-top:12px;margin-bottom:0}
 #boot,#downloadRefreshError{margin-block:12px}
 .download-tools{display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px 16px;padding-block:0 12px;border-bottom:1px solid var(--line)}
@@ -220,7 +221,7 @@ dialog form{display:flex;justify-content:flex-end;gap:8px}
   <a href="#library">Library</a>
  </nav>
  <div class="shell-footer"><a href="https://github.com/__REPO__" target="_blank" rel="noopener noreferrer">GitHub</a><span>v__VERSION__</span></div>
-</header><main><div class="notice" id="modUpdateNotice" hidden><span role="status" id="modUpdate" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="modUpdate">Dismiss</button></div><div class="notice" id="sayNotice" hidden><span role="status" id="say" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="say">Dismiss</button></div><div class="notice" id="finishedNotice" hidden><span role="status" id="finished" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="finished">Dismiss</button></div><section class="view" id="downloads" aria-labelledby="downloadsTitle">
+</header><main><div class="notice" id="sayNotice" hidden><span role="status" id="say" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="say">Dismiss</button></div><div class="notice" id="finishedNotice" hidden><span role="status" id="finished" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="finished">Dismiss</button></div><section class="view" id="downloads" aria-labelledby="downloadsTitle">
  <div class="view-head">
   <h2 id="downloadsTitle">Downloads</h2>
   <div class="library-controls"><a href="#servers">Browse servers</a><a href="#discover">Find mods</a></div>
@@ -303,6 +304,7 @@ dialog form{display:flex;justify-content:flex-end;gap:8px}
  <div id="mpager" class="pager" aria-label="Workshop pages"></div>
 </section><section class="view" id="library"><div class="view-head"><h2>Library</h2><button data-action="open-addons" class="desktop-only" hidden>Open addons folder</button></div>
 <div class="library-controls"><button id="checkModUpdates" class="primary" data-action="check-updates">Check for mod updates</button> <button data-action="update" data-scope="tracked">Update tracked servers&rsquo; mods</button> <button id="cancelModUpdates" data-action="cancel-updates" hidden>Cancel updates</button></div>
+<div class="notice" id="modUpdateNotice" hidden><span role="status" id="modUpdate" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="modUpdate">Dismiss</button></div>
 <section class="card panel" id="availableUpdates" aria-labelledby="availableUpdatesTitle" hidden>
  <div class="row"><h2 id="availableUpdatesTitle">Available updates <span id="availableUpdatesCount" class="dim"></span></h2><button id="applyAllUpdates" data-action="apply-updates">Update all</button></div>
  <ul id="availableUpdatesList"></ul>
@@ -983,6 +985,7 @@ async function refreshStatus(){
    const statusLabel=document.getElementById('st');
    if(statusLabel.textContent!==status)statusLabel.textContent=status;
    statusLabel.className=s.active.length?'ok':'dim';
+  statusLabel.closest('.transfer').dataset.running=String(!!s.running);
   const totalKnown=s.totalB>0&&!s.unknownSizes&&!s.inventoryPending;
   const totalLabel=(s.estimatedSizes?'~':'')+sz(s.totalB);
   document.getElementById('gbtxt').textContent=s.inventoryPending?'Checking installed mods…':hasQueue
