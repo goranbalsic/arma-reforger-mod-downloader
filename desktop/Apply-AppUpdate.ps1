@@ -5,7 +5,7 @@ $restart = $env:RFMM_UPDATE_RESTART -eq '1'
 $log = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'desktop.log'
 
 function Write-UpdateLog([string]$Message) {
-  try { Add-Content -LiteralPath $log -Value "[$(Get-Date -Format s)] $Message" } catch { }
+  try { Add-Content -LiteralPath $log -Encoding UTF8 -Value "[$(Get-Date -Format s)] $Message" } catch { }
 }
 
 try {

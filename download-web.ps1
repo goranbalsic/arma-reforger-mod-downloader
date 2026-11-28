@@ -2,6 +2,11 @@ param([switch]$Check, [switch]$Desktop, [switch]$DesktopStop, [switch]$ReadOnly,
 # Serve the desktop dashboard over stdio or the browser dashboard at localhost:8123.
 # RFMM_HOME sets the engine folder. RFMM_DATA sets the queue and log folder.
 $ErrorActionPreference = 'Stop'
+$utf8 = [Text.UTF8Encoding]::new($false)
+if ($Desktop -or $DesktopStop) {
+  [Console]::InputEncoding = $utf8
+  [Console]::OutputEncoding = $utf8
+}
 $Root    = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
 $Data    = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
 $Cfg     = Join-Path $Data 'batch1-serverconfig.json'
@@ -9,6 +14,7 @@ $Sizes   = Join-Path $Data 'batch1-sizes.json'
 $ServersPath = Join-Path $Data 'batch1-servers.json'
 $DsProfile = Join-Path $Root 'serverprofile'
 $Url     = 'http://localhost:8123/'
+$JsonType = 'application/json; charset=utf-8'
 
 . (Join-Path $PSScriptRoot 'state.ps1')
 . (Join-Path $PSScriptRoot 'workshop-api.ps1')
@@ -171,7 +177,7 @@ function Test-LocalDashboardRequest($Request) {
 }
 function Write-DashboardError($Response, [int]$Status, [string]$Message) {
   $Response.StatusCode = $Status
-  $Response.ContentType = 'application/json'
+  $Response.ContentType = $JsonType
   $bytes = [Text.Encoding]::UTF8.GetBytes((@{ error = $Message } | ConvertTo-Json -Compress))
   $Response.OutputStream.Write($bytes, 0, $bytes.Length)
 }
@@ -208,13 +214,13 @@ function Invoke-DashboardRequest($ctx) {
       { $_ -in '/open-addons-folder','/join-server' } {
         if (!$Desktop) { Write-DashboardError $ctx.Response 403 'Open the desktop app to use this action.'; return }
         $payload = if ($path -eq '/join-server') {
-          @{ url = Get-LibraryJoinUrl $ctx.Request.QueryString['id']; msg = 'Opening Arma Reforger through Steam…' }
+          @{ url = Get-LibraryJoinUrl $ctx.Request.QueryString['id']; msg = 'Opening Arma Reforger through Steam...' }
         } else {
           [void][IO.Directory]::CreateDirectory($Addons)
           @{ folder = $Addons; msg = 'Opened the addons folder.' }
         }
         $b = [Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/' {
@@ -263,13 +269,13 @@ function Invoke-DashboardRequest($ctx) {
         $status.modUpdateCancellable = $status.modUpdateRunning -or $pendingUpdates -gt 0
         if (!$status.modUpdate -and $pendingUpdates) { $status.modUpdate = "$pendingUpdates mod updates pending." }
         $b = [Text.Encoding]::UTF8.GetBytes(($status | ConvertTo-Json -Depth 5 -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/available-mod-updates' {
         $available = @{ updates = @((Get-AvailableModUpdates).Values | Sort-Object name) }
         $b = [Text.Encoding]::UTF8.GetBytes(($available | ConvertTo-Json -Depth 4 -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/completed' {
@@ -278,7 +284,7 @@ function Invoke-DashboardRequest($ctx) {
         $recent = @(Get-RecentDownloads $inv)
         $rev = Get-RecentRevision $recent
         $b = [Text.Encoding]::UTF8.GetBytes((@{ rev = $rev; recent = $recent } | ConvertTo-Json -Depth 4 -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/servers' {
@@ -289,7 +295,7 @@ function Invoke-DashboardRequest($ctx) {
           [PSCustomObject]@{ id = $s.id; name = $s.name; mods = $s.mods
                              changed = $s.changed; haveCount = @($s.mods | Where-Object { $have.ContainsKey($_.id) }).Count } })
         $b = [Text.Encoding]::UTF8.GetBytes((@{ servers = $rows } | ConvertTo-Json -Depth 6 -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/browse' {
@@ -309,7 +315,7 @@ function Invoke-DashboardRequest($ctx) {
                              scenarioName = $_.scenarioName; haveCount = $haveCount; totalMods = $total
                              changed = $(if ($tracked.ContainsKey($_.id) -and $tracked[$_.id].PSObject.Properties['changed']) { $tracked[$_.id].changed } else { $null }) } })
         $b = [Text.Encoding]::UTF8.GetBytes((@{ servers = $rows } | ConvertTo-Json -Depth 4 -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/browse-server' {
@@ -323,7 +329,7 @@ function Invoke-DashboardRequest($ctx) {
                   haveCount = @($rows | Where-Object { $_.have }).Count
                   missingBytes = [double]($missing | ForEach-Object { $_.expB } | Measure-Object -Sum).Sum }
         $b = [Text.Encoding]::UTF8.GetBytes(($out | ConvertTo-Json -Depth 4 -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/start'  { $msg = Invoke-StartQueue;  Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
@@ -348,7 +354,7 @@ function Invoke-DashboardRequest($ctx) {
                              size = [double]$_.size; version = $_.version }
         })
         $b = [Text.Encoding]::UTF8.GetBytes((@{ total = $r.total; page = $r.page; pages = $r.pages; mods = $mods } | ConvertTo-Json -Depth 4 -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/add-mod' { $msg = Invoke-AddMod $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
@@ -414,14 +420,14 @@ function Invoke-DashboardRequest($ctx) {
         $id = [string]$ctx.Request.QueryString['id']
         $r = if ($id.StartsWith('preset-')) { Complete-PresetJob $id } else { Complete-RefreshJob $id }
         $b = [Text.Encoding]::UTF8.GetBytes(($r | ConvertTo-Json -Compress))
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/remove-server'   { $msg = Invoke-RemoveServer  $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
       default   {
         $ctx.Response.StatusCode = 404
         $b = [Text.Encoding]::UTF8.GetBytes('{"error":"no such route"}')
-        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentType = $JsonType
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
     }
@@ -432,13 +438,13 @@ function Invoke-DashboardRequest($ctx) {
         # never write the request token: it is the CSRF guard for these routes
         $what = $ctx.Request.Url.AbsolutePath
         if ($ctx.Request.QueryString['id']) { $what += '?id=' + $ctx.Request.QueryString['id'] }
-        Add-Content (Join-Path $Data 'actions.log') ("[{0:yyyy-MM-dd HH:mm:ss}] {1,7} {2} <- {3}: {4}" -f
+        Add-Content -LiteralPath (Join-Path $Data 'actions.log') -Encoding UTF8 -Value ("[{0:yyyy-MM-dd HH:mm:ss}] {1,7} {2} <- {3}: {4}" -f
           (Get-Date), $src, $what, $ctx.Request.RemoteEndPoint, ($msg -replace '\s+', ' '))
       } catch { }
       $resp = @{ ok = $true; msg = [string]$msg }
       if ($jobId) { $resp.job = [string]$jobId }
       $b = [Text.Encoding]::UTF8.GetBytes(($resp | ConvertTo-Json -Compress))
-      $ctx.Response.ContentType = 'application/json'
+      $ctx.Response.ContentType = $JsonType
       $ctx.Response.OutputStream.Write($b, 0, $b.Length)
     }
   } catch {
@@ -447,7 +453,7 @@ function Invoke-DashboardRequest($ctx) {
     # Serialize error messages as JSON so paths and other special characters are escaped.
     $b = [Text.Encoding]::UTF8.GetBytes((@{ error = [string]$_.Exception.Message } | ConvertTo-Json -Compress))
     $ctx.Response.StatusCode = 500
-    $ctx.Response.ContentType = 'application/json'
+    $ctx.Response.ContentType = $JsonType
     $ctx.Response.OutputStream.Write($b, 0, $b.Length)
   }
   finally { $ctx.Response.OutputStream.Close() }
@@ -458,23 +464,20 @@ if ($Desktop) {
   else { Add-Type -AssemblyName System.Web }
   if ($ReadOnly) { $script:inventoryEvery = 15 } elseif (-not $NoHelpers) { Start-DownloadHelpers }
   # One request and one reply per line. Other output is diagnostic text.
-  $utf8 = [Text.UTF8Encoding]::new($false)
-  [Console]::InputEncoding = $utf8
-  [Console]::OutputEncoding = $utf8
   while ($null -ne ($line = [Console]::ReadLine())) {
     try {
       $request = ConvertFrom-Json ($line.TrimStart([char]0xFEFF))
       $url = [uri]::new([uri]'https://reforger.local/', [string]$request.path)
       if ($url.Scheme -ne 'https' -or $url.Authority -ne 'reforger.local') { throw 'Invalid dashboard path.' }
       if ($ReadOnly -and ($request.method -ne 'GET' -or $url.AbsolutePath -notin '/status','/completed')) {
-        [Console]::WriteLine('RFMM ' + (@{ status = 403; type = 'application/json'; body = '{"error":"read-only worker"}' } | ConvertTo-Json -Compress))
+        [Console]::WriteLine('RFMM ' + (@{ status = 403; type = $JsonType; body = '{"error":"read-only worker"}' } | ConvertTo-Json -Compress))
         continue
       }
       $stream = [IO.MemoryStream]::new()
       $reply = [pscustomobject]@{
         Headers = [Net.WebHeaderCollection]::new()
         StatusCode = 200
-        ContentType = 'application/json'
+        ContentType = $JsonType
         ContentLength64 = 0
         Nonce = $null
         OutputStream = $stream
@@ -482,7 +485,7 @@ if ($Desktop) {
       $ctx = [pscustomobject]@{
         Request = [pscustomobject]@{
           Url = $url
-          QueryString = [Web.HttpUtility]::ParseQueryString($url.Query)
+          QueryString = [Web.HttpUtility]::ParseQueryString($url.Query, $utf8)
           HttpMethod = [string]$request.method
           UserAgent = 'Reforger Desktop'
           RemoteEndPoint = 'desktop'
@@ -497,7 +500,7 @@ if ($Desktop) {
         nonce = $reply.Nonce
       }
     } catch {
-      $result = @{ status = 500; type = 'application/json'; body = (@{ error = $_.Exception.Message } | ConvertTo-Json -Compress) }
+      $result = @{ status = 500; type = $JsonType; body = (@{ error = $_.Exception.Message } | ConvertTo-Json -Compress) }
     }
     [Console]::WriteLine('RFMM ' + ($result | ConvertTo-Json -Compress))
   }

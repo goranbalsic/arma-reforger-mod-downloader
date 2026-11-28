@@ -61,7 +61,10 @@ internal sealed class PowerShellHost : IDisposable
         {
             if (timedOut || process.HasExited)
                 throw new IOException("The downloader stopped. Close and reopen the app.");
-            await process.StandardInput.WriteLineAsync(json.Serialize(new { path = path, method = method }));
+            byte[] line = Encoding.UTF8.GetBytes(json.Serialize(new { path = path, method = method }) + "\n");
+            Stream input = process.StandardInput.BaseStream;
+            await input.WriteAsync(line, 0, line.Length);
+            await input.FlushAsync();
             var response = ReadReplyAsync();
             if (await Task.WhenAny(response, Task.Delay(TimeSpan.FromMinutes(3))) != response)
             {

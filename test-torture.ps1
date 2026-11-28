@@ -64,6 +64,7 @@ Check 'GET on a mutating route is 405' ($getMut.code -eq 405) "code $($getMut.co
 $pageResp = Call '/'
 Check 'responses carry X-Frame-Options DENY' (($pageResp.headers['X-Frame-Options'] -join ',') -eq 'DENY')
 Check 'responses carry nosniff' (($pageResp.headers['X-Content-Type-Options'] -join ',') -eq 'nosniff')
+Check 'legacy JSON replies declare UTF-8' (((Call '/status').headers['Content-Type'] -join ',') -eq 'application/json; charset=utf-8')
 Check 'responses carry the CSP' ([string]$pageResp.headers['Content-Security-Policy'] -match "frame-ancestors 'none'")
 $nonce = [regex]::Match($pageResp.content, '<script nonce="([0-9a-f]{32})">').Groups[1].Value
 Check 'script policy requires the nonce from the page' ([bool]$nonce -and (($pageResp.headers['Content-Security-Policy'] -join ',') -match "script-src 'nonce-$nonce';"))

@@ -17,7 +17,9 @@ function Read-WorkshopJson([IO.Stream]$Stream, [long]$Limit, [Threading.Cancella
       if ($body.Length + $count -gt $Limit) { throw 'The Workshop response is too large.' }
       $body.Write($buffer, 0, $count)
     }
-    $json = [Text.Encoding]::UTF8.GetString($body.ToArray()).TrimStart([char]0xFEFF)
+    $utf8 = [Text.UTF8Encoding]::new($false, $true)
+    try { $json = $utf8.GetString($body.ToArray()).TrimStart([char]0xFEFF) }
+    catch [Text.DecoderFallbackException] { throw 'The Workshop response was not valid UTF-8.' }
     ConvertFrom-Json $json -ErrorAction Stop
   } finally { $body.Dispose() }
 }

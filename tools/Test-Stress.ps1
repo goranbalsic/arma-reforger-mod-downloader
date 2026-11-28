@@ -162,7 +162,7 @@ function Ask($proc, [string]$path, [string]$method = 'GET') {
   $reply = $line.Substring(5) | ConvertFrom-Json
   $json = $null
   try { $json = $reply.body | ConvertFrom-Json } catch { }
-  @{ status = [int]$reply.status; body = [string]$reply.body; json = $json }
+  @{ status = [int]$reply.status; body = [string]$reply.body; json = $json; type = $reply.type }
 }
 function Cfg { Get-Content (Join-Path $data 'batch1-serverconfig.json') -Raw | ConvertFrom-Json }
 function Get-ServersData { @((Get-Content (Join-Path $data 'batch1-servers.json') -Raw | ConvertFrom-Json).servers) }
@@ -207,7 +207,10 @@ Check 'adding a server starts the download' ((ReplyText $add) -match 'Downloads 
 $null = Ask $main "/add-server?id=$($fixture.serverId)&t=$tok" 'POST'
 Check 'adding the same server again keeps one entry' (@((Get-Content (Join-Path $data 'batch1-servers.json') -Raw | ConvertFrom-Json).servers).Count -eq 1) "raw=$((Get-Content (Join-Path $data 'batch1-servers.json') -Raw))"
 Check 'join requires the desktop action token' ((Ask $main "/join-server?id=$($fixture.serverId)" 'POST').status -eq 403)
-Check 'join resolves a Steam invite for a tracked server' ((Ask $main "/join-server?id=$($fixture.serverId)&t=$tok" 'POST').json.url -match '^steam://run/1874880//')
+$join = Ask $main "/join-server?id=$($fixture.serverId)&t=$tok" 'POST'
+Check 'join resolves a Steam invite for a tracked server' ($join.json.url -match '^steam://run/1874880//')
+Check 'join reports readable status text' ($join.json.msg -ceq 'Opening Arma Reforger through Steam...')
+Check 'desktop JSON replies declare UTF-8' ($join.type -eq 'application/json; charset=utf-8')
 Check 'join rejects servers outside the Library' ((Ask $main "/join-server?id=99999999-9999-9999-9999-999999999999&t=$tok" 'POST').status -ne 200)
 Check 'open addons returns the same game folder used for downloads' ((Ask $main "/open-addons-folder?t=$tok" 'POST').json.folder -eq $gameAddons)
 Check 'the queue has no duplicates' (@(QueueIds).Count -eq @(QueueIds | Select-Object -Unique).Count)

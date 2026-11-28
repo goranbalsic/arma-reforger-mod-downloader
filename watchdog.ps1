@@ -12,7 +12,7 @@ $LogFile = Join-Path $Data 'watchdog.log'
 $PauseFlag = Join-Path $Data 'paused.flag'
 $SkipFile = Join-Path $Data 'skipped.json'
 
-function Write-Wd([string]$t) { try { "[$(Get-Date -f HH:mm:ss)] $t" | Add-Content $LogFile } catch { } }
+function Write-Wd([string]$t) { try { Add-Content -LiteralPath $LogFile -Encoding UTF8 -Value "[$(Get-Date -f HH:mm:ss)] $t" } catch { } }
 function Get-LatestLog {
   Get-ChildItem -LiteralPath (Join-Path $DsProfile 'logs') -Recurse -Filter console.log -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -137,7 +137,7 @@ while ($true) {
     $lg = Get-LatestLog
     if ($lg -and $lg.LastWriteTime -gt (Get-Date).AddMinutes(-20)) {
       if ($scanFile -ne $lg.FullName) { $scanFile = $lg.FullName; $scanAt = 0; $scanCur = $null }
-      $lines = @(Get-Content $lg.FullName -ErrorAction SilentlyContinue)
+      $lines = @(Get-Content -LiteralPath $lg.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)
       $scan = Get-WorkshopFailures $lines $scanAt $scanCur
       $scanAt = $scan.next
       $scanCur = $scan.current
@@ -164,7 +164,7 @@ while ($true) {
           if ($null -eq $queued) { $queued = ,@() }
           Write-Wd "skipped after 3 Workshop errors: $($gone -join ', ')"
           try {
-            $prev = if (Test-Path $SkipFile) { @(Get-Content $SkipFile -Raw | ConvertFrom-Json) } else { @() }
+            $prev = @(Read-Json $SkipFile @())
             Save-Json @($prev + $gone | Select-Object -Unique) $SkipFile
           } catch { Write-Wd "could not save the Workshop skip history: $($_.Exception.Message)" }
         }

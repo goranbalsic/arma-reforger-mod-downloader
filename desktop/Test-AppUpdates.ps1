@@ -95,6 +95,30 @@ try {
   [Environment]::SetEnvironmentVariable('RFMM_DATA', $oldData)
 }
 'Windows status worker session check passed.'
+$echoRuntime = Join-Path $fixture 'utf8-worker'
+[void][IO.Directory]::CreateDirectory($echoRuntime)
+@'
+$utf8 = [Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = [Console]::OutputEncoding = $utf8
+$request = [Console]::ReadLine().TrimStart([char]0xFEFF) | ConvertFrom-Json
+[Console]::WriteLine('RFMM ' + (@{ status=200; body=$request.path } | ConvertTo-Json -Compress))
+'@ | Set-Content -LiteralPath (Join-Path $echoRuntime 'download-web.ps1') -Encoding Ascii
+$savedInput = [Console]::InputEncoding
+$reader = $null
+try {
+  [Console]::InputEncoding = [Text.Encoding]::GetEncoding(1252)
+  $reader = $hostType.GetConstructors($instanceFlags)[0].Invoke(
+    [object[]]@($echoRuntime.PSObject.BaseObject, $fixture.PSObject.BaseObject, $engine.PSObject.BaseObject, $sessionToken.PSObject.BaseObject, $true))
+  $sample = '/test/' + [char]0xE9 + [char]0x65E5 + [char]::ConvertFromUtf32(0x1F680)
+  $replyTask = $hostType.GetMethod('SendAsync', $instanceFlags).Invoke($reader, @($sample.PSObject.BaseObject, 'GET'))
+  if (!$replyTask.Wait(15000) -or $replyTask.Result.body -cne $sample) {
+    throw 'The Windows desktop transport did not round-trip UTF-8 under a legacy console code page.'
+  }
+} finally {
+  if ($reader) { $reader.Dispose() }
+  [Console]::InputEncoding = $savedInput
+}
+'Windows desktop request and response UTF-8 checks passed.'
 $notice = Join-Path $extracted 'NOTICE'
 $expectedNotice = (Get-FileHash -LiteralPath $notice -Algorithm SHA256).Hash
 [IO.File]::WriteAllBytes($notice, (New-Object byte[] (Get-Item -LiteralPath $notice).Length))

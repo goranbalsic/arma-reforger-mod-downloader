@@ -587,7 +587,7 @@ class Downloader(Gtk.Application):
                     raise OSError("Could not open the destination.")
                 reply["body"] = json.dumps({"msg": action["msg"]})
         except Exception as error:
-            reply = {"status": 503, "type": "application/json", "body": json.dumps({"error": str(error)})}
+            reply = {"status": 503, "type": "application/json; charset=utf-8", "body": json.dumps({"error": str(error)})}
         self.view.evaluate_javascript(f"window.receiveReply({identity}, {json.dumps(reply)})",
                                       -1, None, ORIGIN, None, None, None)
 

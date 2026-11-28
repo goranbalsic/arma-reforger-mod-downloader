@@ -14,8 +14,9 @@ $originalGameProfile = $env:RFMM_GAME_PROFILE
 $env:RFMM_GAME_PROFILE = Join-Path $tmp 'game'
 
 Write-Host 'PowerShell state paths'
-$interpolatedPaths = @(Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -Filter '*.ps1' |
-  Where-Object { $_.FullName -notmatch '[/\\](?:\.desktop-build|dist|data|serverprofile|steamcmd|armar-server)[/\\]' } |
+$scriptFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -Filter '*.ps1' |
+  Where-Object { $_.FullName -notmatch '[/\\](?:\.desktop-build|dist|data|serverprofile|steamcmd|armar-server)[/\\]' })
+$interpolatedPaths = @($scriptFiles |
   ForEach-Object {
     $tokens = $parseErrors = $null
     $tree = [Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors)
@@ -29,6 +30,11 @@ foreach ($finding in $interpolatedPaths) {
   Write-Host ("{0}:{1}: use Join-Path for this path" -f $finding.Extent.File, $finding.Extent.StartLineNumber)
 }
 Check 'scripts use portable path construction' ($interpolatedPaths.Count -eq 0)
+$nonAsciiScripts = @($scriptFiles | Where-Object {
+  [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($_.FullName)) -match '[^\x00-\x7f]'
+})
+foreach ($scriptFile in $nonAsciiScripts) { Write-Host "Use ASCII in Windows PowerShell script source: $($scriptFile.FullName)" }
+Check 'PowerShell source stays readable across Windows code pages' ($nonAsciiScripts.Count -eq 0)
 
 Write-Host 'project repository identity'
 $retiredOwner = 'goran' + 'balsic'
@@ -588,6 +594,14 @@ Write-Host 'UTF-8 Workshop responses'
     try { $null = Read-WorkshopJson $fixture 8 ([Threading.CancellationToken]::None) }
     catch { $rejected = $_.Exception.Message -match 'too large' }
     Check 'streaming Workshop reads enforce the decoded size limit' $rejected
+  } finally { $fixture.Dispose() }
+  $malformed = [Text.Encoding]::ASCII.GetBytes('{"name":"?broken"}')
+  $malformed[[Array]::IndexOf($malformed, [byte]63)] = 255
+  $fixture = [IO.MemoryStream]::new($malformed)
+  try {
+    $rejected = try { $null = Read-WorkshopJson $fixture 512 ([Threading.CancellationToken]::None); $false }
+      catch { $_.Exception.Message -match 'not valid UTF-8' }
+    Check 'invalid Workshop UTF-8 is rejected before it reaches the dashboard' $rejected
   } finally { $fixture.Dispose() }
   $rejected = $false
   try { $null = Get-WorkshopUri 'http://example.invalid/' } catch { $rejected = $true }

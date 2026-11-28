@@ -18,7 +18,7 @@ Set-Content -Path (Join-Path $partial 'partial.pak') -Value 'unfinished'
 '{"totalBytes":1048576,"mods":{"ABCDEF0123456789":{"name":"Sample","bytes":1048576}}}' |
   Set-Content -LiteralPath (Join-Path $data 'batch1-sizes.json') -Encoding UTF8
 $serverId = 'aaaaaaaa-0000-0000-0000-000000000000'
-$serverName = 'Caf' + [char]0xE9 + ' ' + [char]0x2605
+$serverName = 'Caf' + [char]0xE9 + ' ' + [char]0x2605 + ' ' + [char]0x65E5 + [char]::ConvertFromUtf32(0x1F680)
 $serversJson = @{ servers = @(@{ id = $serverId; name = $serverName; mods = @() }) } | ConvertTo-Json -Depth 4
 [IO.File]::WriteAllText((Join-Path $data 'batch1-servers.json'), $serversJson, [Text.UTF8Encoding]::new($false))
 
@@ -57,6 +57,9 @@ try {
     throw 'The dashboard HTML and desktop response must carry the same script nonce.'
   }
   if ($page.body -notmatch 'Remove') { throw 'The dashboard did not return the expected page.' }
+  if (!$page.body.Contains(('Connecting to the downloader' + [char]0x2026))) {
+    throw 'The desktop worker did not preserve the dashboard punctuation.'
+  }
   foreach ($id in 'failedNotice','vresNotice','modUpdateNotice','cancelModUpdates') {
     if (!$page.body.Contains(('id="{0}"' -f $id))) { throw "The dashboard is missing $id." }
   }

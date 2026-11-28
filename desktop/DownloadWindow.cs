@@ -436,7 +436,7 @@ internal sealed class DownloadWindow : Form
                 PowerShellHost.Log(error.Message);
                 reply = new PowerShellHost.Reply
                 {
-                    status = 503, type = "application/json",
+                    status = 503, type = "application/json; charset=utf-8",
                     body = new JavaScriptSerializer().Serialize(new { error = error.Message })
                 };
             }
