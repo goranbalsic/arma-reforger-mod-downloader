@@ -62,6 +62,7 @@ ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#
 .result-head:empty{display:none}
 .browser-empty{margin:0;padding:24px 16px;text-align:center;overflow-wrap:anywhere;color:var(--muted)}
 .server-list{background:var(--paper);border:1px solid var(--line);border-radius:9px;overflow:clip}
+.server-list:empty{display:none}
 .server-row{display:grid;grid-template-columns:minmax(0,3.5fr) minmax(0,1.28fr) minmax(0,1.15fr) 74px minmax(100px,auto);align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid var(--line);min-width:0}
 .server-row:last-child{border-bottom:0}
 .server-labels{background:var(--wash);font-size:12px;font-weight:650}
@@ -115,6 +116,7 @@ button.tag:hover:enabled{text-decoration:underline}
 @media(min-width:820px){#downloads{grid-template-columns:1fr 1fr}#downloads>.view-head,#downloads>.overview{grid-column:1/-1}}
 @media(max-width:730px){.server-row{grid-template-columns:minmax(0,1fr) auto auto;gap:5px 10px}.server-labels{display:none}.server-name{grid-column:1/-1}.server-actions{grid-column:1/-1;justify-content:flex-start}.server-pop{grid-column:2}.mod-filters{grid-template-columns:1fr 1fr}.mod-filters label:last-child{grid-column:1/-1}}
 @media(max-width:520px){h1{font-size:17px}.version{display:block}.overview{padding:14px}.repo{font-size:12px}.inspection-summary{grid-template-columns:1fr}.inspection-summary .cover{max-width:230px}}
+@media(min-width:390px) and (max-width:510px){.workshop-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.mod-body{padding:8px}.mod-foot{flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){.bar>div{transition:none}}
 </style></head><body>
 <header><h1>Arma Reforger Mod Downloader <small class="version">v__VERSION__</small></h1><nav aria-label="Dashboard sections"><a href="#downloads">Downloads</a><a href="#servers">Servers</a><a href="#discover">Workshop</a><a href="#library">Library</a></nav><a class="repo" href="https://github.com/__REPO__" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.5 7.5 0 0 1 8 3.85c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></header><main><div class="notice" id="modUpdateNotice" hidden><span role="status" id="modUpdate" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="modUpdate">Dismiss</button></div><div class="notice" id="sayNotice" hidden><span role="status" id="say" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="say">Dismiss</button></div><div class="notice" id="finishedNotice" hidden><span role="status" id="finished" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="finished">Dismiss</button></div><section class="view" id="downloads"><div class="view-head"><div><h2>Downloads</h2><p>Monitor transfers and manage the download queue.</p></div><div class="library-controls"><a href="#servers">Browse servers</a><a href="#discover">Find mods</a></div></div><div class="card overview"><h2>Download status <span id="st" role="status"></span></h2>
@@ -149,19 +151,21 @@ button.tag:hover:enabled{text-decoration:underline}
   <input class="f" id="fq" aria-label="Filter queue" placeholder="Filter queue" data-filter="queue">
   <div id="queue" class="dim">-</div></details>
 </section><section class="view" id="servers">
- <div class="view-head"><div><h2>Servers</h2><p>Find a session, inspect its mod list, and join through Steam.</p></div><button data-action="refresh-browser">Refresh</button></div>
+ <div class="view-head"><h2>Servers</h2><button data-action="refresh-browser">Refresh</button></div>
  <form id="serverFilters" class="panel">
   <div class="search"><input id="bq" name="q" type="search" maxlength="120" aria-label="Search servers" placeholder="Server or scenario name"><button type="submit">Search</button></div>
-  <details class="filters" id="serverFilterDetails" open><summary>Server filters</summary>
-   <div class="filter-grid">
+  <div class="filter-grid">
     <label>Region<select name="region" id="serverRegion"><option value="">Any region</option></select></label>
     <label>Platform<select name="platform"><option value="">All platforms</option><option value="pc">PC</option><option value="xbox">Xbox</option><option value="psn">PlayStation</option></select></label>
     <label>Mods<select name="hasMods"><option value="">Any</option><option value="true">Modded</option><option value="false">Vanilla</option></select></label>
+    <label>Sort by<select name="sort"><option value="players">Most players</option><option value="name">Name</option><option value="newest">Recently added</option><option value="lastSeen">Last seen</option></select></label>
+  </div>
+  <details class="filters"><summary>More filters</summary>
+   <div class="filter-grid">
     <label>Status<select name="online"><option value="true">Online</option><option value="all">All servers</option><option value="false">Offline</option></select></label>
     <label>Host<select name="official"><option value="">Any</option><option value="true">Official</option><option value="false">Community</option></select></label>
     <label>Password<select name="locked"><option value="">Any</option><option value="false">Open</option><option value="true">Protected</option></select></label>
     <label>BattlEye<select name="battleye"><option value="">Any</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
-    <label>Sort by<select name="sort"><option value="players">Most players</option><option value="name">Name</option><option value="newest">Recently added</option><option value="lastSeen">Last seen</option></select></label>
    </div>
    <div class="latency"><button class="mini" type="button" data-action="measure-ping">Measure regional ping</button>
     <label>Max regional ping <select id="maxRegionPing" disabled><option value="">Any</option><option value="50">50 ms</option><option value="100">100 ms</option><option value="150">150 ms</option><option value="200">200 ms</option></select></label>
@@ -172,7 +176,7 @@ button.tag:hover:enabled{text-decoration:underline}
  <div><div id="bstatus" class="result-head" role="status" tabindex="-1"></div><div id="bs" class="server-list"></div></div>
  <div id="bpager" class="pager" aria-label="Server pages"></div>
 </section><section class="view" id="discover">
- <div class="view-head"><div><h2>Workshop</h2><p>Browse mods, dependencies, and releases before queueing.</p></div></div>
+ <div class="view-head"><h2>Workshop</h2></div>
  <form id="workshopFilters" class="panel">
   <div class="search"><input id="mq" name="q" type="search" maxlength="120" aria-label="Search Workshop mods" placeholder="Name, author, or 16-character mod ID"><button type="submit">Search</button></div>
   <div class="mod-filters">
@@ -510,11 +514,11 @@ function cdnImage(value){
  }catch{}
  return '';
 }
-function cover(url,name,alt=''){
+function cover(url,name,alt='',eager=false){
  const image=cdnImage(url);
- const initials=String(name||'').trim().split(/\s+/).slice(0,2).map(word=>Array.from(word)[0]||'').join('').toUpperCase();
+ const initials=String(name||'').trim().split(/\s+/).slice(0,2).map(word=>word.match(/[\p{L}\p{N}]/u)?.[0]||'').join('').toUpperCase();
  return '<div class="cover">'+(alt?'':'<span aria-hidden="true">'+esc(initials)+'</span>')+
-  (image?'<img src="'+escAttr(image)+'" alt="'+escAttr(alt)+'" loading="lazy" decoding="async" referrerpolicy="no-referrer">':'')+'</div>';
+  (image?'<img src="'+escAttr(image)+'" alt="'+escAttr(alt)+'" loading="'+(eager?'eager':'lazy')+'" decoding="async" referrerpolicy="no-referrer">':'')+'</div>';
 }
 function actionButton(label,action,id,classes='mini',extra=''){
  return '<button class="'+classes+'" data-action="'+action+'" data-id="'+escAttr(id)+'" '+extra+'>'+esc(label)+'</button>';
@@ -535,11 +539,11 @@ function renderBrowse(){
  const el=document.getElementById('bs');
  if(!BR||!BR.length){el.innerHTML='<p class="browser-empty">No servers match. Try a different name or clear filters.</p>';return;}
  const labels='<div class="server-row server-labels" aria-hidden="true"><span>Server / Scenario</span><span>Region / Platform</span><span>Players</span><span>Mods</span><span></span></div>';
- el.innerHTML=BR.map(v=>{
+ el.innerHTML=BR.map((v,index)=>{
   const tags=[v.official?'Official':'',v.locked?'Protected':'',v.tracked?'Tracked':''].filter(Boolean);
   const mods=v.modCount===0?'Vanilla':v.modCount!=null?v.modCount+' mods':'Unknown';
   const name=actionButton(v.name||'Unnamed server','server-details',v.id,'text-button');
-  return '<article class="server-row"><div class="server-name">'+cover(v.image,v.scenarioName||v.name)+'<div>'+name+
+  return '<article class="server-row"><div class="server-name">'+cover(v.image,v.scenarioName||v.name,'',index<4)+'<div>'+name+
    '<span class="subline">'+esc(v.scenarioName||'Unknown scenario')+'</span></div></div>'+
    '<div>'+esc(regionLabel(v.region))+'<span class="subline">'+esc(platformLabel(v))+'</span>'+
    (regionPing(v.region)?'<span class="subline">'+regionPing(v.region)+'</span>':'')+'</div>'+
@@ -583,7 +587,7 @@ function renderMods(){
  const el=document.getElementById('mres'); if(!MRES)return;
  el.classList.toggle('workshop-grid',MRES.mods.length>0);
  if(!MRES.mods.length){el.innerHTML='<p class="browser-empty">No mods match. Try another search or remove a filter.</p>';return;}
- el.innerHTML=MRES.mods.map(m=>'<article class="mod-card">'+cover(m.image,m.name)+'<div class="mod-body"><h3>'+
+ el.innerHTML=MRES.mods.map((m,index)=>'<article class="mod-card">'+cover(m.image,m.name,'',index<4)+'<div class="mod-body"><h3>'+
   actionButton(m.name||'Unnamed mod','mod-details',m.id,'text-button')+'</h3><span class="subline">'+esc(m.author||'Unknown author')+'</span>'+
   '<span class="subline">'+esc([m.id,m.version?'v'+m.version:'',workshopSize(m.size)].filter(Boolean).join(' · '))+'</span>'+
   (m.summary?'<p class="subline">'+esc(m.summary)+'</p>':'')+renderTags(m.tags,3)+

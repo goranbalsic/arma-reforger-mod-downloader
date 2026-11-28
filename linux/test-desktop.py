@@ -281,10 +281,10 @@ sys.exit(3)
                           probe.finished = true;
                         }
                       }, 150);
-                      async function waitFor(selector) {
+                      async function waitFor(selector,expectedText) {
                         for (let attempt = 0; attempt < 80; attempt++) {
                           const element = document.querySelector(selector);
-                          if (element) return element;
+                          if (element && (!expectedText || element.textContent.includes(expectedText))) return element;
                           await new Promise(resolve => setTimeout(resolve, 75));
                         }
                         throw new Error('Did not render ' + selector);
@@ -317,7 +317,7 @@ sys.exit(3)
                         if (!document.querySelector('.changelog').textContent.includes('Updated UI.')) throw new Error('Release notes did not load.');
                         document.getElementById('inspection').close();
                         document.querySelector('nav a[href="#discover"]').click();
-                        await waitFor('#mres .mod-card [data-id="BBBBBBBBBBBBBBBB"]');
+                        await waitFor('#mres .mod-card [data-id="BBBBBBBBBBBBBBBB"]', 'Field Radio');
                         if (!document.getElementById('mres').textContent.includes('Équipe')) throw new Error('Workshop name is unreadable.');
                         document.querySelector('nav a[href="#downloads"]').click();
                       }
@@ -363,7 +363,7 @@ sys.exit(3)
             pixbuf.savev(str(path), "png", [], [])
 
     test = SmokeTest()
-    app.GLib.timeout_add_seconds(50, lambda: (test.quit(), False)[1])
+    app.GLib.timeout_add_seconds(65, lambda: (test.quit(), False)[1])
     test.run([sys.argv[0]])
     workshop.shutdown()
     workshop.server_close()
