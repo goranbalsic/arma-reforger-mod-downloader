@@ -14,6 +14,7 @@ nav a{color:#d2ddce;padding:9px 1px;border-bottom:3px solid transparent;text-dec
 nav a[aria-current="page"]{color:#f1f4eb;border-color:#bbd7a9;font-weight:650}
 header :focus-visible{outline-color:#d5e4b6;outline-offset:-2px}
 a:hover{text-decoration:underline}
+main a,.inspection a{color:var(--accent)}
 main{padding-block:24px 48px}
 .view{display:grid;gap:18px;min-width:0}.view[hidden]{display:none}
 .view>h2{font-size:28px;line-height:1.2;letter-spacing:-.035em;margin:0}
@@ -34,7 +35,7 @@ main{padding-block:24px 48px}
 button,input,select,textarea{font:inherit;border:1px solid #849184;border-radius:5px;background:var(--paper);color:var(--ink);padding:6px 11px}
 button{font-size:14px;cursor:pointer}button:hover:enabled{background:var(--wash)}
 #bstart,.search button,.primary{color:white;background:var(--accent);border-color:var(--accent)}#bstart:hover,.search button:hover,.primary:hover:enabled{background:#273f28}
-button:disabled{opacity:.55;cursor:default}.mini{font-size:12px;margin:3px 0 3px 6px;padding:4px 8px}
+button:disabled{opacity:.55;cursor:default}.mini{font-size:12px;margin:3px 0 3px 6px;padding:4px 8px;white-space:nowrap;flex:none}
 input{min-width:0;max-width:100%}.search input{flex:1}.f{width:min(100%,310px);margin:8px 0 10px;font-size:14px}
 input::placeholder{color:var(--muted);opacity:1}
 details.card{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:13px 16px}
@@ -462,7 +463,7 @@ async function loadDirectoryList(kind,page,fromPager=false,refresh=false){
   if(r.dataset?.warming)snapshot='Server data is still loading.';
   else if(r.dataset?.stale)snapshot='Server snapshot is stale.';
   else if(r.dataset?.lastCollectionAt)snapshot='Updated '+fmtDate(r.dataset.lastCollectionAt,true);
-  status.innerHTML='<span>'+count.toLocaleString()+' '+kind+'</span>'+(snapshot?'<span>'+esc(snapshot)+'</span>':'');
+  status.innerHTML='<span>'+resultCount(count,kind==='servers'?'server':'mod')+'</span>'+(snapshot?'<span>'+esc(snapshot)+'</span>':'');
   renderPager(list.pager,kind,Number(r.page)||1,Number(r.pages)||0);
  }catch(error){
   if(revision!==list.revision)return;
@@ -482,6 +483,10 @@ function fmtDate(value,withTime=false){
  const time=new Date(value);
  if(!value||Number.isNaN(time.getTime()))return '';
  return time.toLocaleDateString(undefined, withTime?{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}:{year:'numeric',month:'short',day:'numeric'});
+}
+function resultCount(value,label){
+ const count=Number(value);
+ return count.toLocaleString()+' '+label+(count===1?'':'s');
 }
 function regionLabel(id){return Object.hasOwn(regions,id)?regions[id]:id?String(id).replace(/[_-]/g,' '):'Region unknown';}
 function regionPing(id){return Object.hasOwn(measuredRegions,id)?measuredRegions[id]+' ms to ping site':'';}
@@ -541,7 +546,7 @@ function renderBrowse(){
  const labels='<div class="server-row server-labels" aria-hidden="true"><span>Server / Scenario</span><span>Region / Platform</span><span>Players</span><span>Mods</span><span></span></div>';
  el.innerHTML=BR.map((v,index)=>{
   const tags=[v.official?'Official':'',v.locked?'Protected':'',v.tracked?'Tracked':''].filter(Boolean);
-  const mods=v.modCount===0?'Vanilla':v.modCount!=null?v.modCount+' mods':'Unknown';
+  const mods=v.modCount===0?'Vanilla':v.modCount!=null?resultCount(v.modCount,'mod'):'Unknown';
   const name=actionButton(v.name||'Unnamed server','server-details',v.id,'text-button');
   return '<article class="server-row"><div class="server-name">'+cover(v.image,v.scenarioName||v.name,'',index<4)+'<div>'+name+
    '<span class="subline">'+esc(v.scenarioName||'Unknown scenario')+'</span></div></div>'+

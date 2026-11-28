@@ -294,6 +294,7 @@ sys.exit(3)
                         const serverId = '11111111-1111-1111-1111-111111111111';
                         const server = await waitFor('#bs [data-id="' + serverId + '"]');
                         if (!server.textContent.includes('North Coast')) throw new Error('Server name changed.');
+                        if (document.querySelector('#bstatus span').textContent !== '1 server') throw new Error('Server count label is incorrect.');
                         server.click();
                         await waitFor('#historyPlot canvas');
                         const filter = await waitFor('#serverModFilter');
@@ -319,6 +320,7 @@ sys.exit(3)
                         document.querySelector('nav a[href="#discover"]').click();
                         await waitFor('#mres .mod-card [data-id="BBBBBBBBBBBBBBBB"]', 'Field Radio');
                         if (!document.getElementById('mres').textContent.includes('Équipe')) throw new Error('Workshop name is unreadable.');
+                        if (document.querySelector('#mstatus span').textContent !== '1 mod') throw new Error('Workshop count label is incorrect.');
                         document.querySelector('nav a[href="#downloads"]').click();
                       }
                     })()
