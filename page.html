@@ -1,162 +1,269 @@
 <!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Arma Reforger Mod Downloader</title>
 <style>
-:root{--ink:#242c26;--muted:#526055;--line:#d1d8cc;--accent:#335436;--paper:#fff;--wash:#e9eee5;--focus:#26608f;font:15px/1.5 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:#f3f5f0;color-scheme:light}
+/* Shell and type */
+:root{
+  --paper:#faf9f6;--surface:#fffefa;--ink:#242a32;--muted:#5e626b;--line:#e0ded8;
+  --wash:#eeece5;--accent:#974321;--focus:#a94f24;--nav:#202733;--nav-ink:#e9eaf0;
+  --signal:#e98e60;--control:#c5c1b8;--radius:8px;
+  font:14px/1.5 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:var(--paper);color-scheme:light;
+}
 *{box-sizing:border-box}
+body{margin:0;min-width:280px}
 [hidden]{display:none!important}
-body{margin:0}
-header,main{margin:auto;padding-inline:max(clamp(16px,3vw,44px),calc((100% - 1340px)/2))}
-header{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 12px;padding-top:14px;background:#26332a;color:#f1f4eb}
-h1{margin:0;font-size:21px;font-weight:650;letter-spacing:-.03em}
-.version{font-size:12px;color:#c6d2c2;font-weight:500;letter-spacing:0;white-space:nowrap}
-.repo{grid-column:2;grid-row:1;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:inherit;text-decoration:none}
-nav{display:flex;grid-column:1/-1;gap:clamp(12px,4vw,32px);overflow:auto}
-nav a{color:#d2ddce;padding:9px 1px;border-bottom:3px solid transparent;text-decoration:none;white-space:nowrap}
-nav a[aria-current="page"]{color:#f1f4eb;border-color:#bbd7a9;font-weight:650}
-header :focus-visible{outline-color:#d5e4b6;outline-offset:-2px}
-a:hover{text-decoration:underline}
-main a,.inspection a{color:var(--accent)}
-main{padding-block:24px 48px}
-.view{display:grid;gap:18px;min-width:0}.view[hidden]{display:none}
-.view>h2{font-size:28px;line-height:1.2;letter-spacing:-.035em;margin:0}
-.card{min-width:0;overflow-wrap:anywhere}
-.overview{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:18px 22px}
-.overview h2{margin:0;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:15px}
-#st{font-size:13px;font-weight:500}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
-.row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0}
-.big{font-weight:600;font-size:clamp(20px,3vw,30px);font-variant-numeric:tabular-nums}
-.bar{background:#e2e7e6;height:8px;border-radius:4px;overflow:hidden}.bar>div{height:100%;background:var(--accent);transition:width .25s linear}.bar.amber>div{background:#926500}
-.controls,.search{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.controls{margin-top:14px}
-.queue-tools{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
-.queue-tools button{font-size:13px}
-#bcancel:enabled{color:#a33731}
-#spd,#act .row>span{white-space:nowrap;font-variant-numeric:tabular-nums}
-#act .row{flex-wrap:wrap;gap:2px 12px;margin-top:12px}
-button,input,select,textarea{font:inherit;border:1px solid #849184;border-radius:5px;background:var(--paper);color:var(--ink);padding:6px 11px}
-button{font-size:14px;cursor:pointer}button:hover:enabled{background:var(--wash)}
-#bstart,.search button,.primary{color:white;background:var(--accent);border-color:var(--accent)}#bstart:hover,.search button:hover,.primary:hover:enabled{background:#273f28}
-button:disabled{opacity:.55;cursor:default}.mini{font-size:12px;margin:3px 0 3px 6px;padding:4px 8px;white-space:nowrap;flex:none}
-input{min-width:0;max-width:100%}.search input{flex:1}.f{width:min(100%,310px);margin:8px 0 10px;font-size:14px}
-input::placeholder{color:var(--muted);opacity:1}
-details.card{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:13px 16px}
-dialog{width:min(490px,calc(100% - 28px));border:1px solid var(--line);border-radius:8px;padding:24px;background:#fff;color:var(--ink)}dialog::backdrop{background:#20272988}dialog p{margin:12px 0 20px}dialog form{display:flex;justify-content:flex-end;gap:8px}.notice{display:flex;align-items:start;justify-content:space-between;gap:12px}.notice[hidden]{display:none}.notice button{margin:0}.notice + .notice{margin-top:6px}summary{cursor:pointer}summary h2{display:inline;font-size:17px;margin:0}
-ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#bs details{border-bottom:1px solid #e1e5e4;padding:5px 0}
-#queue,#rec,#act{max-height:420px;overflow:auto}
-#say:empty{display:none}
-.dim{color:var(--muted)}.ok{color:#286345}.warn{color:#83540a}.bad{color:#a33731}
 :focus-visible{outline:2px solid var(--focus);outline-offset:3px}
-.panel{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:14px 16px}
-.view-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
-.view-head h2{font-size:28px;line-height:1.2;letter-spacing:-.035em;margin:0}
-.view-head p{margin:4px 0 0;color:var(--muted)}
-.search{gap:8px}.search input{min-height:39px}.search button{min-height:39px}
-.filters{margin-top:12px}.filters summary{width:fit-content;color:var(--accent);font-weight:600}
-.latency{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin-top:10px;font-size:13px}
-.latency button{margin:0}
-.filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,126px),1fr));gap:8px;margin-top:10px}
-.filter-grid label,.mod-filters label{display:grid;gap:2px;font-size:13px;font-weight:600}
-.filter-grid select,.mod-filters input,.mod-filters select{width:100%;min-width:0;font-size:14px;font-weight:400}
-.mod-filters{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:8px;margin-top:10px}
-.pager,.result-head,.detail-tools{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap}
-.pager{justify-content:center;min-width:0}.pager:empty{display:none}
-.result-head{margin-bottom:7px;justify-content:space-between;color:var(--muted);font-size:13px}
-.result-head:empty{display:none}
-.browser-empty{margin:0;padding:24px 16px;text-align:center;overflow-wrap:anywhere;color:var(--muted)}
-.server-list{background:var(--paper);border:1px solid var(--line);border-radius:9px;overflow:clip}
-.server-list:empty{display:none}
-.server-row{display:grid;grid-template-columns:minmax(0,3.5fr) minmax(0,1.28fr) minmax(0,1.15fr) 74px minmax(100px,auto);align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid var(--line);min-width:0}
+a{color:var(--accent)}
+h1,h2,h3,p{margin:0}
+h1{font-size:18px;font-weight:650;line-height:1.2}
+h2{font-size:20px;font-weight:650;line-height:1.25}
+h3{font-size:15px;font-weight:650}
+.dim{color:var(--muted)}.ok{color:#2f664e}.warn{color:#8a501a}.bad{color:#9b2d29}
+.shell{background:var(--nav);color:var(--nav-ink);padding:24px 20px 16px}
+.wordmark h1 span{display:block}
+.wordmark h1 small{display:block;margin-top:3px;color:#c4c8d2;font-size:13px;font-weight:500}
+.shell nav{display:grid;gap:4px;margin-top:32px}
+.shell a{color:inherit;text-decoration:none}
+.shell :focus-visible{outline-color:var(--signal);outline-offset:-2px}
+.shell nav a{padding:8px 12px;border-inline-start:2px solid transparent;border-radius:4px;color:#cdd1db}
+.shell nav a:hover{background:#303948;color:#fff}
+.shell nav a[aria-current="page"]{background:#343c4a;border-inline-start-color:var(--signal);color:white;font-weight:600}
+.shell-footer{display:flex;align-items:baseline;justify-content:space-between;gap:8px;color:#bec4cf;font-size:12px}
+.shell-footer a:hover{text-decoration:underline}
+main{min-width:0;width:100%;max-width:1440px;margin:0 auto;padding:28px clamp(20px,3.2vw,48px) 48px}
+.view{display:grid;gap:20px;min-width:0}
+.view-head{display:flex;gap:12px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.view-head h2{font-size:32px;font-weight:650;letter-spacing:-.035em}
+.view-head a{text-underline-offset:4px}
+@media(min-width:900px){
+  body{display:grid;grid-template-columns:176px minmax(0,1fr)}
+  .shell{position:sticky;inset-block-start:0;height:100vh;display:flex;flex-direction:column;overflow:auto}
+  .shell-footer{margin-block-start:auto;padding-top:16px}
+}
+
+/* Controls and feedback */
+button,input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--control);border-radius:6px;padding:7px 11px}
+button{font-weight:600;cursor:pointer}
+button:hover:enabled{background:var(--wash)}
+button:disabled{opacity:.55;cursor:default}
+.primary,.search button{color:#fff;background:var(--accent);border-color:var(--accent)}
+.primary:hover:enabled,.search button:hover:enabled{background:#793419}
+.mini{font-size:12px;padding:5px 8px;white-space:nowrap;flex:none}
+input,select{min-width:0;max-width:100%}
+input::placeholder{color:var(--muted);opacity:1}
+.controls,.search,.library-controls,.detail-tools,.latency{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.search{flex-wrap:nowrap}
+.search input{flex:1}
+.search input,.search button{min-height:40px}
+.f{width:min(100%,280px);margin-block:8px;font-size:13px}
+.notice{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-inline-start:2px solid var(--accent);background:var(--wash);margin-bottom:8px;overflow-wrap:anywhere}
+.notice:last-of-type{margin-bottom:12px}
+.notice button{margin:0}
+summary{cursor:pointer}
+summary h2{display:inline;margin-inline-start:4px}
+ul{list-style:none;padding:0;margin:8px 0 0}
+li{padding:7px 0;border-bottom:1px solid var(--line)}
+li:last-child{border-bottom:0}
+.row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0}
+
+/* Downloads */
+.transfer{background:#282f3a;border-radius:var(--radius);color:#f8f5ed;padding:clamp(16px,2.8vw,28px);min-width:0}
+.transfer .dim,.transfer #st.dim{color:#c7cbd5}
+.transfer .ok{color:#f1c3a7}.transfer .warn{color:#efc276}.transfer .bad{color:#ffb8ae}
+.transfer-head,.transfer-meta{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+.transfer-head h2{font-size:15px;font-weight:600}
+#st{font-size:13px;font-weight:600}
+.transfer-total{margin:16px 0 12px}
+.big{font-size:clamp(24px,4vw,42px);font-weight:600;letter-spacing:-.04em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.bar{height:6px;overflow:hidden;border-radius:4px;background:#e7e1d9}
+.transfer .bar{background:#4c525f;height:8px}
+.bar>div{height:100%;width:100%;background:var(--accent);transform-origin:left;transform:scaleX(var(--progress,0));transition:transform .22s ease-out}
+.transfer .bar>div{background:var(--signal)}
+.transfer-meta{margin-top:8px;font-size:13px;font-variant-numeric:tabular-nums}
+.transfer-controls{margin-top:20px}
+.transfer button{background:#353e4c;color:#faf8f2;border-color:#69717e}
+.transfer button:hover:enabled{background:#485260}
+.transfer #bstart{background:#f3b08c;color:#31231d;border-color:#f3b08c}
+.transfer #bstart:hover:enabled{background:#f6c5aa}
+.transfer .notice{background:#373e49;margin-top:12px;margin-bottom:0}
+#boot,#downloadRefreshError{margin-block:12px}
+.download-tools{display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px 16px;padding-block:0 12px;border-bottom:1px solid var(--line)}
+.download-tools summary{color:var(--accent);font-weight:600;padding:4px 0}
+.download-tools .controls{margin-top:8px}
+#bcancel:enabled{color:#9b2d29}
+#addonsline{font-size:12px;padding:5px 0;overflow-wrap:anywhere}
+.download-lists{display:grid;gap:20px;align-items:start}
+.download-lists .card{padding:0}
+.card{min-width:0;overflow-wrap:anywhere}
+.card>summary{padding-block:12px;border-bottom:1px solid var(--line)}
+.card>summary h2{font-size:18px}
+#queue,#rec,#act{max-height:480px;overflow:auto;padding-inline:2px}
+#act>div:last-child{margin-bottom:8px}
+#act .row{flex-wrap:wrap;gap:4px 12px;margin-top:12px}
+#act .row>span,#spd{font-variant-numeric:tabular-nums}
+#queue ol{margin:4px 0;padding-inline-start:24px}
+#queue li{padding-inline-start:4px}
+.queue-item,.installed-item{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.installed-item strong{font-weight:600;color:var(--ink)}
+@media(min-width:752px){.download-lists{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}}
+
+/* Directory */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.filter-grid,.mod-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
+.mod-filters{grid-template-columns:1fr 1fr 1.5fr}
+.filter-grid label,.mod-filters label{display:grid;gap:4px;font-size:12px;font-weight:650}
+.filter-grid select,.mod-filters input,.mod-filters select{width:100%;font-size:14px;font-weight:400}
+.filters,.latency{margin-top:12px;font-size:13px}
+.filters summary{width:fit-content;color:var(--accent);font-weight:600}
+.pager,.result-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.pager{justify-content:center}
+.pager:empty,.result-head:empty,.server-list:empty{display:none}
+.result-head{justify-content:space-between;margin-bottom:8px;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.browser-empty{margin:0;padding:24px 16px;color:var(--muted);overflow-wrap:anywhere}
+.server-list{background:var(--surface);border-radius:var(--radius);border:1px solid var(--line)}
+.server-row{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,.72fr) 56px;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--line);min-width:0}
 .server-row:last-child{border-bottom:0}
-.server-labels{background:var(--wash);font-size:12px;font-weight:650}
+.server-labels{background:var(--wash);font-size:12px;font-weight:650;border-radius:var(--radius) var(--radius) 0 0}
+.server-row:not(.server-labels):focus-within{background:#f6f3ee}
 .server-name{display:flex;align-items:center;gap:10px;min-width:0}
-.server-name .cover{width:56px;height:40px;flex:0 0 auto;border-radius:4px}
+.server-name .cover{width:52px;height:40px;flex:none;border-radius:4px}
 .text-button{padding:0;border:0;background:none;text-align:left;color:var(--ink);font-weight:650;overflow-wrap:anywhere}
-.text-button:hover:enabled{background:none;color:var(--accent);text-decoration:underline}
+.text-button:hover:enabled{background:none;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 .subline{display:block;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
-.server-pop{font-variant-numeric:tabular-nums}
-.population{width:min(100%,88px);height:5px;margin-top:4px;appearance:none;border:0;border-radius:5px;background:var(--wash);vertical-align:top;display:block}
-.population::-webkit-progress-bar{background:var(--wash);border-radius:5px}
-.population::-webkit-progress-value{background:#547c4a;border-radius:5px}
-.population::-moz-progress-bar{background:#547c4a;border-radius:5px}
+.server-pop,.fact-list{font-variant-numeric:tabular-nums}
+.population{appearance:none;display:block;width:min(100%,84px);height:4px;margin-top:4px;border:none;border-radius:4px;background:#e7e1d9}
+.population::-webkit-progress-bar{background:#e7e1d9;border-radius:4px}
+.population::-webkit-progress-value{background:var(--accent);border-radius:4px}
+.population::-moz-progress-bar{background:var(--accent);border-radius:4px}
 .server-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
-.server-actions button{margin:0}
-.cover{position:relative;overflow:hidden;background:#314236;color:#d6e3cf;display:grid;place-items:center;font-weight:650;font-size:18px}
-.cover img{position:absolute;width:100%;height:100%;object-fit:cover;inset:0}
-.workshop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,228px),1fr));gap:12px}
-.mod-card{min-width:0;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.mod-card .cover{aspect-ratio:16/8}
-.mod-body{padding:10px 12px;display:flex;flex:1;flex-direction:column;gap:5px}
-.mod-body h3{font-size:16px;line-height:1.25;margin:0}
-.mod-body p{margin:1px 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.mod-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:auto;padding-top:6px;font-size:12px}
+.cover{position:relative;overflow:hidden;display:grid;place-items:center;background:#373b45;color:#e4dcd0;font-weight:650;font-size:16px}
+.cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.workshop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr));gap:16px}
+.mod-card{min-width:0;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+.mod-card .cover{aspect-ratio:16/8;border-radius:7px 7px 0 0}
+.mod-body{padding:12px;display:flex;flex:1;flex-direction:column;gap:5px}
+.mod-body h3{font-size:16px;line-height:1.24}
+.mod-body p{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mod-foot{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:8px;font-size:12px}
 .tags{display:flex;gap:4px;flex-wrap:wrap;min-width:0}
-.tag{border:0;border-radius:4px;background:var(--wash);color:var(--accent);padding:1px 6px;font-size:11px;overflow-wrap:anywhere}
+.tag{border:0;border-radius:4px;background:var(--wash);color:var(--ink);padding:2px 6px;font-size:11px;overflow-wrap:anywhere}
 button.tag:hover:enabled{text-decoration:underline}
-.inspection{width:min(920px,calc(100% - 24px));max-height:calc(100% - 24px);padding:0;overflow:auto}
-.inspection header{background:var(--paper);color:var(--ink);position:sticky;top:0;z-index:1;padding:12px 18px;border-bottom:1px solid var(--line);gap:8px}
-.inspection header :focus-visible{outline-color:var(--focus);outline-offset:2px}
-.inspection h2{margin:0;font-size:21px;overflow-wrap:anywhere}.inspection h3{margin:0 0 6px;font-size:16px}
-.inspection-body{display:grid;gap:12px;padding:14px 18px}
-.inspection-summary{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:12px;align-items:start}
-.inspection-summary .cover{aspect-ratio:16/9;border-radius:5px}.inspection-summary p{margin:4px 0}
-.fact-list{display:flex;gap:5px 16px;flex-wrap:wrap;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
-.inspection details{border-top:1px solid var(--line);padding-top:10px}
-.inspection summary{font-weight:650}
-.inspection section{min-width:0}.inspection li{overflow-wrap:anywhere}
-.inspection .description{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0;max-height:340px;overflow:auto}
-.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:6px;margin-block:6px}
-.gallery .cover{aspect-ratio:16/9;border-radius:4px}
-.inspection canvas{width:100%;height:110px;display:block;background:#f3f5f0;margin-top:7px;border-radius:4px}
-.mod-list{max-height:310px;overflow:auto}
-.mod-list li,.version-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.mod-list .subline{display:inline}.version-row{padding:6px 0}
-.export-config{box-sizing:border-box;width:100%;min-height:180px;margin-top:8px;font:13px/1.5 ui-monospace,monospace}
-.library-controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-#srv details{padding:8px 0}#srv details:last-child{border-bottom:0}
-.library-row .library-actions{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}
-.library-row .library-actions .mini{margin:0}
-.library-preview{padding:10px 0}
+
+/* Library and inspection */
+#library .library-controls{align-items:center}
+#library .card>summary{padding:12px 0}
+#availableUpdates h2{font-size:17px}
+#srv details{padding:10px 0;border-bottom:1px solid var(--line)}
+#srv details:last-child{border-bottom:0}
+.library-row .library-actions{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.library-preview{padding:12px 0}
 .library-preview .inspection-summary{grid-template-columns:auto minmax(0,1fr)}
 .library-preview .cover{width:clamp(56px,13vw,110px)}
-.library-preview h3{margin:0 0 4px;font-size:15px}
+.library-preview h3{margin-bottom:4px}
 .library-row[open] [data-library-scenario],[data-library-scenario]:empty{display:none}
-@media(min-width:820px){#downloads{grid-template-columns:1fr 1fr}#downloads>.view-head,#downloads>.overview{grid-column:1/-1}}
-@media(max-width:730px){.server-row{grid-template-columns:minmax(0,1fr) auto auto;gap:5px 10px}.server-labels{display:none}.server-name{grid-column:1/-1}.server-actions{grid-column:1/-1;justify-content:flex-start}.server-pop{grid-column:2}.mod-filters{grid-template-columns:1fr 1fr}.mod-filters label:last-child{grid-column:1/-1}}
-@media(max-width:520px){h1{font-size:17px}.version{display:block}.overview{padding:14px}.repo{font-size:12px}.inspection-summary{grid-template-columns:1fr}.inspection-summary .cover{max-width:230px}}
-@media(min-width:390px) and (max-width:510px){.workshop-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.mod-body{padding:8px}.mod-foot{flex-wrap:wrap}}
+dialog{width:min(500px,calc(100% - 24px));border:1px solid var(--line);border-radius:var(--radius);padding:20px;background:var(--surface);color:var(--ink)}
+dialog::backdrop{background:#1d2430a6}
+dialog p{margin:8px 0 16px}
+dialog form{display:flex;justify-content:flex-end;gap:8px}
+.inspection{width:min(880px,calc(100% - 24px));max-height:calc(100% - 24px);padding:0;overflow:auto}
+.inspection header{position:sticky;inset-block-start:0;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:var(--surface);padding:12px 16px;border-bottom:1px solid var(--line)}
+.inspection header h2{overflow-wrap:anywhere;min-width:0}
+.inspection h3{margin-bottom:4px}
+.inspection-body{display:grid;gap:16px;padding:16px}
+.inspection-summary{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:12px;align-items:start}
+.inspection-summary .cover,.gallery .cover{aspect-ratio:16/9;border-radius:4px}
+.inspection-summary .detail-tools{margin-top:10px}
+.inspection section{min-width:0}
+.inspection li,.fact-list{overflow-wrap:anywhere}
+.fact-list{display:flex;gap:4px 12px;flex-wrap:wrap;color:var(--muted);font-size:13px}
+.inspection details{border-top:1px solid var(--line);padding-top:10px}
+.inspection summary{font-weight:650}
+.inspection .description{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0;max-height:340px;overflow:auto}
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:8px;margin-block:8px}
+.inspection canvas{width:100%;height:120px;display:block;background:var(--paper);margin-top:8px;border-radius:4px}
+.mod-list{max-height:320px;overflow:auto}
+.mod-list li,.version-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.mod-list .subline{display:inline}
+.export-config{width:100%;min-height:180px;margin-top:8px;font:13px/1.5 ui-monospace,monospace}
+@media(max-width:899px){
+ .shell{padding:12px 16px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center}
+ .wordmark h1 span,.wordmark h1 small{display:inline}
+ .wordmark h1 small{margin-inline-start:4px}
+ .shell nav{grid-column:1/-1;grid-row:2;display:flex;margin:0;overflow:auto}
+ .shell nav a{border-inline-start:0;border-bottom:2px solid transparent;border-radius:4px 4px 0 0;white-space:nowrap}
+ .shell nav a[aria-current="page"]{border-bottom-color:var(--signal)}
+ .shell-footer{grid-column:2;grid-row:1}
+ main{padding-top:20px}
+}
+@media(max-width:730px){
+ .server-row{grid-template-columns:minmax(0,1fr) auto auto;gap:6px 12px}
+ .server-labels{display:none}
+ .server-name,.server-actions{grid-column:1/-1}
+ .server-actions{justify-content:flex-start}
+ .server-actions:empty{display:none}
+ .filter-grid,.mod-filters{grid-template-columns:1fr 1fr}
+ .mod-filters label:last-child{grid-column:1/-1}
+}
+@media(max-width:520px){
+ .shell{padding-inline:12px}.shell nav a{padding-inline:8px}
+ .wordmark h1{font-size:15px}.wordmark h1 small{font-size:12px}
+ main{padding-inline:14px}.view-head h2{font-size:28px}.view{gap:16px}
+ .inspection-summary{grid-template-columns:1fr}.inspection-summary .cover{max-width:224px}
+}
+@media(min-width:390px) and (max-width:500px){.workshop-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mod-body{padding:8px}}
 @media(prefers-reduced-motion:reduce){.bar>div{transition:none}}
 </style></head><body>
-<header><h1>Arma Reforger Mod Downloader <small class="version">v__VERSION__</small></h1><nav aria-label="Dashboard sections"><a href="#downloads">Downloads</a><a href="#servers">Servers</a><a href="#discover">Workshop</a><a href="#library">Library</a></nav><a class="repo" href="https://github.com/__REPO__" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.5 7.5 0 0 1 8 3.85c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></header><main><div class="notice" id="modUpdateNotice" hidden><span role="status" id="modUpdate" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="modUpdate">Dismiss</button></div><div class="notice" id="sayNotice" hidden><span role="status" id="say" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="say">Dismiss</button></div><div class="notice" id="finishedNotice" hidden><span role="status" id="finished" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="finished">Dismiss</button></div><section class="view" id="downloads"><div class="view-head"><div><h2>Downloads</h2><p>Monitor transfers and manage the download queue.</p></div><div class="library-controls"><a href="#servers">Browse servers</a><a href="#discover">Find mods</a></div></div><div class="card overview"><h2>Download status <span id="st" role="status"></span></h2>
- <div class="dim" id="boot">Connecting to the downloader…</div>
- <p class="bad" id="downloadRefreshError" role="status" hidden>Could not refresh downloads. Retrying… If it keeps failing, check desktop.log.</p>
- <div class="row"><span id="gbtxt" class="big"></span><span id="spd" class="dim"></span></div>
- <div class="bar" role="progressbar" aria-label="Batch download progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"><div id="tbar" style="width:0%"></div></div>
- <div class="row"><span id="cnt" class="dim"></span><span class="dim" id="etabox"></span></div>
- <div class="controls">
-  <button id="bstart" data-action="queue-control" data-command="start">Start / Resume</button>
-  <button id="bpause" class="grey" data-action="queue-control" data-command="pause">Pause</button>
-  <button id="bresumeall" data-action="queue-control" data-command="resume-all">Queue missing server mods</button>
+<header class="shell">
+ <div class="wordmark"><h1><span>Arma Reforger</span> <small>Mod Downloader</small></h1></div>
+ <nav aria-label="Dashboard sections">
+  <a href="#downloads">Downloads</a>
+  <a href="#servers">Servers</a>
+  <a href="#discover">Workshop</a>
+  <a href="#library">Library</a>
+ </nav>
+ <div class="shell-footer"><a href="https://github.com/__REPO__" target="_blank" rel="noopener noreferrer">GitHub</a><span>v__VERSION__</span></div>
+</header><main><div class="notice" id="modUpdateNotice" hidden><span role="status" id="modUpdate" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="modUpdate">Dismiss</button></div><div class="notice" id="sayNotice" hidden><span role="status" id="say" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="say">Dismiss</button></div><div class="notice" id="finishedNotice" hidden><span role="status" id="finished" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="finished">Dismiss</button></div><section class="view" id="downloads" aria-labelledby="downloadsTitle">
+ <div class="view-head">
+  <h2 id="downloadsTitle">Downloads</h2>
+  <div class="library-controls"><a href="#servers">Browse servers</a><a href="#discover">Find mods</a></div>
  </div>
- <div class="controls queue-tools">
-  <button id="bverify" class="amber" data-action="queue-control" data-command="verify">Verify mods</button>
-  <button id="openAddons" data-action="open-addons" hidden>Open addons folder</button>
-  <button id="bclear" class="grey" data-action="queue-control" data-command="clear-queue">Clear queue</button>
-  <button id="bcancel" class="grey" data-action="queue-control" data-command="cancel-downloads">Cancel downloads</button>
+ <section class="transfer" aria-labelledby="transferTitle">
+  <div class="transfer-head"><h2 id="transferTitle">Transfer</h2><span id="st" role="status"></span></div>
+  <div class="dim" id="boot">Connecting to the downloader…</div>
+  <p class="bad" id="downloadRefreshError" role="status" hidden>Could not refresh downloads. Retrying… If it keeps failing, check desktop.log.</p>
+  <div class="transfer-total"><span id="gbtxt" class="big"></span></div>
+  <div class="bar" role="progressbar" aria-label="Batch download progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"><div id="tbar"></div></div>
+  <div class="transfer-meta"><span id="cnt" class="dim"></span><span id="spd" class="dim"></span><span id="etabox" class="dim"></span></div>
+  <div class="controls transfer-controls">
+   <button id="bstart" data-action="queue-control" data-command="start">Start / Resume</button>
+   <button id="bpause" data-action="queue-control" data-command="pause">Pause</button>
+   <button id="bresumeall" data-action="queue-control" data-command="resume-all">Queue missing server mods</button>
+  </div>
+  <div id="failedNotice" class="notice" hidden><span id="failed" class="bad" role="status"></span><button class="mini" type="button" data-action="dismiss" data-notice="failed">Dismiss</button></div>
+ </section>
+ <div class="download-tools">
+  <details>
+   <summary>Queue tools</summary>
+   <div class="controls">
+    <button id="bverify" data-action="queue-control" data-command="verify">Verify mods</button>
+    <button id="openAddons" data-action="open-addons" hidden>Open addons folder</button>
+    <button id="bclear" data-action="queue-control" data-command="clear-queue">Clear queue</button>
+    <button id="bcancel" data-action="queue-control" data-command="cancel-downloads">Cancel downloads</button>
+   </div>
+  </details>
+  <div class="dim" id="addonsline"></div>
  </div>
- <div id="vresNotice" class="notice card" style="margin-top:14px" hidden><div id="vres" role="status"></div><button class="mini" type="button" data-action="dismiss" data-notice="vres">Dismiss</button></div>
- <div class="dim" id="addonsline" style="font-size:13px;margin-top:6px"></div>
- 
- <div class="notice" id="failedNotice" hidden>
-  <span id="failed" class="bad" role="status"></span>
-  <button class="mini" type="button" data-action="dismiss" data-notice="failed">Dismiss</button>
+ <div id="vresNotice" class="notice" hidden><div id="vres" role="status"></div><button class="mini" type="button" data-action="dismiss" data-notice="vres">Dismiss</button></div>
+ <div class="download-lists">
+  <details class="card" open><summary><h2>Downloading now <span id="actcount" class="dim"></span></h2></summary>
+   <input class="f" id="fa" type="search" aria-label="Filter downloads" placeholder="Filter active downloads" data-filter="act">
+   <div id="act"></div>
+  </details>
+  <details class="card" open><summary><h2>Queue <span id="qcount" class="dim"></span></h2></summary>
+   <input class="f" id="fq" type="search" aria-label="Filter queue" placeholder="Filter queue" data-filter="queue">
+   <div id="queue"></div>
+  </details>
  </div>
-</div>
-<details class="card" open><summary><h2 style="font-size:18px">Downloading now <span id="actcount" class="dim"></span></h2></summary>
-  <input class="f" id="fa" aria-label="Filter downloads" placeholder="Filter active downloads" data-filter="act">
-  <div id="act">-</div></details>
-<details class="card" open><summary><h2 style="font-size:18px">Queue <span id="qcount" class="dim"></span></h2></summary>
-  <input class="f" id="fq" aria-label="Filter queue" placeholder="Filter queue" data-filter="queue">
-  <div id="queue" class="dim">-</div></details>
-</section><section class="view" id="servers">
+</section>
+<section class="view" id="servers">
  <div class="view-head"><h2>Servers</h2><button data-action="refresh-browser">Refresh</button></div>
  <form id="serverFilters" class="panel">
   <div class="search"><input id="bq" name="q" type="search" maxlength="120" aria-label="Search servers" placeholder="Server or scenario name"><button type="submit">Search</button></div>
@@ -194,16 +301,16 @@ button.tag:hover:enabled{text-decoration:underline}
  </form>
  <div><div id="mstatus" class="result-head" role="status" tabindex="-1"></div><div id="mres"></div></div>
  <div id="mpager" class="pager" aria-label="Workshop pages"></div>
-</section><section class="view" id="library"><div class="view-head"><div><h2>Library</h2><p>Manage tracked servers and the mods on this device.</p></div><button data-action="open-addons" class="desktop-only" hidden>Open addons folder</button></div>
+</section><section class="view" id="library"><div class="view-head"><h2>Library</h2><button data-action="open-addons" class="desktop-only" hidden>Open addons folder</button></div>
 <div class="library-controls"><button id="checkModUpdates" class="primary" data-action="check-updates">Check for mod updates</button> <button data-action="update" data-scope="tracked">Update tracked servers&rsquo; mods</button> <button id="cancelModUpdates" data-action="cancel-updates" hidden>Cancel updates</button></div>
 <section class="card panel" id="availableUpdates" aria-labelledby="availableUpdatesTitle" hidden>
- <div class="row"><h2 id="availableUpdatesTitle" style="font-size:18px">Available updates <span id="availableUpdatesCount" class="dim"></span></h2><button id="applyAllUpdates" data-action="apply-updates">Update all</button></div>
+ <div class="row"><h2 id="availableUpdatesTitle">Available updates <span id="availableUpdatesCount" class="dim"></span></h2><button id="applyAllUpdates" data-action="apply-updates">Update all</button></div>
  <ul id="availableUpdatesList"></ul>
 </section>
-<details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span></h2></summary>
+<details class="card wide" open><summary><h2>Tracked servers <span id="srvcount" class="dim"></span></h2></summary>
  <div class="library-controls"><input class="f" id="fs" type="search" aria-label="Filter tracked servers" placeholder="Filter tracked servers" data-filter="srv"><button class="mini" data-action="refresh-servers">Refresh lists</button></div>
  <div id="srv" class="dim">Loading tracked servers…</div></details>
-<details class="card wide"><summary><h2 style="font-size:18px">Installed mods <span id="reccount" class="dim"></span></h2></summary>
+<details class="card wide"><summary><h2>Installed mods <span id="reccount" class="dim"></span></h2></summary>
  <input class="f" id="fr" aria-label="Filter completed mods" placeholder="Filter completed mods" data-filter="rec">
  <ul id="rec"></ul></details>
 </section></main>
@@ -325,7 +432,7 @@ function renderActive(list){
     el.dataset.key=key;
     if(!shown.length){el.innerHTML='<span class="dim">'+(list.length?'No downloads match the filter':'No active downloads')+'</span>';return;}
     el.innerHTML=shown.map(a=>'<div class="row"><strong>'+esc(a.name)+'</strong><span class="dim"></span></div>'+
-      '<div class="bar amber" role="progressbar" aria-label="'+escAttr(a.name)+'" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div style="width:0%"></div></div>').join('');
+      '<div class="bar" role="progressbar" aria-label="'+escAttr(a.name)+'" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div></div></div>').join('');
   }
   const texts=el.querySelectorAll('.row>span'),bars=el.querySelectorAll('.bar');
   shown.forEach((a,i)=>{
@@ -336,8 +443,8 @@ function renderActive(list){
     const hasPercent=hasB&&a.expB>0;
     const label=(hasB?sz(a.b)+(hasPercent?' / '+total:' transferred'):total)+(hasPercent?' \u00b7 '+pct+'%':'');
     if(text.textContent!==label)text.textContent=label;
-    const fill=bar.firstElementChild,w=pct+'%';
-    if(fill&&fill.style.width!==w)fill.style.width=w;
+    const fill=bar.firstElementChild,scale=String(pct/100);
+    if(fill.style.getPropertyValue('--progress')!==scale)fill.style.setProperty('--progress',scale);
     if(hasPercent)bar.setAttribute('aria-valuenow',String(pct));
     else bar.removeAttribute('aria-valuenow');
   });
@@ -347,17 +454,24 @@ function renderQueue(queue,A){
   document.getElementById('qcount').textContent='('+queue.length+')';
 
   const shown=queue.filter(q=>match(q.name,FILTER.queue));
+  const focus=el.contains(document.activeElement)?document.activeElement.dataset.id:null;
   el.innerHTML=shown.length
-   ?'<ol>'+shown.map(q=>'<li>'+(A[q.id]?'<span class="warn">&#10227;</span> ':'')+esc(q.name)+' <button type="button" class="mini grey" aria-label="Remove '+escAttr(q.name)+' from queue" data-id="'+escAttr(q.id)+'" data-action="remove-queued">Remove</button></li>').join('')+'</ol>'
-   :'<span class="dim">'+(queue.length?'no mod matches the filter':'No mods queued')+'</span>';
+   ?'<ol>'+shown.map(q=>'<li><div class="queue-item"><span>'+esc(q.name)+(A[q.id]?'<span class="warn subline">Downloading</span>':'')+
+     '</span><button type="button" class="mini" aria-label="Remove '+escAttr(q.name)+' from queue" data-id="'+escAttr(q.id)+'" data-action="remove-queued">Remove</button></div></li>').join('')+'</ol>'
+   :'<span class="dim">'+(queue.length?'No mods match the filter':'No mods queued')+'</span>';
+  if(focus){
+   const button=Array.from(el.querySelectorAll('button')).find(item=>item.dataset.id===focus);
+   (button||document.getElementById('fq')).focus({preventScroll:true});
+  }
 }
 function renderRec(recent){
   const el=document.getElementById('rec'); if(!el)return;
   document.getElementById('reccount').textContent='('+recent.length+')';
   const shown=recent.filter(r=>match(r.name,FILTER.rec)).slice(0,400);
   el.innerHTML=shown.length
-   ?shown.map(r=>'<li class="ok">&#10003; '+esc(r.name)+' <span class="dim">'+sz(r.b)+'</span> <button class="mini" data-action="update" data-scope="mod" data-id="'+escAttr(r.id)+'">Update</button></li>').join('')
-   :'<li class="dim">'+(recent.length?'nothing matches the filter':'nothing finished yet')+'</li>';
+   ?shown.map(r=>'<li class="installed-item"><div><strong>'+esc(r.name)+'</strong><span class="subline">'+sz(r.b)+'</span></div>'+
+     '<button class="mini" data-action="update" data-scope="mod" data-id="'+escAttr(r.id)+'" aria-label="Update '+escAttr(r.name)+'">Update</button></li>').join('')
+   :'<li class="dim">'+(recent.length?'No mods match the filter':'No mods installed yet')+'</li>';
 }
 function renderAll(){
   if(!LAST)return;
@@ -368,11 +482,14 @@ function renderAll(){
 let SRVAt=0;
 const libraryPreviews=new Map();
 async function loadSrv(){
- // /servers costs a full disk scan: retry at most every 5 s, and never accept an
- // error body - a 500 body parses as json, which made SRV truthy and froze the
- // servers card (renderSrv threw on SRV.servers) for the rest of the session
  if(Date.now()-SRVAt<5000)return; SRVAt=Date.now();
- try{const r=await fetch('/servers'),j=await r.json(); if(r.ok&&j&&j.servers){SRV=j;lastKey='';}}catch(e){}
+ try{
+  const result=await directoryGet('/servers');
+  if(!Array.isArray(result.servers))throw new Error('Unexpected response from the downloader.');
+  SRV=result;lastKey='';
+ }catch{
+  if(!SRV)document.getElementById('srv').innerHTML='Could not load tracked servers. <button class="mini" data-action="reload-library">Try again</button>';
+ }
 }
 function renderSrv(D,A,B){
  if(!SRV)return;
@@ -580,7 +697,7 @@ function renderBrowse(){
    (regionPing(v.region)?'<span class="subline">'+regionPing(v.region)+'</span>':'')+'</div>'+
    '<div class="server-pop">'+esc(playerCount(v))+populationBar(v)+'</div><div><span>'+esc(mods)+'</span>'+
    (tags.length?'<span class="subline">'+tags.join(' · ')+'</span>':'')+'</div>'+
-   '<div class="server-actions">'+actionButton('Details','server-details',v.id)+joinButton(v)+'</div></article>';
+   '<div class="server-actions">'+joinButton(v)+'</div></article>';
  }).join('');
  el.insertAdjacentHTML('afterbegin',labels);
 }
@@ -708,12 +825,12 @@ function drawHistory(canvas,points,peak){
  const ctx=canvas.getContext('2d');
  if(!ctx)return;
  const w=canvas.width,h=canvas.height,pad=10,start=Number(points[0].t),end=Number(points.at(-1).t),span=Math.max(1,end-start);
- ctx.strokeStyle='#c9d4c5';
+ ctx.strokeStyle='#dfdad1';
  for(const fraction of [0,.5,1]){
   const y=pad+(h-2*pad)*fraction;
   ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
  }
- ctx.lineWidth=3;ctx.strokeStyle='#335436';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();
+ ctx.lineWidth=3;ctx.strokeStyle='#974321';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();
  for(const [i,point] of points.entries()){
   const x=points.length===1?w/2:pad+(w-2*pad)*(Number(point.t)-start)/span;
   const y=h-pad-(h-2*pad)*Math.max(0,Number(point.avg))/Math.max(1,peak);
@@ -872,8 +989,8 @@ async function refreshStatus(){
     ?(totalKnown?sz(s.doneB)+' / '+totalLabel:sz(s.doneB)+' transferred · total unknown')
     :'No downloads queued';
   const bar=document.getElementById('tbar');
-  const progress=s.pctF??s.pct;
-  bar.style.width=progress+'%';
+  const progress=Math.max(0,Math.min(100,Number(s.pctF??s.pct)||0));
+  bar.style.setProperty('--progress',String(progress/100));
   if(totalKnown||!hasQueue)bar.parentElement.setAttribute('aria-valuenow',progress);
   else bar.parentElement.removeAttribute('aria-valuenow');
   document.getElementById('spd').textContent=(!finishing&&speed>0)?(useMeasured?'~':'')+sz(speed)+'/s':'';
@@ -1116,7 +1233,10 @@ document.addEventListener('click',event=>{
    button.disabled=true;
    return post('join-server?id='+encodeURIComponent(id)+(source==='browser'?'&source=browser':''))
     .then(result=>detailMessage(button,result)).finally(()=>{button.disabled=false;});
-  case 'check-updates': return post('update-mods?scope=all&check=1');
+  case 'check-updates': return post('update-mods?scope=all&check=1',{quiet:true}).then(result=>{
+   if(!result||result.error)say(result?.error||'Could not reach the downloader.',false);
+   else tick(true);
+  });
   case 'apply-updates': return applyModUpdates(id);
   case 'update': return updateMods(scope,id||'',event);
   case 'cancel-updates': return cancelModUpdates(button);
@@ -1124,6 +1244,7 @@ document.addEventListener('click',event=>{
   case 'preset': return presetSrv(id,event);
   case 'refresh-servers': return refreshSrv(event);
   case 'refresh-one': return refreshOne(id,event);
+  case 'reload-library': SRVAt=0;return loadSrv();
   case 'remove-server': return removeSrv(id,event);
   case 'add-server': return addSrv(id,event);
   case 'add-mod': return addMod(id,button);

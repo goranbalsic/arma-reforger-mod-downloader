@@ -27,6 +27,24 @@ MOD = {
     "subscriberCount": 1500, "description": 'Field radio <em data-rfmm-fixture>markup</em> & “quotes”.',
     "dependencies": [], "screenshots": ["https://example.invalid/image/foreign.jpg"],
 }
+SERVERS = [SERVER] + [
+    {**SERVER, "id": f"11111111-1111-1111-1111-{index:012d}", "name": name, "scenarioName": scenario,
+     "region": region, "players": players, "modCount": count}
+    for index, (name, scenario, region, players, count) in enumerate([
+        ("Everon Public Conflict", "Conflict - Everon", "frankfurt", 71, 0),
+        ("Coastal Rangers", "Combat Ops - Arland", "new_york", 48, 12),
+        ("Midsummer Operations", "Game Master - Everon", "miami", 36, 24),
+        ("Northern Sectors", "Conflict - Arland", "london", 24, 8),
+    ], start=2)
+]
+MODS = [MOD,
+    {"id": "5965550F24A0C152", "name": "Where Am I", "author": "ValterB", "version": "1.2.0",
+     "size": 201671, "tags": ["GPS", "SYSTEMS"], "summary": "Adds a location marker to the map.",
+     "imageUrl": "https://ar-gcp-cdn.bistudio.com/image/b1dc/dc34a0ebdede5c38b9875012cce0e2a16edda7c3772b1ad6f37073e4ecaa/73057.jpg"},
+    {"id": "595F2BF2F44836FB", "name": "RHS - Status Quo", "author": "Red Hammer Studios", "version": "0.17.5281",
+     "size": 204512992, "tags": ["VEHICLES", "WEAPONS"], "summary": "Equipment, vehicles, and weapons.",
+     "imageUrl": "https://ar-gcp-cdn.bistudio.com/image/7c58/a2ea07905fad8abb0e6eb56ab4bb01b003b81ea1b14b86024bd16a6323a1/14490.jpg"},
+]
 
 
 class SlowWorkshop(BaseHTTPRequestHandler):
@@ -36,10 +54,10 @@ class SlowWorkshop(BaseHTTPRequestHandler):
         if query.get("search") == ["latency-test"]:
             time.sleep(2)
         routes = {
-            "/v2/servers": {"data": [SERVER], "meta": {"totalServers": 1, "totalPages": 1}},
+            "/v2/servers": {"data": SERVERS, "meta": {"totalServers": len(SERVERS), "totalPages": 1}},
             f"/v2/servers/{SERVER_ID}": {"server": SERVER},
             f"/v2/servers/{SERVER_ID}/history": {"points": [{"t": 1700000000, "avg": 54, "max": 104}]},
-            "/v2/mods": {"data": [MOD], "meta": {"totalMods": 1, "totalPages": 1}},
+            "/v2/mods": {"data": MODS, "meta": {"totalMods": len(MODS), "totalPages": 1}},
             f"/v2/mods/{MOD_ID}": {"mod": MOD},
             f"/v2/mods/{MOD_ID}/versions": {"data": {"versions": [{"version": "1.5.0", "published": True}]}},
             f"/v2/mods/{MOD_ID}/versions/1.5.0": {"data": {"version": "1.5.0", "changelog": "Improved radios.\nUpdated UI."}},
@@ -283,9 +301,11 @@ sys.exit(3)
                       probe.noInlineHandlers = ![...document.querySelectorAll('*')].some(element =>
                         [...element.attributes].some(attr => /^on[a-z]+$/i.test(attr.name)));
                       const dialog = document.getElementById('confirmAction');
+                      document.querySelector('.download-tools details').open = true;
                       document.getElementById('bclear').click();
                       probe.confirmed = dialog.open;
                       dialog.querySelector('[value="cancel"]').click();
+                      document.querySelector('.download-tools details').open = false;
                       renderAll();
                       fetch('/search-mods?q=latency-test').then(() => { probe.actionDone = true; });
                       setTimeout(async () => {
@@ -318,7 +338,7 @@ sys.exit(3)
                         const serverId = '11111111-1111-1111-1111-111111111111';
                         const server = await waitFor('#bs [data-id="' + serverId + '"]');
                         if (!server.textContent.includes('North Coast')) throw new Error('Server name changed.');
-                        if (document.querySelector('#bstatus span').textContent !== '1 server') throw new Error('Server count label is incorrect.');
+                        if (document.querySelector('#bstatus span').textContent !== '5 servers') throw new Error('Server count label is incorrect.');
                         server.click();
                         await waitFor('#historyPlot canvas');
                         const filter = await waitFor('#serverModFilter');
@@ -344,7 +364,7 @@ sys.exit(3)
                         document.querySelector('nav a[href="#discover"]').click();
                         await waitFor('#mres .mod-card [data-id="BBBBBBBBBBBBBBBB"]', 'Field Radio');
                         if (!document.getElementById('mres').textContent.includes('Équipe')) throw new Error('Workshop name is unreadable.');
-                        if (document.querySelector('#mstatus span').textContent !== '1 mod') throw new Error('Workshop count label is incorrect.');
+                        if (document.querySelector('#mstatus span').textContent !== '3 mods') throw new Error('Workshop count label is incorrect.');
                         SRVAt=0;await loadSrv();
                         document.querySelector('nav a[href="#library"]').click();
                         const tracked = await waitFor('#srv [data-server="' + serverId + '"]');

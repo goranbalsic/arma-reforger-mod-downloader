@@ -4,7 +4,7 @@ Browse Arma Reforger servers and Workshop mods, then queue downloads before you 
 
 You can download mods without installing the game. The downloader uses the free Arma Reforger dedicated server.
 
-On Windows, mods download straight into the game's **Documents → My Games → ArmaReforger → addons** folder. The downloader creates it on first use. Use **Open addons folder** in the Downloads tab to find it.
+On Windows, mods download straight into the game's **Documents → My Games → ArmaReforger → addons** folder. The downloader creates it on first use. Use **Open addons folder** in Library or in the Downloads queue tools.
 
 [Download for Windows x64](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader.exe) · [Download for Linux x64](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader-linux-x64.tar.gz) · [Project website](https://goxy701.github.io/arma-reforger-mod-downloader/) · [Releases](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest)
 
