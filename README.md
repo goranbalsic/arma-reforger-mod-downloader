@@ -32,7 +32,9 @@ On Linux, the desktop app finds the game's Steam Proton profile. Its default is 
 
 ## Screenshots
 
-![Download progress, speed, and queued Workshop mods](docs/screenshots/downloads.png)
+The dashboard with sample data.
+
+![Active download progress, transfer speed, and queue](docs/screenshots/downloads.png)
 
 ![Live server browser with region, platform, and mod filters](docs/screenshots/servers.png)
 

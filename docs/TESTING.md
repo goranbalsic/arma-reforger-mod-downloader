@@ -37,6 +37,6 @@ python3 tools/Test-LinuxStart.py /tmp/rfmm-test-package/ReforgerModDownloader/li
 
 CI runs the Windows desktop and audit jobs and the Ubuntu desktop and backend jobs on `main` and pull requests. You can also run CI manually. The jobs use temporary profiles and a local Workshop mock.
 
-To test against the live Workshop, use an empty profile. Install the dedicated server from the packaged app, queue a public mod, and check that it appears under **Completed**. Pause, close the app, and reopen it to check that the queue and pause state are saved.
+To test against the live Workshop, use an empty profile. Install the dedicated server from the packaged app, queue a public mod, and check that it appears under **Library → Installed mods**. Pause, close the app, and reopen it to check that the queue and pause state are saved.
 
 See [Security](SECURITY.md) for release verification.
