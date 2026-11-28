@@ -1,22 +1,24 @@
 <!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Arma Reforger Mod Downloader</title>
 <style>
-:root{--ink:#202729;--muted:#596367;--line:#cfd5d4;--accent:#175b51;font:15px/1.5 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:#f6f7f7}
+:root{--ink:#242c26;--muted:#526055;--line:#d1d8cc;--accent:#335436;--paper:#fff;--wash:#e9eee5;--focus:#26608f;font:15px/1.5 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:#f3f5f0;color-scheme:light}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0}
-header,main{max-width:1080px;margin:auto;padding-inline:clamp(16px,4vw,48px)}
-header{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding-top:18px;border-bottom:1px solid var(--line)}
+header,main{margin:auto;padding-inline:max(clamp(16px,3vw,44px),calc((100% - 1340px)/2))}
+header{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 12px;padding-top:14px;background:#26332a;color:#f1f4eb}
 h1{margin:0;font-size:21px;font-weight:650;letter-spacing:-.03em}
-.version{font-size:13px;color:var(--muted);font-weight:500;letter-spacing:0;white-space:nowrap}
-.repo{grid-column:2;grid-row:1;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);text-decoration:none}
-nav{display:flex;grid-column:1/-1;gap:24px}
-nav a{color:var(--muted);padding:7px 0 10px;border-bottom:3px solid transparent;text-decoration:none}
-nav a[aria-current="page"]{color:var(--accent);border-color:var(--accent);font-weight:600}
+.version{font-size:12px;color:#c6d2c2;font-weight:500;letter-spacing:0;white-space:nowrap}
+.repo{grid-column:2;grid-row:1;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:inherit;text-decoration:none}
+nav{display:flex;grid-column:1/-1;gap:clamp(12px,4vw,32px);overflow:auto}
+nav a{color:#d2ddce;padding:9px 1px;border-bottom:3px solid transparent;text-decoration:none;white-space:nowrap}
+nav a[aria-current="page"]{color:#f1f4eb;border-color:#bbd7a9;font-weight:650}
+header :focus-visible{outline-color:#d5e4b6;outline-offset:-2px}
 a:hover{text-decoration:underline}
 main{padding-block:24px 48px}
 .view{display:grid;gap:18px;min-width:0}.view[hidden]{display:none}
 .view>h2{font-size:28px;line-height:1.2;letter-spacing:-.035em;margin:0}
 .card{min-width:0;overflow-wrap:anywhere}
-.overview{background:#fff;border:1px solid var(--line);border-radius:6px;padding:18px 22px}
+.overview{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:18px 22px}
 .overview h2{margin:0;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:15px}
 #st{font-size:13px;font-weight:500}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 .row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0}
@@ -29,24 +31,93 @@ main{padding-block:24px 48px}
 #bcancel:enabled{color:#a33731}
 #spd,#act .row>span{white-space:nowrap;font-variant-numeric:tabular-nums}
 #act .row{flex-wrap:wrap;gap:2px 12px;margin-top:12px}
-button,input{font:inherit;border:1px solid #aeb8b6;border-radius:4px;background:#fff;color:var(--ink);padding:6px 11px}
-button{font-size:14px;cursor:pointer}button:hover:enabled{background:#edf2f0}
-#bstart,.search button{color:white;background:var(--accent);border-color:var(--accent)}#bstart:hover,.search button:hover{background:#10453e}
+button,input,select,textarea{font:inherit;border:1px solid #849184;border-radius:5px;background:var(--paper);color:var(--ink);padding:6px 11px}
+button{font-size:14px;cursor:pointer}button:hover:enabled{background:var(--wash)}
+#bstart,.search button,.primary{color:white;background:var(--accent);border-color:var(--accent)}#bstart:hover,.search button:hover,.primary:hover:enabled{background:#273f28}
 button:disabled{opacity:.55;cursor:default}.mini{font-size:12px;margin:3px 0 3px 6px;padding:4px 8px}
 input{min-width:0;max-width:100%}.search input{flex:1}.f{width:min(100%,310px);margin:8px 0 10px;font-size:14px}
 input::placeholder{color:var(--muted);opacity:1}
-details.card{border-top:1px solid var(--line);padding-top:12px}
+details.card{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:13px 16px}
 dialog{width:min(490px,calc(100% - 28px));border:1px solid var(--line);border-radius:8px;padding:24px;background:#fff;color:var(--ink)}dialog::backdrop{background:#20272988}dialog p{margin:12px 0 20px}dialog form{display:flex;justify-content:flex-end;gap:8px}.notice{display:flex;align-items:start;justify-content:space-between;gap:12px}.notice[hidden]{display:none}.notice button{margin:0}.notice + .notice{margin-top:6px}summary{cursor:pointer}summary h2{display:inline;font-size:17px;margin:0}
 ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#bs details{border-bottom:1px solid #e1e5e4;padding:5px 0}
-#queue,#srv,#rec,#act{max-height:360px;overflow:auto}
+#queue,#rec,#act{max-height:420px;overflow:auto}
 #say:empty{display:none}
 .dim{color:var(--muted)}.ok{color:#286345}.warn{color:#83540a}.bad{color:#a33731}
-:focus-visible{outline:2px solid #2468a0;outline-offset:3px}
-@media(min-width:820px){#downloads{grid-template-columns:1fr 1fr}#downloads>h2,#downloads>.overview{grid-column:1/-1}}
-@media(max-width:520px){h1{font-size:17px}.version{display:block}.overview{padding:14px}.repo{font-size:12px}nav{gap:18px}}
+:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:14px 16px}
+.view-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
+.view-head h2{font-size:28px;line-height:1.2;letter-spacing:-.035em;margin:0}
+.view-head p{margin:4px 0 0;color:var(--muted)}
+.search{gap:8px}.search input{min-height:39px}.search button{min-height:39px}
+.filters{margin-top:12px}.filters summary{width:fit-content;color:var(--accent);font-weight:600}
+.latency{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin-top:10px;font-size:13px}
+.latency button{margin:0}
+.filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,126px),1fr));gap:8px;margin-top:10px}
+.filter-grid label,.mod-filters label{display:grid;gap:2px;font-size:13px;font-weight:600}
+.filter-grid select,.mod-filters input,.mod-filters select{width:100%;min-width:0;font-size:14px;font-weight:400}
+.mod-filters{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:8px;margin-top:10px}
+.pager,.result-head,.detail-tools{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap}
+.pager{justify-content:center;min-width:0}.pager:empty{display:none}
+.result-head{margin-bottom:7px;justify-content:space-between;color:var(--muted);font-size:13px}
+.result-head:empty{display:none}
+.browser-empty{margin:0;padding:24px 16px;text-align:center;overflow-wrap:anywhere;color:var(--muted)}
+.server-list{background:var(--paper);border:1px solid var(--line);border-radius:9px;overflow:clip}
+.server-row{display:grid;grid-template-columns:minmax(0,3.5fr) minmax(0,1.28fr) minmax(0,1.15fr) 74px minmax(100px,auto);align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid var(--line);min-width:0}
+.server-row:last-child{border-bottom:0}
+.server-labels{background:var(--wash);font-size:12px;font-weight:650}
+.server-name{display:flex;align-items:center;gap:10px;min-width:0}
+.server-name .cover{width:56px;height:40px;flex:0 0 auto;border-radius:4px}
+.text-button{padding:0;border:0;background:none;text-align:left;color:var(--ink);font-weight:650;overflow-wrap:anywhere}
+.text-button:hover:enabled{background:none;color:var(--accent);text-decoration:underline}
+.subline{display:block;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.server-pop{font-variant-numeric:tabular-nums}
+.population{width:min(100%,88px);height:5px;margin-top:4px;appearance:none;border:0;border-radius:5px;background:var(--wash);vertical-align:top;display:block}
+.population::-webkit-progress-bar{background:var(--wash);border-radius:5px}
+.population::-webkit-progress-value{background:#547c4a;border-radius:5px}
+.population::-moz-progress-bar{background:#547c4a;border-radius:5px}
+.server-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.server-actions button{margin:0}
+.cover{position:relative;overflow:hidden;background:#314236;color:#d6e3cf;display:grid;place-items:center;font-weight:650;font-size:18px}
+.cover img{position:absolute;width:100%;height:100%;object-fit:cover;inset:0}
+.workshop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,228px),1fr));gap:12px}
+.mod-card{min-width:0;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.mod-card .cover{aspect-ratio:16/8}
+.mod-body{padding:10px 12px;display:flex;flex:1;flex-direction:column;gap:5px}
+.mod-body h3{font-size:16px;line-height:1.25;margin:0}
+.mod-body p{margin:1px 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mod-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:auto;padding-top:6px;font-size:12px}
+.tags{display:flex;gap:4px;flex-wrap:wrap;min-width:0}
+.tag{border:0;border-radius:4px;background:var(--wash);color:var(--accent);padding:1px 6px;font-size:11px;overflow-wrap:anywhere}
+button.tag:hover:enabled{text-decoration:underline}
+.inspection{width:min(920px,calc(100% - 24px));max-height:calc(100% - 24px);padding:0;overflow:auto}
+.inspection header{background:var(--paper);color:var(--ink);position:sticky;top:0;z-index:1;padding:12px 18px;border-bottom:1px solid var(--line);gap:8px}
+.inspection header :focus-visible{outline-color:var(--focus);outline-offset:2px}
+.inspection h2{margin:0;font-size:21px;overflow-wrap:anywhere}.inspection h3{margin:0 0 6px;font-size:16px}
+.inspection-body{display:grid;gap:12px;padding:14px 18px}
+.inspection-summary{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:12px;align-items:start}
+.inspection-summary .cover{aspect-ratio:16/9;border-radius:5px}.inspection-summary p{margin:4px 0}
+.fact-list{display:flex;gap:5px 16px;flex-wrap:wrap;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.inspection details{border-top:1px solid var(--line);padding-top:10px}
+.inspection summary{font-weight:650}
+.inspection section{min-width:0}.inspection li{overflow-wrap:anywhere}
+.inspection .description{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0;max-height:340px;overflow:auto}
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:6px;margin-block:6px}
+.gallery .cover{aspect-ratio:16/9;border-radius:4px}
+.inspection canvas{width:100%;height:110px;display:block;background:#f3f5f0;margin-top:7px;border-radius:4px}
+.mod-list{max-height:310px;overflow:auto}
+.mod-list li,.version-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.mod-list .subline{display:inline}.version-row{padding:6px 0}
+.export-config{box-sizing:border-box;width:100%;min-height:180px;margin-top:8px;font:13px/1.5 ui-monospace,monospace}
+.library-controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+#srv details{padding:8px 0}#srv details:last-child{border-bottom:0}
+.library-row .library-actions{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}
+.library-row .library-actions .mini{margin:0}
+@media(min-width:820px){#downloads{grid-template-columns:1fr 1fr}#downloads>.view-head,#downloads>.overview{grid-column:1/-1}}
+@media(max-width:730px){.server-row{grid-template-columns:minmax(0,1fr) auto auto;gap:5px 10px}.server-labels{display:none}.server-name{grid-column:1/-1}.server-actions{grid-column:1/-1;justify-content:flex-start}.server-pop{grid-column:2}.mod-filters{grid-template-columns:1fr 1fr}.mod-filters label:last-child{grid-column:1/-1}}
+@media(max-width:520px){h1{font-size:17px}.version{display:block}.overview{padding:14px}.repo{font-size:12px}.inspection-summary{grid-template-columns:1fr}.inspection-summary .cover{max-width:230px}}
 @media(prefers-reduced-motion:reduce){.bar>div{transition:none}}
 </style></head><body>
-<header><h1>Arma Reforger Mod Downloader <small class="version">v__VERSION__</small></h1><nav aria-label="Dashboard sections"><a href="#downloads">Downloads</a><a href="#discover">Find mods</a><a href="#library">Library</a></nav><a class="repo" href="https://github.com/__REPO__" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.5 7.5 0 0 1 8 3.85c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></header><main><div class="notice" id="modUpdateNotice" hidden><span role="status" id="modUpdate" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="modUpdate">Dismiss</button></div><div class="notice" id="sayNotice" hidden><span role="status" id="say" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="say">Dismiss</button></div><div class="notice" id="finishedNotice" hidden><span role="status" id="finished" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="finished">Dismiss</button></div><section class="view" id="downloads"><h2>Downloads</h2><div class="card overview"><h2>Download status <span id="st" role="status"></span></h2>
+<header><h1>Arma Reforger Mod Downloader <small class="version">v__VERSION__</small></h1><nav aria-label="Dashboard sections"><a href="#downloads">Downloads</a><a href="#servers">Servers</a><a href="#discover">Workshop</a><a href="#library">Library</a></nav><a class="repo" href="https://github.com/__REPO__" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.5 7.5 0 0 1 8 3.85c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></header><main><div class="notice" id="modUpdateNotice" hidden><span role="status" id="modUpdate" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="modUpdate">Dismiss</button></div><div class="notice" id="sayNotice" hidden><span role="status" id="say" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="say">Dismiss</button></div><div class="notice" id="finishedNotice" hidden><span role="status" id="finished" class="dim"></span><button class="mini" type="button" aria-label="Dismiss message" data-action="dismiss" data-notice="finished">Dismiss</button></div><section class="view" id="downloads"><div class="view-head"><div><h2>Downloads</h2><p>Monitor transfers and manage the download queue.</p></div><div class="library-controls"><a href="#servers">Browse servers</a><a href="#discover">Find mods</a></div></div><div class="card overview"><h2>Download status <span id="st" role="status"></span></h2>
  <div class="dim" id="boot">Connecting to the downloader…</div>
  <p class="bad" id="downloadRefreshError" role="status" hidden>Could not refresh downloads. Retrying… If it keeps failing, check desktop.log.</p>
  <div class="row"><span id="gbtxt" class="big"></span><span id="spd" class="dim"></span></div>
@@ -77,26 +148,60 @@ ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#
 <details class="card" open><summary><h2 style="font-size:18px">Queue <span id="qcount" class="dim"></span></h2></summary>
   <input class="f" id="fq" aria-label="Filter queue" placeholder="Filter queue" data-filter="queue">
   <div id="queue" class="dim">-</div></details>
-</section><section class="view" id="discover"><h2>Find mods</h2><details class="card" open><summary><h2 style="font-size:18px">Find a server</h2></summary>
- <div class="search" style="margin-top:8px"><input id="bq" aria-label="Search servers" placeholder="Server name" data-search="servers"><button data-action="search-servers">Search</button></div>
- <div id="bs" class="dim" style="margin-top:8px">Search for a server to see its mod list.</div>
-</details>
-<details class="card" open><summary><h2 style="font-size:18px">Find a Workshop mod</h2></summary>
- <div class="search" style="margin-top:8px"><input id="mq" aria-label="Search Workshop mods" placeholder="Name, author, or 16-character mod ID" data-search="mods"><button data-action="search-mods">Search</button></div>
- <div id="mres" class="dim" style="margin-top:8px">Search the Workshop for mods to add to the queue.</div>
- <div id="mpager" style="margin-top:6px"></div>
-</details>
-</section><section class="view" id="library"><h2>Library</h2>
-<div><button id="checkModUpdates" data-action="check-updates">Check for updates</button> <button data-action="update" data-scope="tracked">Update tracked servers&rsquo; mods</button> <button id="cancelModUpdates" data-action="cancel-updates" hidden>Cancel updates</button></div>
-<section class="card" id="availableUpdates" aria-labelledby="availableUpdatesTitle" hidden>
+</section><section class="view" id="servers">
+ <div class="view-head"><div><h2>Servers</h2><p>Find a session, inspect its mod list, and join through Steam.</p></div><button data-action="refresh-browser">Refresh</button></div>
+ <form id="serverFilters" class="panel">
+  <div class="search"><input id="bq" name="q" type="search" maxlength="120" aria-label="Search servers" placeholder="Server or scenario name"><button type="submit">Search</button></div>
+  <details class="filters" id="serverFilterDetails" open><summary>Server filters</summary>
+   <div class="filter-grid">
+    <label>Region<select name="region" id="serverRegion"><option value="">Any region</option></select></label>
+    <label>Platform<select name="platform"><option value="">All platforms</option><option value="pc">PC</option><option value="xbox">Xbox</option><option value="psn">PlayStation</option></select></label>
+    <label>Mods<select name="hasMods"><option value="">Any</option><option value="true">Modded</option><option value="false">Vanilla</option></select></label>
+    <label>Status<select name="online"><option value="true">Online</option><option value="all">All servers</option><option value="false">Offline</option></select></label>
+    <label>Host<select name="official"><option value="">Any</option><option value="true">Official</option><option value="false">Community</option></select></label>
+    <label>Password<select name="locked"><option value="">Any</option><option value="false">Open</option><option value="true">Protected</option></select></label>
+    <label>BattlEye<select name="battleye"><option value="">Any</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
+    <label>Sort by<select name="sort"><option value="players">Most players</option><option value="name">Name</option><option value="newest">Recently added</option><option value="lastSeen">Last seen</option></select></label>
+   </div>
+   <div class="latency"><button class="mini" type="button" data-action="measure-ping">Measure regional ping</button>
+    <label>Max regional ping <select id="maxRegionPing" disabled><option value="">Any</option><option value="50">50 ms</option><option value="100">100 ms</option><option value="150">150 ms</option><option value="200">200 ms</option></select></label>
+    <button type="reset" class="mini">Reset filters</button><span id="latencyStatus" class="dim" role="status"></span>
+   </div>
+  </details>
+ </form>
+ <div><div id="bstatus" class="result-head" role="status" tabindex="-1"></div><div id="bs" class="server-list"></div></div>
+ <div id="bpager" class="pager" aria-label="Server pages"></div>
+</section><section class="view" id="discover">
+ <div class="view-head"><div><h2>Workshop</h2><p>Browse mods, dependencies, and releases before queueing.</p></div></div>
+ <form id="workshopFilters" class="panel">
+  <div class="search"><input id="mq" name="q" type="search" maxlength="120" aria-label="Search Workshop mods" placeholder="Name, author, or 16-character mod ID"><button type="submit">Search</button></div>
+  <div class="mod-filters">
+   <label>Sort by<select name="sort"><option value="popularity">Popular</option><option value="recently-updated">Recently updated</option><option value="newest">Newest</option><option value="highest-rated">Highest rated</option><option value="most-rated">Most rated</option><option value="subscribers">Most subscribed</option><option value="largest">Largest</option><option value="name">Name</option></select></label>
+   <label>Category<select name="category"><option value="">All categories</option><option value="WEAPONS">Weapons</option><option value="VEHICLES">Vehicles</option><option value="TERRAINS">Terrains</option><option value="SCENARIOS_MP">Multiplayer scenarios</option><option value="SCENARIOS_SP">Single-player scenarios</option><option value="SYSTEMS">Systems</option><option value="CHARACTERS">Characters</option><option value="EFFECTS">Effects</option><option value="PROPS">Props</option></select></label>
+   <label>Tags<input name="tags" maxlength="160" placeholder="Comma-separated tags"></label>
+  </div>
+  <div class="latency"><button class="mini" type="reset">Reset filters</button></div>
+ </form>
+ <div><div id="mstatus" class="result-head" role="status" tabindex="-1"></div><div id="mres"></div></div>
+ <div id="mpager" class="pager" aria-label="Workshop pages"></div>
+</section><section class="view" id="library"><div class="view-head"><div><h2>Library</h2><p>Manage tracked servers and the mods on this device.</p></div><button data-action="open-addons" class="desktop-only" hidden>Open addons folder</button></div>
+<div class="library-controls"><button id="checkModUpdates" class="primary" data-action="check-updates">Check for mod updates</button> <button data-action="update" data-scope="tracked">Update tracked servers&rsquo; mods</button> <button id="cancelModUpdates" data-action="cancel-updates" hidden>Cancel updates</button></div>
+<section class="card panel" id="availableUpdates" aria-labelledby="availableUpdatesTitle" hidden>
  <div class="row"><h2 id="availableUpdatesTitle" style="font-size:18px">Available updates <span id="availableUpdatesCount" class="dim"></span></h2><button id="applyAllUpdates" data-action="apply-updates">Update all</button></div>
  <ul id="availableUpdatesList"></ul>
 </section>
-<details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span><button class="mini" data-action="refresh-servers" title="Refresh all tracked server mod lists">Refresh all</button></h2></summary><div id="srv" class="dim" style="margin-top:8px">Loading tracked servers…</div></details>
-<details class="card wide"><summary><h2 style="font-size:18px">Completed <span id="reccount" class="dim"></span></h2></summary>
+<details class="card wide" open><summary><h2 style="font-size:18px">Tracked servers <span id="srvcount" class="dim"></span></h2></summary>
+ <div class="library-controls"><input class="f" id="fs" type="search" aria-label="Filter tracked servers" placeholder="Filter tracked servers" data-filter="srv"><button class="mini" data-action="refresh-servers">Refresh lists</button></div>
+ <div id="srv" class="dim">Loading tracked servers…</div></details>
+<details class="card wide"><summary><h2 style="font-size:18px">Installed mods <span id="reccount" class="dim"></span></h2></summary>
  <input class="f" id="fr" aria-label="Filter completed mods" placeholder="Filter completed mods" data-filter="rec">
  <ul id="rec"></ul></details>
-</section></main><dialog id="confirmAction" aria-labelledby="confirmTitle" aria-describedby="confirmCopy"><h2 id="confirmTitle"></h2><p id="confirmCopy"></p><form method="dialog"><button value="cancel" autofocus>Cancel</button><button id="confirmSubmit" value="confirm">Continue</button></form></dialog><script nonce="__NONCE__">
+</section></main>
+<dialog class="inspection" id="inspection" aria-labelledby="inspectionTitle">
+ <header><h2 id="inspectionTitle"></h2><form method="dialog"><button autofocus>Close</button></form></header>
+ <div id="inspectionBody" class="inspection-body"></div>
+</dialog>
+<dialog id="confirmAction" aria-labelledby="confirmTitle" aria-describedby="confirmCopy"><h2 id="confirmTitle"></h2><p id="confirmCopy"></p><form method="dialog"><button value="cancel" autofocus>Cancel</button><button id="confirmSubmit" value="confirm">Continue</button></form></dialog><script nonce="__NONCE__">
 function showView(){
  const links=document.querySelectorAll('nav a');
  const active=Array.from(links).find(link=>link.hash===location.hash)||links[0];
@@ -106,9 +211,11 @@ function showView(){
    else link.removeAttribute('aria-current');
  }
  window.scrollTo(0,0);
+ if(active.hash==='#servers'&&!browserLoaded)browse();
+ if(active.hash==='#discover'&&!workshopLoaded)searchMods();
+ if(active.hash==='#library')loadSrv();
 }
 addEventListener('hashchange',showView);
-showView();
 let T='__T__';   // refreshed from /status so an open page survives dashboard restarts
 const desktopTransport = __DESKTOP__;
 document.getElementById('openAddons').hidden=!desktopTransport;
@@ -120,7 +227,7 @@ let SRV=null,BR=null,lastKey='';
 let RECENT=[],RCREV='',loadingCompleted=false;
 let availableUpdates=[],availableRevision='',loadingUpdates=false,updatesKey='',automaticUpdateCheck=false,applyingUpdates=false;
 let transferSample=null;
-let FILTER={queue:'',act:'',rec:''},LAST=null;
+let FILTER={queue:'',act:'',rec:'',srv:''},LAST=null;
 function match(name,q){ return !q || String(name).toLowerCase().indexOf(q.toLowerCase())>=0; }
 function sampleTransferRate(previous,status,now){
  const current=new Map(status.running?(status.active||[]).filter(row=>Number.isFinite(row.b)).map(row=>[row.id,row.b]):[]);
@@ -260,20 +367,22 @@ function renderSrv(D,A,B){
  if(!SRV)return;
  document.getElementById('srvcount').textContent='('+SRV.servers.length+')';
  if(!SRV.servers.length){
-  document.getElementById('srv').textContent='No servers tracked. Add one from Find mods.';
+  document.getElementById('srv').innerHTML='No servers tracked. <a href="#servers">Browse servers</a>';
   return;
  }
  const expanded=new Set(Array.from(document.querySelectorAll('#srv details[open]'),d=>d.dataset.server));
- document.getElementById('srv').innerHTML=SRV.servers.map(v=>{
+ const visible=SRV.servers.filter(server=>match(server.name,FILTER.srv));
+ if(!visible.length){document.getElementById('srv').textContent='No tracked servers match this filter.';return;}
+ document.getElementById('srv').innerHTML=visible.map(v=>{
   const done=LAST?.inventoryPending&&v.haveCount!=null?v.haveCount:v.mods.filter(m=>D[m.id]).length;
-  return '<details data-server="'+escAttr(v.id)+'"'+(expanded.has(String(v.id))?' open':'')+'><summary>'+esc(v.name)+' <span class="dim">'+done+' / '+v.mods.length+' downloaded</span>'+
-  (v.changed?('<span class="warn" style="font-size:12px"> modlist changed +'+v.changed.added+' -'+v.changed.removed+' - Make preset updates it</span>'):'')+
-   '<button class="mini" data-action="update" data-scope="server" data-id="'+escAttr(v.id)+'">Update mods</button>'+
-   '<button class="mini" data-action="queue-server" data-id="'+escAttr(v.id)+'">Queue first</button>'+
-   '<button class="mini amber" data-action="preset" data-id="'+escAttr(v.id)+'">Make preset</button>'+
-   (desktopTransport?'<button class="mini" data-action="join-server" data-id="'+escAttr(v.id)+'">Join server</button>':'')+
-  '<button class="mini grey" data-action="refresh-one" data-id="'+escAttr(v.id)+'" title="Check this server for new mods and add them to the queue">Refresh</button>'+
-  '<button class="mini grey" data-action="remove-server" data-id="'+escAttr(v.id)+'" title="Stop tracking this server. Keep its mods on disk.">Remove</button></summary><ul>'+
+  return '<details class="library-row" data-server="'+escAttr(v.id)+'"'+(expanded.has(String(v.id))?' open':'')+'><summary><b>'+esc(v.name)+'</b> <span class="dim">'+
+   (v.mods.length?done+' / '+v.mods.length+' downloaded':'Vanilla')+'</span>'+
+   (v.changed?'<span class="warn subline">Mod list changed +' +Number(v.changed.added)+' −'+Number(v.changed.removed)+'</span>':'')+
+   '</summary><div class="library-actions">'+
+   (desktopTransport?actionButton('Join','join-server',v.id,'mini primary'):'')+
+   actionButton('Server details','server-details',v.id)+
+   (v.mods.length?actionButton('Update mods','update',v.id,'mini','data-scope="server"')+actionButton('Queue first','queue-server',v.id)+actionButton('Make preset','preset',v.id):'')+
+   actionButton('Refresh','refresh-one',v.id)+actionButton('Remove','remove-server',v.id)+'</div><ul>'+
    v.mods.map(m=>{
     const t=D[m.id]?'<span class="ok">&#10003;</span>':A[m.id]?'<span class="warn">&#10227;</span>':'<span class="dim">&#8226;</span>';
     const s2=B[m.id]!=null?sz(B[m.id]):(m.e>0?sz(m.e):'');
@@ -281,47 +390,164 @@ function renderSrv(D,A,B){
    }).join('')+'</ul></details>';
  }).join('');
 }
-async function browse(){
- const q=document.getElementById('bq').value.trim();
- const el=document.getElementById('bs');
- if(!q){ BR=null; el.innerHTML='<span class="dim">Search for a server to see its mod list.</span>'; return; }
- el.textContent='Searching servers…';
- try{
-  const r=await (await fetch('/browse?q='+encodeURIComponent(q))).json();
-  if(r.error)throw new Error(r.error);
-  if(!r.servers)throw new Error('unexpected response');
-  BR=r.servers; renderBrowse();
- }catch(e){ el.innerHTML='<span class="bad">Search failed: '+esc(String(e))+'</span>'; }
+const regions={frankfurt:'Frankfurt',london:'London',los_angeles:'Los Angeles',miami:'Miami',new_york:'New York',singapore:'Singapore',sydney:'Sydney',tokyo:'Tokyo'};
+const platformNames={pc:'PC',xbox:'Xbox',psn:'PlayStation'};
+const serverRegion=document.getElementById('serverRegion');
+const maxRegionPing=document.getElementById('maxRegionPing');
+let measuredRegions={};
+function populateRegions(reset=false){
+ const ceiling=Number(maxRegionPing.value);
+ const old=reset?'':serverRegion.value;
+ const eligible=Object.entries(regions).filter(([id])=>!ceiling||measuredRegions[id]<=ceiling);
+ if(ceiling)eligible.sort(([first],[second])=>measuredRegions[first]-measuredRegions[second]);
+ serverRegion.replaceChildren();
+ if(!ceiling)serverRegion.add(new Option('Any region',''));
+ for(const [id,name] of eligible)serverRegion.add(new Option(name+(measuredRegions[id]!=null?' · '+measuredRegions[id]+' ms':''),id));
+ if(eligible.some(([id])=>id===old))serverRegion.value=old;
+ if(!eligible.length)serverRegion.add(new Option('No measured region in range',''));
 }
-function browseCleared(){
- if(document.getElementById('bq').value.trim())return;
- BR=null;
- document.getElementById('bs').innerHTML='<span class="dim">Search for a server to see its mod list.</span>';
+populateRegions();
+const directoryLists={
+ servers:{route:'/browse',form:document.getElementById('serverFilters'),rows:'servers',content:'bs',status:'bstatus',pager:'bpager',revision:0},
+ mods:{route:'/search-mods',form:document.getElementById('workshopFilters'),rows:'mods',content:'mres',status:'mstatus',pager:'mpager',revision:0}
+};
+let browserLoaded=false,workshopLoaded=false;
+function filterParams(list){
+ const params=new URLSearchParams(new FormData(list.form));
+ params.set('q',(params.get('q')||'').trim());
+ if(params.has('tags')){
+  const category=params.get('category');
+  const tags=[category,...params.get('tags').split(',')].map(t=>t.trim().toUpperCase()).filter(Boolean);
+  params.set('tags',Array.from(new Set(tags)).slice(0,5).join(','));
+  params.delete('category');
+ }
+ for(const [name,value] of [...params])if(!value)params.delete(name);
+ return params;
+}
+async function directoryGet(path,params){
+ const response=await fetch(params?path+'?'+new URLSearchParams(params):path);
+ const result=await response.json();
+ if(!response.ok||result.error)throw new Error(String(result.error||'The directory is unavailable.').split(/\r?\n/)[0]);
+ return result;
+}
+function browse(page){return loadDirectoryList('servers',page);}
+function searchMods(page){return loadDirectoryList('mods',page);}
+async function loadDirectoryList(kind,page,fromPager=false,refresh=false){
+ const list=directoryLists[kind], revision=++list.revision;
+ if(!page||!list.params)list.params=filterParams(list);
+ const params=new URLSearchParams(list.params);
+ params.set('page',page||1);
+ if(refresh)params.set('refresh','1');
+ const status=document.getElementById(list.status), content=document.getElementById(list.content);
+ document.getElementById(list.pager).replaceChildren();
+ if(kind==='servers'&&maxRegionPing.value&&!params.has('region')){
+  BR=[];renderBrowse();status.textContent='No measured region is within '+maxRegionPing.value+' ms.';content.removeAttribute('aria-busy');return;
+ }
+ content.setAttribute('aria-busy','true');
+ if(kind==='servers')browserLoaded=true;else workshopLoaded=true;
+ status.textContent=kind==='servers'?'Loading servers…':'Loading Workshop mods…';
+ if(fromPager)status.focus();
+ try{
+  const r=await directoryGet(list.route,params);
+  if(revision!==list.revision)return;
+  if(!Array.isArray(r[list.rows]))throw new Error('Unexpected response from the directory.');
+  if(kind==='servers'){BR=r.servers;renderBrowse();}
+  else {MRES=r;renderMods();}
+  const count=Number(r.total)||0;
+  let snapshot='';
+  if(r.dataset?.warming)snapshot='Server data is still loading.';
+  else if(r.dataset?.stale)snapshot='Server snapshot is stale.';
+  else if(r.dataset?.lastCollectionAt)snapshot='Updated '+fmtDate(r.dataset.lastCollectionAt,true);
+  status.innerHTML='<span>'+count.toLocaleString()+' '+kind+'</span>'+(snapshot?'<span>'+esc(snapshot)+'</span>':'');
+  renderPager(list.pager,kind,Number(r.page)||1,Number(r.pages)||0);
+ }catch(error){
+  if(revision!==list.revision)return;
+  if(kind==='servers')BR=null;else MRES=null;
+  status.textContent='Could not load '+kind+'.';
+  content.classList.remove('workshop-grid');
+  content.innerHTML='<p class="browser-empty"><span class="bad">'+esc(error.message)+'</span> <button class="mini" data-action="retry-list" data-kind="'+kind+'" data-result-page="'+(page||1)+'">Try again</button></p>';
+ }finally{if(revision===list.revision)content.removeAttribute('aria-busy');}
+}
+function renderPager(id,kind,page,pages){
+ const pager=document.getElementById(id);
+ if(pages<=1){pager.replaceChildren();return;}
+ const button=(caption,target,disabled)=>'<button data-action="result-page" data-kind="'+kind+'" data-result-page="'+target+'"'+(disabled?' disabled':'')+'>'+caption+'</button>';
+ pager.innerHTML=button('Previous',page-1,page<=1)+'<span class="dim">Page '+page.toLocaleString()+' of '+pages.toLocaleString()+'</span>'+button('Next',page+1,page>=pages);
+}
+function fmtDate(value,withTime=false){
+ const time=new Date(value);
+ if(!value||Number.isNaN(time.getTime()))return '';
+ return time.toLocaleDateString(undefined, withTime?{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}:{year:'numeric',month:'short',day:'numeric'});
+}
+function regionLabel(id){return Object.hasOwn(regions,id)?regions[id]:id?String(id).replace(/[_-]/g,' '):'Region unknown';}
+function regionPing(id){return Object.hasOwn(measuredRegions,id)?measuredRegions[id]+' ms to ping site':'';}
+async function measureRegions(button){
+ const status=document.getElementById('latencyStatus');
+ button.disabled=true;status.textContent='Measuring regional ping…';
+ try{
+  const response=await post('measure-ping',{quiet:true});
+  if(!response?.regions)throw new Error(response?.error||'Could not measure regional ping.');
+  measuredRegions=Object.fromEntries(Object.entries(response.regions).filter(([region,ping])=>Object.hasOwn(regions,region)&&Number.isFinite(ping)&&ping>=0));
+  maxRegionPing.disabled=!Object.keys(measuredRegions).length;
+  if(maxRegionPing.disabled)maxRegionPing.value='';
+  const previous=serverRegion.value;
+  populateRegions();
+  if(previous!==serverRegion.value||maxRegionPing.disabled&&directoryLists.servers.params?.has('region')&&serverRegion.value==='')await browse();
+  else if(BR)renderBrowse();
+  status.textContent=maxRegionPing.disabled?'No regional ping sites responded.':
+   'Measurements are to regional sites. Choose a region to view its servers.';
+ }catch(error){status.textContent=error.message;}
+ finally{button.disabled=false;}
+}
+function platformLabel(row){
+ const keys=row.platforms?.length?row.platforms:[row.platform];
+ return keys.filter(Boolean).map(key=>Object.hasOwn(platformNames,key)?platformNames[key]:key).join(' / ');
+}
+function cdnImage(value){
+ try{
+  const url=new URL(value);
+  if(url.origin==='https://ar-gcp-cdn.bistudio.com'&&!url.username&&!url.password&&url.pathname.startsWith('/image/'))return url.href;
+ }catch{}
+ return '';
+}
+function cover(url,name,alt=''){
+ const image=cdnImage(url);
+ const initials=String(name||'').trim().split(/\s+/).slice(0,2).map(word=>Array.from(word)[0]||'').join('').toUpperCase();
+ return '<div class="cover">'+(alt?'':'<span aria-hidden="true">'+esc(initials)+'</span>')+
+  (image?'<img src="'+escAttr(image)+'" alt="'+escAttr(alt)+'" loading="lazy" decoding="async" referrerpolicy="no-referrer">':'')+'</div>';
+}
+function actionButton(label,action,id,classes='mini',extra=''){
+ return '<button class="'+classes+'" data-action="'+action+'" data-id="'+escAttr(id)+'" '+extra+'>'+esc(label)+'</button>';
+}
+function joinButton(server){
+ return desktopTransport&&server.joinable?actionButton('Join','join-server',server.id,'mini primary','data-source="browser"'):'';
+}
+function playerCount(server){
+ if(!server.online)return 'Offline';
+ if(server.players==null||server.maxPlayers==null)return 'Players unknown';
+ return Number(server.players)+' / '+Number(server.maxPlayers);
+}
+function populationBar(server){
+ const max=Number(server.maxPlayers),players=Number(server.players);
+ return server.online&&server.players!=null&&max>0?'<progress class="population" max="'+max+'" value="'+Math.max(0,Math.min(players,max))+'" aria-label="Server population"></progress>':'';
 }
 function renderBrowse(){
  const el=document.getElementById('bs');
- if(!BR||!BR.length){el.innerHTML='<span class="dim">No servers found</span>';return;}
+ if(!BR||!BR.length){el.innerHTML='<p class="browser-empty">No servers match. Try a different name or clear filters.</p>';return;}
+ const labels='<div class="server-row server-labels" aria-hidden="true"><span>Server / Scenario</span><span>Region / Platform</span><span>Players</span><span>Mods</span><span></span></div>';
  el.innerHTML=BR.map(v=>{
-  const pl=(v.players==null?'?':v.players)+'/'+(v.maxPlayers==null?'?':v.maxPlayers)+' players';
-  const md=v.haveCount>=0 ? v.haveCount+'/'+v.totalMods+' on disk' : v.modCount+' mods';
-  return '<details data-browse-id="'+escAttr(v.id)+'"><summary>'+esc(v.name)+
-  ' <span class="dim">'+esc(pl)+(v.online?'':' &middot; offline')+' &middot; '+esc(md)+'</span>'+
-  '<button class="mini" data-action="add-server" data-id="'+escAttr(v.id)+'">Add server</button></summary>'+
-  '<div class="bs" data-id="'+escAttr(v.id)+'"><span class="dim">Loading mod list…</span></div></details>';
+  const tags=[v.official?'Official':'',v.locked?'Protected':'',v.tracked?'Tracked':''].filter(Boolean);
+  const mods=v.modCount===0?'Vanilla':v.modCount!=null?v.modCount+' mods':'Unknown';
+  const name=actionButton(v.name||'Unnamed server','server-details',v.id,'text-button');
+  return '<article class="server-row"><div class="server-name">'+cover(v.image,v.scenarioName||v.name)+'<div>'+name+
+   '<span class="subline">'+esc(v.scenarioName||'Unknown scenario')+'</span></div></div>'+
+   '<div>'+esc(regionLabel(v.region))+'<span class="subline">'+esc(platformLabel(v))+'</span>'+
+   (regionPing(v.region)?'<span class="subline">'+regionPing(v.region)+'</span>':'')+'</div>'+
+   '<div class="server-pop">'+esc(playerCount(v))+populationBar(v)+'</div><div><span>'+esc(mods)+'</span>'+
+   (tags.length?'<span class="subline">'+tags.join(' · ')+'</span>':'')+'</div>'+
+   '<div class="server-actions">'+actionButton('Details','server-details',v.id)+joinButton(v)+'</div></article>';
  }).join('');
-}
-function bsToggle(d,id){ if(d.open&&!d.dataset.l)loadBS(id,d); }
-async function loadBS(id,d){
- const box=d.querySelector('.bs');
- try{
-   const j=await (await fetch('/browse-server?id='+encodeURIComponent(id))).json();
-  if(j.error)throw new Error(j.error);       // e.g. "no modlist (offline or password protected)"
-  if(!j.mods)throw new Error('unexpected response');
-  const ok=j.mods.filter(m=>m.have).length;
-  d.dataset.l=1;   // Reopening retries a failed request.
-  box.innerHTML='<div class="dim">'+ok+' / '+j.mods.length+' mods on disk - '+sz(j.missingBytes||0)+' to download</div><ul>'+
-   j.mods.map(m=>'<li>'+(m.have?'<span class="ok">&#10003;</span>':'<span class="dim">&#8226;</span>')+' '+esc(m.name)+' <span class="dim">'+(m.expB>0?sz(m.expB):'')+'</span></li>').join('')+'</ul>';
- }catch(e){ box.innerHTML='<span class="bad">'+esc(String(e).replace('Error: ',''))+'</span>'; }
+ el.insertAdjacentHTML('afterbegin',labels);
 }
 const noticeTexts=new Map();
 function showNotice(id,message){
@@ -343,52 +569,211 @@ function say(t,ok){
 let verifyAt=null;
 let batchWasRunning=false, finishingBatch=null;
 let MRES=null;
-const MHINT='Search the Workshop for mods to add to the queue.';
-async function searchMods(p){
- const q=document.getElementById('mq').value.trim();
- const el=document.getElementById('mres');
- if(!q)return;                 // Keep existing results on an empty submission.
- el.className='dim'; el.textContent='Searching Workshop…';
- document.getElementById('mpager').innerHTML='';
- try{
-  const r=await (await fetch('/search-mods?q='+encodeURIComponent(q)+'&page='+(p||1))).json();
-  if(r.error)throw new Error(r.error);
-  MRES=r; renderMods();
- }catch(e){ el.className='bad'; el.innerHTML='Search failed: '+esc(e.message); }
+function workshopSize(size){return size>0?sz(size):'Size unknown';}
+function modAction(m){
+ if(LAST?.D[m.id])return '<span class="ok">Installed</span>';
+ if(LAST?.queue.some(q=>q.id===m.id))return '<span class="dim">Queued</span>';
+ return actionButton('Queue','add-mod',m.id,'mini primary');
 }
-function modsCleared(){
- if(document.getElementById('mq').value.trim())return;
- MRES=null;
- const el=document.getElementById('mres');
- el.className='dim'; el.textContent=MHINT;
- document.getElementById('mpager').innerHTML='';
+function renderTags(tags,limit){
+ if(!tags?.length)return '';
+ return '<div class="tags">'+tags.slice(0,limit).map(tag=>actionButton(String(tag).replace(/_/g,' '),'workshop-tag',tag,'tag')).join('')+'</div>';
 }
 function renderMods(){
  const el=document.getElementById('mres'); if(!MRES)return;
- if(!MRES.mods.length){el.innerHTML='<span class="dim">No mods found</span>';el.className='dim';return;}
- el.className='';
- el.innerHTML=MRES.mods.map(m=>{
-  const inst=LAST&&LAST.D[m.id];
-  const queued=LAST&&LAST.queue.some(q=>q.id===m.id);
-  return '<div class="row"><div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.name)+'</div>'+
-   '<div class="dim" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">'+esc(m.author||'')+' &middot; '+sz(m.size)+(m.version?' &middot; v'+esc(m.version):'')+'</div></div>'+
-   '<span>'+(inst?'<span class="ok">Installed</span>':queued?'<span class="dim">Queued</span>':'<button class="mini" data-action="add-mod" data-id="'+escAttr(m.id)+'">Queue</button>')+'</span></div>';
- }).join('');
- document.getElementById('mpager').innerHTML = '<span class="dim">'+esc(MRES.total)+' mods</span>' +
-  (MRES.pages>1?(' <button class="mini grey" '+(MRES.page<=1?'disabled':'')+' data-action="search-mods" data-result-page="'+(MRES.page-1)+'">&larr; Previous</button> <span class="dim">page '+MRES.page+' / '+MRES.pages+'</span> <button class="mini grey" '+(MRES.page>=MRES.pages?'disabled':'')+' data-action="search-mods" data-result-page="'+(MRES.page+1)+'">Next &rarr;</button>'):'');
+ el.classList.toggle('workshop-grid',MRES.mods.length>0);
+ if(!MRES.mods.length){el.innerHTML='<p class="browser-empty">No mods match. Try another search or remove a filter.</p>';return;}
+ el.innerHTML=MRES.mods.map(m=>'<article class="mod-card">'+cover(m.image,m.name)+'<div class="mod-body"><h3>'+
+  actionButton(m.name||'Unnamed mod','mod-details',m.id,'text-button')+'</h3><span class="subline">'+esc(m.author||'Unknown author')+'</span>'+
+  '<span class="subline">'+esc([m.id,m.version?'v'+m.version:'',workshopSize(m.size)].filter(Boolean).join(' · '))+'</span>'+
+  (m.summary?'<p class="subline">'+esc(m.summary)+'</p>':'')+renderTags(m.tags,3)+
+  '<div class="mod-foot"><span class="dim">'+(m.subscribers!=null?Number(m.subscribers).toLocaleString()+' subscribed':'')+'</span>'+
+  '<span data-queue-state="'+escAttr(m.id)+'">'+modAction(m)+'</span></div></div></article>').join('');
+}
+const inspection=document.getElementById('inspection'), inspectionTitle=document.getElementById('inspectionTitle');
+const inspectionBody=document.getElementById('inspectionBody');
+let inspectionRevision=0,inspectionResult=null,inspectionPath=[];
+inspection.addEventListener('close',()=>{if(!inspection.open){inspectionRevision++;inspectionResult=null;inspectionPath=[];}});
+function factList(items){return '<div class="fact-list">'+items.filter(Boolean).map(item=>'<span>'+esc(item)+'</span>').join('')+'</div>';}
+async function inspect(kind,id,{back=false,retry=false}={}){
+ if(back){inspectionPath.pop();({kind,id}=inspectionPath.at(-1)||{});if(!id)return;}
+ else if(!retry){
+  if(!inspection.open)inspectionPath=[];
+  inspectionPath.push({kind,id});
+ }
+ const revision=++inspectionRevision;
+ const server=kind==='server';
+ const title=server?'Server details':'Workshop details';
+ inspectionResult=null;
+ inspectionTitle.textContent=title;
+ inspectionBody.innerHTML='<p role="status">Loading '+(server?'server':'Workshop item')+'…</p>';
+ if(!inspection.open)inspection.showModal();
+ inspection.scrollTop=0;
+ try{
+  const details=await directoryGet(server?'/browse-server':'/mod-details',{id});
+  if(revision!==inspectionRevision||!inspection.open)return;
+  inspectionResult={kind,details};
+  inspectionTitle.textContent=details.name||title;
+  inspectionBody.innerHTML=(inspectionPath.length>1?'<div><button class="mini" data-action="inspect-back">Back</button></div>':'')+
+   (server?renderServerDetails(details):renderWorkshopDetails(details))+'<div data-action-result role="status"></div>';
+  const serverHistory=inspectionBody.querySelector('#activity');
+  if(serverHistory)loadHistory(serverHistory);
+ }catch(error){
+  if(revision!==inspectionRevision||!inspection.open)return;
+  inspectionBody.innerHTML=(inspectionPath.length>1?'<div><button class="mini" data-action="inspect-back">Back</button></div>':'')+
+   '<p class="bad">'+esc(error.message)+'</p><div>'+actionButton('Try again','inspect-retry',id,'mini','data-kind="'+kind+'"')+'</div>';
+ }
+}
+function renderServerDetails(server){
+ const missing=server.unknownSizes?sz(server.missingBytes)+' known, '+server.unknownSizes+' unknown sizes':sz(server.missingBytes)+' missing';
+ const mods=server.mods||[];
+ const tracked=server.tracked?'<a href="#library">In Library</a>':'';
+ const canQueue=server.hasModList&&!server.locked;
+ const queue=canQueue?actionButton(mods.length?'Track & queue mod list':'Track server','add-server',server.id,'mini primary'):'';
+ const summary=server.hasModList
+  ? (mods.length?server.haveCount+' of '+mods.length+' on disk · '+missing:'This server runs without Workshop mods.')
+  : 'This server has no public mod list in the current snapshot.';
+ return '<section class="inspection-summary">'+cover(server.image,server.scenarioName||server.name)+
+  '<div><h3>'+esc(server.scenarioName||'Unknown scenario')+'</h3>'+factList([regionLabel(server.region),regionPing(server.region),platformLabel(server),playerCount(server)+(server.online?' players':''),server.queue>0?server.queue+' waiting':'',
+   server.official?'Official':'Community',server.locked?'Password protected':'',server.battleye===true?'BattlEye enabled':server.battleye===false?'BattlEye disabled':'',server.gameVersion?'Game '+server.gameVersion:''])+
+  '<div class="detail-tools">'+joinButton(server)+queue+tracked+'</div></div></section>'+
+  '<section id="activity" data-id="'+escAttr(server.id)+'"><div class="detail-tools"><h3>Player history</h3><label>Range <select id="historyRange"><option value="6h">6 hours</option><option value="24h" selected>24 hours</option><option value="7d">7 days</option><option value="30d">30 days</option></select></label></div>'+
+  '<div id="historyPlot" role="status">Loading player history…</div></section>'+
+  '<section><div class="detail-tools"><h3>Server mods</h3>'+(mods.length?'<button class="mini" data-action="export-config">Copy config JSON</button>':'')+'</div><p class="dim">'+esc(summary)+'</p>'+
+  (mods.length?'<input type="search" class="f" id="serverModFilter" aria-label="Filter server mods" placeholder="Filter by mod name or ID"><ul class="mod-list">'+mods.map(mod=>
+   '<li data-mod-row><div>'+actionButton(mod.name||mod.id,'mod-details',mod.id,'text-button')+
+   '<span class="subline"> · '+esc(mod.id)+(mod.version?' · v'+esc(mod.version):'')+'</span></div><span class="'+(mod.have?'ok':'dim')+'">'+(mod.have?'On disk · ':'')+workshopSize(mod.expB)+'</span></li>').join('')+'</ul>':'')+'</section>';
+}
+async function loadHistory(section){
+ const target=section.querySelector('#historyPlot'),range=section.querySelector('select').value;
+ const request=Number(section.dataset.request||0)+1;
+ section.dataset.request=request;
+ target.textContent='Loading player history…';
+ try{
+  const {points}=await directoryGet('/server-history',{id:section.dataset.id,range});
+  if(!section.isConnected||Number(section.dataset.request)!==request)return;
+  const valid=(points||[]).filter(p=>Number.isFinite(Number(p.t))&&Number.isFinite(Number(p.avg))).sort((a,b)=>a.t-b.t);
+  if(!valid.length){target.textContent='No population samples for this range.';return;}
+  const peak=Math.max(...valid.map(p=>Number(p.max??p.avg)));
+  const average=Math.round(valid.reduce((total,point)=>total+Number(point.avg),0)/valid.length);
+  target.innerHTML=factList(['Peak '+peak+' players','Average '+average,valid.length+' samples'])+
+   '<canvas width="900" height="120" aria-label="Average player population over the selected range"></canvas>';
+  drawHistory(target.querySelector('canvas'),valid,peak);
+ }catch(error){
+  if(section.isConnected&&Number(section.dataset.request)===request)target.innerHTML='<span class="bad">'+esc(error.message)+'</span> <button class="mini" data-action="retry-history">Try again</button>';
+ }
+}
+function drawHistory(canvas,points,peak){
+ const ctx=canvas.getContext('2d');
+ if(!ctx)return;
+ const w=canvas.width,h=canvas.height,pad=10,start=Number(points[0].t),end=Number(points.at(-1).t),span=Math.max(1,end-start);
+ ctx.strokeStyle='#c9d4c5';
+ for(const fraction of [0,.5,1]){
+  const y=pad+(h-2*pad)*fraction;
+  ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+ }
+ ctx.lineWidth=3;ctx.strokeStyle='#335436';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();
+ for(const [i,point] of points.entries()){
+  const x=points.length===1?w/2:pad+(w-2*pad)*(Number(point.t)-start)/span;
+  const y=h-pad-(h-2*pad)*Math.max(0,Number(point.avg))/Math.max(1,peak);
+  if(points.length===1){ctx.arc(x,y,4,0,2*Math.PI);ctx.fill();}
+  else if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+ }
+ if(points.length>1)ctx.stroke();
+}
+function renderWorkshopDetails(mod){
+ const gallery=(mod.images||[]).filter(image=>image!==mod.image&&cdnImage(image));
+ const deps=mod.dependencies||[],scenes=mod.scenarios||[];
+ return '<section class="inspection-summary">'+cover(mod.image,mod.name,'Workshop cover')+'<div>'+
+  '<h3>'+esc(mod.author||'Unknown author')+'</h3>'+factList([mod.id,mod.version?'Version '+mod.version:'',workshopSize(mod.size),mod.gameVersion?'Game '+mod.gameVersion:'',
+   mod.subscribers!=null?Number(mod.subscribers).toLocaleString()+' subscribed':'',
+   mod.deployments!=null?Number(mod.deployments).toLocaleString()+' tracked servers':'',
+   mod.ratingCount>0?Math.round(Number(mod.rating)*100)+'% positive ('+Number(mod.ratingCount).toLocaleString()+')':'',
+   mod.updatedAt?'Updated '+fmtDate(mod.updatedAt):'',mod.license,mod.obsolete?'Obsolete':''])+renderTags(mod.tags,20)+
+  '<div class="detail-tools"><span data-queue-state="'+escAttr(mod.id)+'">'+modAction(mod)+'</span><button class="mini" data-action="export-config">Copy config JSON</button></div></div></section>'+
+  (mod.description||mod.summary?'<section><h3>Description</h3><p class="description" tabindex="0">'+esc(mod.description||mod.summary)+'</p></section>':'')+
+  (gallery.length?'<details><summary>Screenshots ('+gallery.length+')</summary><div class="gallery">'+gallery.map((image,i)=>cover(image,'','Workshop screenshot '+(i+1))).join('')+'</div></details>':'')+
+  '<details><summary>Dependencies ('+deps.length+')</summary>'+(deps.length?'<p class="dim">'+(mod.totalSize>0?'Known total including dependencies: '+sz(mod.totalSize):'Combined size is unavailable.')+'</p><ul>'+
+   deps.map(dep=>'<li>'+actionButton(dep.name||dep.id,'mod-details',dep.id,'text-button')+' <span class="subline">'+esc([dep.version?'v'+dep.version:'',workshopSize(dep.size)].filter(Boolean).join(' · '))+'</span></li>').join('')+'</ul>':'<p>No dependencies listed.</p>')+'</details>'+
+  (scenes.length?'<details><summary>Scenarios ('+scenes.length+')</summary><ul>'+scenes.map(s=>'<li>'+esc(s.name||s.id||'Unnamed scenario')+'</li>').join('')+'</ul></details>':'')+
+  '<details id="modVersions" data-versions-id="'+escAttr(mod.id)+'"><summary>Version history</summary><div class="version-list"></div></details>';
+}
+async function loadVersions(details,version,button){
+ const target=version?button.closest('li').querySelector('.changelog'):details.querySelector('.version-list');
+ if(target.dataset.pending)return;
+ if(version&&!target.hidden&&target.dataset.loaded){target.hidden=true;return;}
+ target.hidden=false;
+ if(target.dataset.loaded)return;
+ target.dataset.pending='1';
+ target.textContent='Loading '+(version?'release notes':'versions')+'…';
+ try{
+  const params={id:details.dataset.versionsId};
+  if(version)params.version=version;
+  const response=await directoryGet('/mod-versions',params);
+  if(version)target.textContent=response.changelog||'No release notes for this version.';
+  else{
+   const rows=response.versions||[];
+   target.innerHTML=rows.length?'<ul class="mod-list">'+rows.map(row=>'<li><div class="version-row"><b>'+esc(row.version)+'</b><span class="dim">'+
+    esc([fmtDate(row.createdAt),row.gameVersion?'Game '+row.gameVersion:'',workshopSize(row.size)].filter(Boolean).join(' · '))+'</span>'+
+    actionButton('Release notes','version-notes',row.version)+'</div><p class="description changelog" hidden></p></li>').join('')+'</ul>':'<p>No version history is available.</p>';
+  }
+  target.dataset.loaded='1';
+ }catch(error){
+  target.innerHTML='<span class="bad">'+esc(error.message)+'</span> '+(version?'Select Release notes to retry.':'<button class="mini" data-action="retry-versions">Try again</button>');
+ }finally{delete target.dataset.pending;}
+}
+function exportConfig(){
+ if(!inspectionResult)return;
+ const {kind,details}=inspectionResult;
+ let editor=inspectionBody.querySelector('textarea.export-config');
+ if(!editor){
+  const mods=kind==='server'?details.mods:[details,...(details.dependencies||[])];
+  const unique=new Map(mods.map(mod=>[mod.id,mod]));
+  const config=Array.from(unique.values(),mod=>({modId:mod.id,name:mod.name,...(mod.version?{version:mod.version}:{})}));
+  editor=document.createElement('textarea');editor.readOnly=true;editor.className='export-config';editor.setAttribute('aria-label','Exported mod configuration');
+  editor.value=JSON.stringify({game:{mods:config}},null,2);
+  inspectionBody.insertBefore(editor,inspectionBody.querySelector('[data-action-result]'));
+ }
+ editor.focus();editor.select();
+ let copied=false;
+ try{copied=document.execCommand('copy');}catch{}
+ inspectionBody.querySelector('[data-action-result]').textContent=copied?'Config JSON copied.':'Config JSON selected. Use your system copy shortcut.';
+}
+function syncWorkshopActions(){
+ for(const node of document.querySelectorAll('[data-queue-state]')){
+  if(node.querySelector('button:disabled'))continue;
+  const markup=modAction({id:node.dataset.queueState});
+  if(node.dataset.displayed!==markup){node.dataset.displayed=markup;node.innerHTML=markup;}
+ }
 }
 async function addMod(id,button){
  button.disabled=true;
- await post('add-mod?id='+encodeURIComponent(id));
- if(MRES)renderMods();
+ const result=await post('add-mod?id='+encodeURIComponent(id));
+ button.disabled=false;
+ detailMessage(button,result);
+ syncWorkshopActions();
 }
 async function addSrv(id,ev){
  ev.stopPropagation();
- const b=ev.target; b.disabled=true; b.textContent='Adding…';
- say('Adding server…');
- await post('add-server?id='+id);
- b.disabled=false; b.textContent='Add server';
- loadSrv();
+ const button=ev.target.closest('button');
+ const caption=button.textContent;
+ button.disabled=true;button.textContent='Adding…';
+ const result=await post('add-server?id='+encodeURIComponent(id));
+ button.disabled=false;button.textContent=caption;
+ detailMessage(button,result);
+ if(result&&!result.error){
+  SRVAt=0;await loadSrv();
+  refreshTrackedRows();
+ }
+}
+function refreshTrackedRows(){
+ if(!BR||!SRV)return;
+ const tracked=new Set(SRV.servers.map(server=>server.id));
+ for(const server of BR)server.tracked=tracked.has(server.id);
+ renderBrowse();
+}
+function detailMessage(button,result){
+ if(button?.closest('#inspection'))inspectionBody.querySelector('[data-action-result]').textContent=String(result?.error||result?.msg||'Could not reach the downloader.').split(/\r?\n/)[0];
 }
 let statusPoll=null;
 function tick(afterPending=false){
@@ -474,6 +859,7 @@ async function refreshStatus(){
    renderQueue(LAST.queue,A);
    renderRec(LAST.recent);
    renderSrv(D,A,B);
+   syncWorkshopActions();
   }
   showNotice('failed',s.failed?.length===1?'Workshop skipped '+s.failed[0]+'.':s.failed?.length?s.failed.length+' mods skipped after Workshop errors.':'');
   const al=document.getElementById('addonsline');
@@ -502,7 +888,7 @@ function actionRequest(path){
  if(desktopTransport)return fetch(path+(path.includes('?')?'&':'?')+'t='+T,{method:'POST'});
  return fetch(path,{method:'POST',headers:{'X-RFMM-Token':T}});
 }
-async function post(w){
+async function post(w,{quiet=false}={}){
  const send=async()=>{
   const r=await actionRequest('/'+w);
   return {r:r, j:await r.json()};
@@ -514,11 +900,13 @@ async function post(w){
    const s=await tick(true);
    if(s?.tok)res=await send();
   }
-  if(res.j.error)say(String(res.j.error).split(/\r?\n/)[0],false);
-  else if(res.j.msg)say(String(res.j.msg),true);
-  await tick(true);
+  if(!quiet){
+   if(res.j.error)say(String(res.j.error).split(/\r?\n/)[0],false);
+   else if(res.j.msg)say(String(res.j.msg),true);
+   await tick(true);
+  }
   return res.j;
- }catch(e){say("Could not reach the downloader.",false); return null;}
+ }catch(e){if(!quiet)say("Could not reach the downloader.",false);return null;}
 }
 async function jobPoll(id){
  // a refresh runs in one background job; this asks until it is finished
@@ -615,6 +1003,7 @@ async function removeSrv(id,ev){
  await post('remove-server?id='+id);
  SRV=null; SRVAt=0; await loadSrv();
  if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);
+ refreshTrackedRows();
 }
 async function requeuePartial(button){
  button.disabled=true;
@@ -661,16 +1050,34 @@ document.addEventListener('click',event=>{
  const button=event.target.closest('button[data-action]');
  if(!button||button.disabled)return;
  if(button.closest('summary'))event.preventDefault();
- const {action,id,notice,scope,command,resultPage}=button.dataset;
+ const {action,id,notice,scope,command,resultPage,source,kind}=button.dataset;
  switch(action){
   case 'dismiss': return dismissNotice(notice);
   case 'queue-control': return act(command);
-  case 'search-servers': return browse();
-  case 'search-mods': return searchMods(Number(resultPage)||1);
+  case 'refresh-browser': return loadDirectoryList('servers',null,false,true);
+  case 'measure-ping': return measureRegions(button);
+  case 'result-page':
+  case 'retry-list': return loadDirectoryList(kind,Number(resultPage)||1,true);
+  case 'server-details': return inspect('server',id);
+  case 'mod-details': return inspect('mod',id);
+  case 'inspect-back': return inspect(null,null,{back:true});
+  case 'inspect-retry': return inspect(kind,id,{retry:true});
+  case 'retry-history': return loadHistory(button.closest('#activity'));
+  case 'retry-versions': return loadVersions(button.closest('details'));
+  case 'version-notes': return loadVersions(button.closest('details'),id,button);
+  case 'export-config': return exportConfig();
+  case 'workshop-tag': {
+   if(inspection.open)inspection.close();
+   const fields=directoryLists.mods.form.elements;
+   fields.q.value='';fields.category.value='';fields.tags.value=id;
+   if(location.hash!=='#discover'){workshopLoaded=true;location.hash='#discover';}
+   return searchMods();
+  }
   case 'open-addons': return post('open-addons-folder');
   case 'join-server':
    button.disabled=true;
-   return post('join-server?id='+encodeURIComponent(id)).finally(()=>{button.disabled=false;});
+   return post('join-server?id='+encodeURIComponent(id)+(source==='browser'?'&source=browser':''))
+    .then(result=>detailMessage(button,result)).finally(()=>{button.disabled=false;});
   case 'check-updates': return post('update-mods?scope=all&check=1');
   case 'apply-updates': return applyModUpdates(id);
   case 'update': return updateMods(scope,id||'',event);
@@ -687,20 +1094,38 @@ document.addEventListener('click',event=>{
  }
 });
 document.addEventListener('input',event=>{
- const {filter,search}=event.target.dataset;
- if(filter){FILTER[filter]=event.target.value;renderAll();}
- if(search==='servers')browseCleared();
- if(search==='mods')modsCleared();
+ const {filter}=event.target.dataset;
+ if(filter){
+  FILTER[filter]=event.target.value;
+  if(filter==='srv'){if(LAST)renderSrv(LAST.D,LAST.A,LAST.B);}
+  else renderAll();
+ }
+ if(event.target.id==='serverModFilter'){
+  for(const row of inspectionBody.querySelectorAll('[data-mod-row]'))row.hidden=!match(row.textContent,event.target.value.trim());
+ }
 });
-document.addEventListener('keydown',event=>{
- if(event.key!=='Enter'||event.isComposing)return;
- if(event.target.dataset.search==='servers')browse();
- if(event.target.dataset.search==='mods')searchMods(1);
+for(const [kind,list] of Object.entries(directoryLists)){
+ list.form.addEventListener('reset',()=>setTimeout(()=>{
+  if(kind==='servers')populateRegions(true);
+  loadDirectoryList(kind);
+ }));
+ list.form.addEventListener('submit',event=>{event.preventDefault();loadDirectoryList(kind);});
+ list.form.addEventListener('change',event=>{
+  if(event.target===maxRegionPing)populateRegions();
+  if(event.target.matches('select'))loadDirectoryList(kind);
+ });
+}
+inspection.addEventListener('change',event=>{
+ if(event.target.id==='historyRange')loadHistory(event.target.closest('#activity'));
 });
+inspection.addEventListener('click',event=>{if(event.target.closest('a[href="#library"]'))inspection.close();});
 document.addEventListener('toggle',event=>{
  const details=event.target;
- if(details.matches('details[data-browse-id]'))bsToggle(details,details.dataset.browseId);
+ if(details.matches('details[data-versions-id]')&&details.open)loadVersions(details);
 },true);
+document.addEventListener('error',event=>{if(event.target.matches?.('.cover img'))event.target.hidden=true;},true);
+if(desktopTransport)for(const button of document.querySelectorAll('.desktop-only'))button.hidden=false;
+showView();
 (async function loop(){
  const start=performance.now();
  await tick();

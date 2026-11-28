@@ -101,8 +101,9 @@ $ApiBase = if ($env:RFMM_API) { (Get-WorkshopUri $env:RFMM_API).AbsoluteUri.Trim
 $UserAgent = 'arma-reforger-mod-downloader/' + (((Get-Content (Join-Path $PSScriptRoot 'version.txt') -Raw -ErrorAction SilentlyContinue) -replace '\s', ''))
 if ($UserAgent -match '/$') { $UserAgent = 'arma-reforger-mod-downloader/dev' }
 $ApiH = @{ 'User-Agent' = $UserAgent }
-$script:bCache = @{}; $script:bCacheAt = @{}   # /browse search cache
-$script:dCache = @{}; $script:dCacheAt = @{}   # /browse-server detail cache
+$script:directoryCache = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+$script:browserServers = @{}
+$script:regionLatency = $null
 
 
 
@@ -128,7 +129,7 @@ if ($Check) {
   exit 0
 }
 
-$mutating = '/update-mods','/apply-mod-updates','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/cancel-downloads','/remove-queued-mod','/requeue-partial-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod','/open-addons-folder','/join-server'
+$mutating = '/update-mods','/apply-mod-updates','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/cancel-downloads','/remove-queued-mod','/requeue-partial-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod','/open-addons-folder','/join-server','/measure-ping'
 $script:modUpdateJob = $null
 
 function Start-DownloadHelpers {
@@ -181,6 +182,11 @@ function Write-DashboardError($Response, [int]$Status, [string]$Message) {
   $bytes = [Text.Encoding]::UTF8.GetBytes((@{ error = $Message } | ConvertTo-Json -Compress))
   $Response.OutputStream.Write($bytes, 0, $bytes.Length)
 }
+function Write-DirectoryJson($Response, $Value) {
+  $Response.ContentType = $JsonType
+  $bytes = [Text.Encoding]::UTF8.GetBytes(($Value | ConvertTo-Json -Depth 6 -Compress))
+  $Response.OutputStream.Write($bytes, 0, $bytes.Length)
+}
 function Invoke-DashboardRequest($ctx) {
   try {
     $msg = $null   # must reset per request or it leaks into the next response body
@@ -193,7 +199,7 @@ function Invoke-DashboardRequest($ctx) {
     $ctx.Response.Headers.Add('X-Frame-Options', 'DENY')
     $ctx.Response.Headers.Add('X-Content-Type-Options', 'nosniff')
     $ctx.Response.Headers.Add('Content-Security-Policy',
-      "default-src 'self'; script-src $scriptPolicy; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
+      "default-src 'self'; script-src $scriptPolicy; style-src 'self' 'unsafe-inline'; img-src https://ar-gcp-cdn.bistudio.com/image/; frame-ancestors 'none'; base-uri 'none'")
     if (!$Desktop -and !(Test-LocalDashboardRequest $ctx.Request)) {
       Write-DashboardError $ctx.Response 403 'This dashboard accepts local, same-origin requests only.'
       return
@@ -214,7 +220,8 @@ function Invoke-DashboardRequest($ctx) {
       { $_ -in '/open-addons-folder','/join-server' } {
         if (!$Desktop) { Write-DashboardError $ctx.Response 403 'Open the desktop app to use this action.'; return }
         $payload = if ($path -eq '/join-server') {
-          @{ url = Get-LibraryJoinUrl $ctx.Request.QueryString['id']; msg = 'Opening Arma Reforger through Steam...' }
+          $browser = $ctx.Request.QueryString['source'] -eq 'browser'
+          @{ url = Get-LibraryJoinUrl $ctx.Request.QueryString['id'] -Browser:$browser; msg = 'Opening Arma Reforger through Steam...' }
         } else {
           [void][IO.Directory]::CreateDirectory($Addons)
           @{ folder = $Addons; msg = 'Opened the addons folder.' }
@@ -299,39 +306,33 @@ function Invoke-DashboardRequest($ctx) {
         $ctx.Response.OutputStream.Write($b, 0, $b.Length)
       }
       '/browse' {
-        $have = Get-UiHaveIds
-        $tracked = @{}
-        foreach ($sv in $serverList) { $tracked[$sv.id] = $sv }
-        $rows = @(Get-Browse $ctx.Request.QueryString['q'] | ForEach-Object {
-          # tracked servers get a real on-disk count; others only the API's total
-          $haveCount = -1; $total = $_.modCount
-          if ($tracked.ContainsKey($_.id)) {
-            $mods = @($tracked[$_.id].mods)
-            $haveCount = @($mods | Where-Object { $have.ContainsKey($_.id) }).Count
-            $total = $mods.Count
-          }
-          [PSCustomObject]@{ id = $_.id; name = $_.name; players = $_.players; maxPlayers = $_.maxPlayers
-                             region = $_.region; online = $_.online; modCount = $_.modCount
-                             scenarioName = $_.scenarioName; haveCount = $haveCount; totalMods = $total
-                             changed = $(if ($tracked.ContainsKey($_.id) -and $tracked[$_.id].PSObject.Properties['changed']) { $tracked[$_.id].changed } else { $null }) } })
-        $b = [Text.Encoding]::UTF8.GetBytes((@{ servers = $rows } | ConvertTo-Json -Depth 4 -Compress))
-        $ctx.Response.ContentType = $JsonType
-        $ctx.Response.OutputStream.Write($b, 0, $b.Length)
+        $result = Get-Browse $ctx.Request.QueryString
+        $tracked = @($serverList.id)
+        foreach ($row in $result.servers) { $row.tracked = $row.id -in $tracked }
+        Write-DirectoryJson $ctx.Response $result
       }
       '/browse-server' {
-        $s = Get-Detail $ctx.Request.QueryString['id']
+        $s = Get-Detail $ctx.Request.QueryString['id'] -AllowEmpty
         $have = Get-UiHaveIds
-        $rows = @($s.mods | ForEach-Object {
-          $exp = if ($sizeMap.ContainsKey($_.id)) { [double]$sizeMap[$_.id].bytes } else { [double]$_.size }
-          [PSCustomObject]@{ id = $_.id; name = $_.name; expB = $exp; have = [bool]$have.ContainsKey($_.id) } })
+        $rows = @(foreach ($mod in $s.mods) {
+          $id = Test-ModId $mod.id
+          if (!$id) { continue }
+          $exp = if ($mod.size -gt 0) { [double]$mod.size }
+                 elseif ($sizeMap.ContainsKey($id)) { [double]$sizeMap[$id].bytes } else { 0 }
+          @{ id = $id; name = $mod.name; version = $mod.version; expB = $exp; have = $have.ContainsKey($id) }
+        })
         $missing = @($rows | Where-Object { -not $_.have })
-        $out = @{ name = $s.name; online = [bool]$s.online; mods = $rows
-                  haveCount = @($rows | Where-Object { $_.have }).Count
-                  missingBytes = [double]($missing | ForEach-Object { $_.expB } | Measure-Object -Sum).Sum }
-        $b = [Text.Encoding]::UTF8.GetBytes(($out | ConvertTo-Json -Depth 4 -Compress))
-        $ctx.Response.ContentType = $JsonType
-        $ctx.Response.OutputStream.Write($b, 0, $b.Length)
+        $out = Get-ServerPreview $s
+        $out.mods = $rows
+        $out.hasModList = [bool]($rows.Count -or ($s.online -and !$s.passwordProtected -and $null -ne $s.modCount -and $s.modCount -eq 0))
+        $out.tracked = $s.id -in $serverList.id
+        $out.haveCount = $rows.Count - $missing.Count
+        $out.unknownSizes = @($missing | Where-Object { $_.expB -le 0 }).Count
+        $out.missingBytes = [double]($missing | ForEach-Object { $_.expB } | Measure-Object -Sum).Sum
+        Write-DirectoryJson $ctx.Response $out
       }
+      '/server-history' { Write-DirectoryJson $ctx.Response (Get-ServerHistory $ctx.Request.QueryString['id'] $ctx.Request.QueryString['range']) }
+      '/measure-ping' { Write-DirectoryJson $ctx.Response (Measure-ServerRegions) }
       '/start'  { $msg = Invoke-StartQueue;  Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/pause'  { $msg = Invoke-PauseQueue; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Yellow }
       '/verify' { Write-Host (Invoke-Verify); $msg = 'Mods checked.' }
@@ -347,16 +348,9 @@ function Invoke-DashboardRequest($ctx) {
           $msg = $r.msg; $jobId = $r.job
         } else { $msg = Invoke-MakePreset $id }
       }
-      '/search-mods' {
-        $r = Search-Mods ([string]$ctx.Request.QueryString['q']) ([int]$ctx.Request.QueryString['page'])
-        $mods = @($r.mods | ForEach-Object {
-          [PSCustomObject]@{ id = $_.id; name = $_.name; author = $_.author
-                             size = [double]$_.size; version = $_.version }
-        })
-        $b = [Text.Encoding]::UTF8.GetBytes((@{ total = $r.total; page = $r.page; pages = $r.pages; mods = $mods } | ConvertTo-Json -Depth 4 -Compress))
-        $ctx.Response.ContentType = $JsonType
-        $ctx.Response.OutputStream.Write($b, 0, $b.Length)
-      }
+      '/search-mods' { Write-DirectoryJson $ctx.Response (Search-Mods $ctx.Request.QueryString) }
+      '/mod-details' { Write-DirectoryJson $ctx.Response (Get-WorkshopDetails $ctx.Request.QueryString['id']) }
+      '/mod-versions' { Write-DirectoryJson $ctx.Response (Get-WorkshopVersions $ctx.Request.QueryString['id'] $ctx.Request.QueryString['version']) }
       '/add-mod' { $msg = Invoke-AddMod $ctx.Request.QueryString['id']; Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/add-server'   { $msg = Invoke-AddServer $ctx.Request.QueryString['id'];   Write-Host "[$(Get-Date -f HH:mm:ss)] $msg" -ForegroundColor Green }
       '/cancel-downloads' {

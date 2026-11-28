@@ -35,7 +35,7 @@ DATA = Path(os.environ.get("RFMM_DATA", HOME / "data")).expanduser().resolve()
 ENGINE = HOME / "armar-server/ArmaReforgerServer"
 ORIGIN = "rfmm://app/"
 BRIDGE = r"""
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__NONCE__'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__NONCE__'; style-src 'unsafe-inline'; img-src https://ar-gcp-cdn.bistudio.com/image/; base-uri 'none'; form-action 'none'">
 <script nonce="__NONCE__">
 (() => {
   const waiting = new Map();

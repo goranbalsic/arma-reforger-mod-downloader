@@ -395,10 +395,14 @@ internal sealed class DownloadWindow : Form
     private async void ServeDashboard(object sender, CoreWebView2WebResourceRequestedEventArgs args)
     {
         CoreWebView2 core = (CoreWebView2)sender;
+        Uri uri = new Uri(args.Request.Uri);
+        if (args.ResourceContext == CoreWebView2WebResourceContext.Image && args.Request.Method == "GET"
+            && uri.Scheme == "https" && uri.IdnHost == "ar-gcp-cdn.bistudio.com" && uri.IsDefaultPort
+            && uri.AbsolutePath.StartsWith("/image/", StringComparison.Ordinal) && String.IsNullOrEmpty(uri.UserInfo))
+            return;
         using (CoreWebView2Deferral deferral = args.GetDeferral())
         {
             PowerShellHost.Reply reply;
-            Uri uri = new Uri(args.Request.Uri);
             try
             {
                 if (!Dashboard.IsBaseOf(uri))
@@ -446,7 +450,7 @@ internal sealed class DownloadWindow : Form
             string headers = "Content-Type: " + reply.type + "; charset=utf-8\r\n"
                 + "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n"
                 + "Content-Security-Policy: default-src 'self'; script-src " + scriptPolicy + "; "
-                + "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'\r\n";
+                + "style-src 'self' 'unsafe-inline'; img-src https://ar-gcp-cdn.bistudio.com/image/; frame-ancestors 'none'; base-uri 'none'\r\n";
             var body = new MemoryStream(Encoding.UTF8.GetBytes(reply.body));
             args.Response = core.Environment.CreateWebResourceResponse(body, reply.status,
                 reply.status < 400 ? "OK" : "Request failed", headers);

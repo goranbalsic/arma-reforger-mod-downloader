@@ -1,6 +1,6 @@
 # Arma Reforger Mod Downloader
 
-Queue a server's Arma Reforger Workshop mods before you join. You can also search for individual mods and resume paused downloads on Windows and Linux.
+Browse Arma Reforger servers and Workshop mods, then queue downloads before you join. The desktop app runs on Windows and Linux.
 
 You can download mods without installing the game. The downloader uses the free Arma Reforger dedicated server.
 
@@ -16,9 +16,11 @@ On Windows, mods download straight into the game's **Documents → My Games → 
 
 ## Download a server's mod list
 
-Open **Find mods**, search for your server, and select **Add server**. Follow the queue under **Downloads**. To save a preset after the queue finishes, close the game and select **Make preset** under **Tracked servers**.
+Open **Servers** to search by name or scenario and filter by region, platform, mod support, and more. Select a server to see its player history and exact reported mod versions. **Track & queue mod list** adds missing mods to **Downloads**. You can save a preset from **Library** after downloads finish and the game is closed.
 
-Use **Join server** on a tracked server to open its Steam invite. Arma Reforger must be installed to play.
+Select **Join** in Servers or Library to open the server's Steam invite. Arma Reforger must be installed to play. **Measure regional ping** checks the directory's regional ping sites from your device.
+
+**Workshop** searches by name, author, tag, or mod ID. Open an item for screenshots, dependencies, version history, and release notes. You can copy mod-list JSON from Workshop and server details.
 
 The packaged app's **Uninstall** menu can remove the downloader with or without the dedicated server it installed. Both options keep your game mods and presets.
 
@@ -32,6 +34,6 @@ On Linux, the desktop app finds the game's Steam Proton profile. Its default is 
 
 ![Download progress, speed, and queued Workshop mods](docs/screenshots/downloads.png)
 
-![Find mods with server and Workshop search results](docs/screenshots/discover.png)
+![Search for Arma Reforger servers and Workshop mods](docs/screenshots/discover.png)
 
 ![Library showing tracked servers and completed mods](docs/screenshots/library.png)

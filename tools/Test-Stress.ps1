@@ -65,6 +65,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not build the stub engine.' }
 $fixture = @{
   serverId = '11111111-1111-1111-1111-111111111111'
   serverName = 'Stress Server'
+  vanillaId = '22222222-2222-2222-2222-222222222222'
   mods = @(
     @{ id = 'AAAAAAAAAAAAAAA1'; name = 'Alpha'; version = '2.0.0'; size = 1048576; sizeKnown = $true },
     @{ id = 'AAAAAAAAAAAAAAA2'; name = 'Beta'; version = '1.1.0'; size = 2097152; sizeKnown = $true },
@@ -86,13 +87,23 @@ while ($listener.IsListening) {
   try {
     $path = $ctx.Request.Url.AbsolutePath
     $body = '{"error":"not found"}'
-    if ($path -eq '/v2/mods' -and $ctx.Request.QueryString['sort'] -eq 'recently-updated') {
+    $query = $ctx.Request.QueryString
+    if ($path -eq '/v2/mods' -and $query['page'] -eq '2' -and $query['sort'] -eq 'largest' -and
+        $query['search'] -eq 'Alpha & co' -and (($query.GetValues('tags') -join ',') -ceq 'WEAPONS,TERRAINS')) {
+      $body = @{ meta = @{ totalMods = 17; totalPages = 2; currentPage = 2 }; data = @(
+        @{ id = $fx.mods[0].id; name = $fx.mods[0].name; tags = @('WEAPONS','TERRAINS'); subscriberCount = 20 }
+      ) } | ConvertTo-Json -Depth 5
+    } elseif ($path -eq '/v2/mods' -and $query['sort'] -eq 'recently-updated') {
       $body = @{ meta = @{ totalPages = 1 }; data = @(
         @{ id = 'AAAAAAAAAAAAAAA1'; name = 'Alpha'; version = '2.1.0'; size = 1048576 },
         @{ id = 'EEEEEEEEEEEEEEEE'; name = 'Not installed'; version = '3.0.0'; size = 50 }
       ) } | ConvertTo-Json -Depth 5
     } elseif ($path -eq '/v2/mods' -or $path -eq '/v2/mods/') {
       $body = @{ meta = @{ totalMods = $fx.mods.Count; totalPages = 1 }; data = @($fx.mods) } | ConvertTo-Json -Depth 5
+    } elseif ($path -eq "/v2/mods/$($fx.mods[0].id)/versions/2.0.0") {
+      $body = '{"data":{"version":"2.0.0","changelog":"First line\nSecond line"}}'
+    } elseif ($path -eq "/v2/mods/$($fx.mods[0].id)/versions") {
+      $body = '{"data":{"versions":[{"version":"2.0.0","published":true},{"version":"3.0.0","published":false}]}}'
     } elseif ($path -match '^/v2/mods/([0-9A-Fa-f]{16})/dependencies$') {
       $id = $Matches[1].ToUpperInvariant()
       if ($id -eq $fx.depsId) {
@@ -103,7 +114,16 @@ while ($listener.IsListening) {
       $id = $Matches[1].ToUpperInvariant()
       $mod = @($fx.mods | Where-Object { $_.id -eq $id })[0]
       if (!$mod) { $mod = @{ id = $id; name = "Mod $id"; version = '9.9.9'; size = 4096; sizeKnown = $true } }
+      if ($id -eq $fx.mods[0].id) {
+        $mod | Add-Member -NotePropertyName description -NotePropertyValue 'Alpha description'
+        $mod | Add-Member -NotePropertyName dependencies -NotePropertyValue @($fx.mods[1])
+        $mod | Add-Member -NotePropertyName screenshots -NotePropertyValue @('https://ar-gcp-cdn.bistudio.com/image/mock/1.jpg')
+      }
       $body = @{ mod = $mod } | ConvertTo-Json -Depth 5
+    } elseif ($path -eq "/v2/servers/$($fx.vanillaId)") {
+      $body = @{ server = @{ id = $fx.vanillaId; name = 'Vanilla Server'; online = $true; modCount = 0 } } | ConvertTo-Json
+    } elseif ($path -eq "/v2/servers/$($fx.serverId)/history" -and $query['range'] -eq '7d') {
+      $body = '{"points":[{"t":1700000000,"avg":25,"min":20,"max":30,"cap":60}]}'
     } elseif ($path -match '^/v2/servers/([0-9a-fA-F-]{36})$') {
       $mods = @($fx.mods | ForEach-Object {
         $v = if ($fx.serverVersion.PSObject.Properties[$_.id]) { [string]$fx.serverVersion.($_.id) } else { $_.version }
@@ -112,8 +132,18 @@ while ($listener.IsListening) {
       $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($invite)).TrimEnd('=').Replace('+','-').Replace('/','_')
       $body = @{ server = @{ id = $fx.serverId; name = $fx.serverName; mods = $mods; online = $true; joinable = $true
         joinUrl = "steam://run/1874880//$encoded/" } } | ConvertTo-Json -Depth 6
+    } elseif ($path -eq '/v2/servers' -and $query['page'] -eq '2' -and $query['sort'] -eq 'name' -and
+        $query['region'] -eq 'new_york' -and $query['platform'] -eq 'psn' -and $query['includeOffline'] -eq 'true' -and
+        $query['online'] -eq 'false' -and $query['locked'] -eq 'true' -and $query['official'] -eq 'false' -and
+        $query['battleye'] -eq 'true' -and $query['hasMods'] -eq 'true' -and $query['search'] -eq 'Stress & Test') {
+      $body = @{ meta = @{ totalPages = 3; totalServers = 60; currentPage = 2 }; data = @(
+        @{ id = $fx.serverId; name = $fx.serverName; region = 'new_york'; platforms = @('pc','psn')
+           online = $false; passwordProtected = $true; scenarioName = 'Test'; modCount = $fx.mods.Count }
+      ) } | ConvertTo-Json -Depth 5
     } elseif ($path -eq '/v2/servers') {
-      $body = @{ data = @(@{ id = $fx.serverId; name = $fx.serverName; players = 3; maxPlayers = 60; region = 'EU'; online = $true; modCount = $fx.mods.Count; scenarioName = 'Test' }) } | ConvertTo-Json -Depth 5
+      $body = @{ meta = @{ totalServers = 1; totalPages = 1; currentPage = 1 }; data = @(
+        @{ id = $fx.serverId; name = $fx.serverName; players = 3; maxPlayers = 60; online = $true; modCount = $fx.mods.Count }
+      ) } | ConvertTo-Json -Depth 5
     } elseif ($path -eq '/v2/tools/storage-plan') {
       $body = @{ data = @{ downloads = @($fx.mods) } } | ConvertTo-Json -Depth 5
     }
@@ -200,6 +230,39 @@ Check 'the read-only worker refuses other routes' ((Ask $read '/servers').status
 Check 'unknown routes are 404' ((Ask $main '/definitely-not-a-route').status -eq 404)
 Check 'a mutating route needs the token' ((Ask $main '/start' 'POST').status -eq 403)
 
+"== server and Workshop discovery"
+$browserJoin = "/join-server?id=$($fixture.serverId)&source=browser&t=$tok"
+Check 'browser join requires a discovered server' ((Ask $main $browserJoin 'POST').status -ne 200)
+$browse = Ask $main '/browse?q=Stress%20%26%20Test&page=2&sort=name&region=new_york&platform=psn&online=false&locked=true&official=false&battleye=true&hasMods=true'
+Check 'server filtering preserves scope, escaping and page metadata' ($browse.status -eq 200 -and $browse.json.page -eq 2 -and $browse.json.pages -eq 3 -and
+  !$browse.json.servers[0].online -and $browse.json.servers[0].locked -and $browse.json.servers[0].platforms -contains 'psn') $browse.body
+Check 'server browse omits upstream join payloads' ($null -eq $browse.json.servers[0].PSObject.Properties['joinUrl'])
+$null = Ask $main '/browse'
+Check 'browser join resolves an invite without tracking the server' ((Ask $main $browserJoin 'POST').json.url -match '^steam://run/1874880//')
+$serverDetails = Ask $main "/browse-server?id=$($fixture.serverId)"
+Check 'server details preserve reported mod versions and bytes' ($serverDetails.json.mods[1].version -ceq '1.0.0' -and $serverDetails.json.mods[1].expB -eq 2097152)
+$history = Ask $main "/server-history?id=$($fixture.serverId)&range=7d"
+Check 'server history returns the requested range' ($history.status -eq 200 -and $history.json.points[0].avg -eq 25)
+$vanilla = Ask $main "/browse-server?id=$($fixture.vanillaId)"
+Check 'a vanilla server has an empty public mod list' ($vanilla.status -eq 200 -and $vanilla.json.hasModList -and $vanilla.json.mods.Count -eq 0)
+Check 'regional ping requires the action token' ((Ask $main '/measure-ping' 'POST').status -eq 403)
+$catalog = Ask $main '/search-mods'
+Check 'Workshop opens a populated catalogue without a search query' ($catalog.status -eq 200 -and $catalog.json.mods.Count -eq 3)
+$filtered = Ask $main '/search-mods?q=Alpha+%26+co&tags=WEAPONS,TERRAINS&page=2&sort=largest'
+Check 'Workshop sends repeated tags, sort and page without mixing caches' ($filtered.status -eq 200 -and $filtered.json.page -eq 2 -and
+  $filtered.json.total -eq 17 -and $filtered.json.mods[0].tags.Count -eq 2 -and $filtered.json.mods[0].subscribers -eq 20) $filtered.body
+$alpha = $fixture.mods[0].id
+$exact = Ask $main "/search-mods?q=$($alpha.ToLowerInvariant())"
+Check 'exact Workshop ID search returns one normalized result' ($exact.status -eq 200 -and $exact.json.mods.Count -eq 1 -and $exact.json.mods[0].id -ceq $alpha)
+$modDetails = Ask $main "/mod-details?id=$alpha"
+Check 'Workshop detail returns description, dependencies and media' ($modDetails.status -eq 200 -and $modDetails.json.description -eq 'Alpha description' -and
+  $modDetails.json.dependencies[0].id -eq $fixture.mods[1].id -and $modDetails.json.images.Count -eq 1) $modDetails.body
+$versions = Ask $main "/mod-versions?id=$alpha"
+Check 'Workshop version history excludes unpublished releases' ($versions.status -eq 200 -and $versions.json.versions.Count -eq 1 -and $versions.json.versions[0].version -eq '2.0.0')
+Check 'Workshop release notes preserve newlines' ((Ask $main "/mod-versions?id=$alpha&version=2.0.0").json.changelog -ceq "First line$([char]10)Second line")
+Check 'Workshop paths reject non-IDs and invalid version segments' ((Ask $main '/mod-details?id=bad').status -ne 200 -and
+  (Ask $main "/mod-versions?id=$alpha&version=%2e%2e").status -ne 200)
+
 "== add server, auto-start, no duplicates"
 $add = Ask $main "/add-server?id=$($fixture.serverId)&t=$tok" 'POST'
 Check 'adding a server queues its missing mods' (@(QueueIds).Count -eq 3 -and @((Get-Content (Join-Path $data 'batch1-servers.json') -Raw | ConvertFrom-Json).servers).Count -eq 1) "status=$($add.status) queue=$(@(QueueIds).Count) raw=$((Get-Content (Join-Path $data 'batch1-servers.json') -Raw))"
@@ -214,6 +277,11 @@ Check 'desktop JSON replies declare UTF-8' ($join.type -eq 'application/json; ch
 Check 'join rejects servers outside the Library' ((Ask $main "/join-server?id=99999999-9999-9999-9999-999999999999&t=$tok" 'POST').status -ne 200)
 Check 'open addons returns the same game folder used for downloads' ((Ask $main "/open-addons-folder?t=$tok" 'POST').json.folder -eq $gameAddons)
 Check 'the queue has no duplicates' (@(QueueIds).Count -eq @(QueueIds | Select-Object -Unique).Count)
+$trackedVanilla = Ask $main "/add-server?id=$($fixture.vanillaId)&t=$tok" 'POST'
+$trackedRows = (Ask $main '/servers').json.servers
+Check 'tracking a vanilla server adds no mods to the queue' ($trackedVanilla.status -eq 200 -and @(QueueIds).Count -eq 3 -and
+  @($trackedRows | Where-Object id -eq $fixture.vanillaId).Count -eq 1)
+$null = Ask $main "/remove-server?id=$($fixture.vanillaId)&t=$tok" 'POST'
 
 "== add mod"
 $newMod = 'DDDDDDDDDDDDDDD1'

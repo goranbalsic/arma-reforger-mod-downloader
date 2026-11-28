@@ -9,13 +9,42 @@ import tempfile
 from threading import Thread
 import time
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import Mock, patch
+
+
+SERVER_ID = "11111111-1111-1111-1111-111111111111"
+MOD_ID = "BBBBBBBBBBBBBBBB"
+SERVER = {
+    "id": SERVER_ID, "name": "North Coast | Conflict", "scenarioName": "Conflict - Everon",
+    "players": 87, "maxPlayers": 128, "region": "london", "platforms": ["pc", "xbox", "psn"],
+    "modCount": 1, "online": True, "battlEye": True,
+    "mods": [{"id": MOD_ID, "name": "Field Radio", "version": "1.4.0", "size": 1048576}],
+}
+MOD = {
+    "id": MOD_ID, "name": "Field Radio", "author": "Équipe Everon", "version": "1.5.0",
+    "size": 1048576, "summary": "Voice and text channels for squads.", "tags": ["SYSTEMS"],
+    "subscriberCount": 1500, "description": 'Field radio <em data-rfmm-fixture>markup</em> & “quotes”.',
+    "dependencies": [], "screenshots": ["https://example.invalid/image/foreign.jpg"],
+}
 
 
 class SlowWorkshop(BaseHTTPRequestHandler):
     def do_GET(self):
-        time.sleep(2)
-        reply = b'{"data":[],"meta":{"totalMods":0,"totalPages":1}}'
+        url = urlsplit(self.path)
+        query = parse_qs(url.query)
+        if query.get("search") == ["latency-test"]:
+            time.sleep(2)
+        routes = {
+            "/v2/servers": {"data": [SERVER], "meta": {"totalServers": 1, "totalPages": 1}},
+            f"/v2/servers/{SERVER_ID}": {"server": SERVER},
+            f"/v2/servers/{SERVER_ID}/history": {"points": [{"t": 1700000000, "avg": 54, "max": 104}]},
+            "/v2/mods": {"data": [MOD], "meta": {"totalMods": 1, "totalPages": 1}},
+            f"/v2/mods/{MOD_ID}": {"mod": MOD},
+            f"/v2/mods/{MOD_ID}/versions": {"data": {"versions": [{"version": "1.5.0", "published": True}]}},
+            f"/v2/mods/{MOD_ID}/versions/1.5.0": {"data": {"version": "1.5.0", "changelog": "Improved radios.\nUpdated UI."}},
+        }
+        reply = json.dumps(routes.get(url.path, {}), ensure_ascii=False).encode("utf-8")
         try:
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -137,6 +166,7 @@ sys.exit(3)
     class SmokeTest(app.Downloader):
         passed = False
         probe_started = False
+        screenshots_started = False
         screenshots_done = False
         observed = "The WebView has not evaluated a document yet."
 
@@ -174,13 +204,16 @@ sys.exit(3)
             probe = state.get("probe")
             if probe and probe.get("finished") and not probe.get("passed"):
                 self.window.close()
-            elif probe and probe.get("passed") and self.screenshots_done:
-                self.passed = True
-                self.window.close()
+            elif probe and probe.get("passed"):
+                if self.screenshots_done:
+                    self.passed = True
+                    self.window.close()
+                elif not self.screenshots_started:
+                    self.screenshots_started = True
+                    self.capture_layouts()
             elif ("Linux fixture" in state.get("queue", "") and not state.get("notice")
                   and not state.get("checking") and not self.probe_started):
                 self.probe_started = True
-                self.capture_layouts()
                 self.view.evaluate_javascript("""
                     (() => {
                       const probe = window.statusProbe = {actionDone:false, finished:false};
@@ -213,6 +246,11 @@ sys.exit(3)
                       renderSrv({}, {}, {});
                       MRES = {mods:[{id, name, author:name, size:1}], page:1, pages:1, total:1};
                       renderMods();
+                      probe.mediaOrigins =
+                        cdnImage('https://ar-gcp-cdn.bistudio.com/image/test/file.jpg') !== '' &&
+                        cdnImage('https://ar-gcp-cdn.bistudio.com.attacker.invalid/image/test/file.jpg') === '' &&
+                        cdnImage('https://ar-gcp-cdn.bistudio.com/image/../elsewhere') === '' &&
+                        cdnImage('https://user@ar-gcp-cdn.bistudio.com/image/test/file.jpg') === '';
                       availableUpdates = [{modId:id, name, version:'2.0.0'}];
                       renderAvailableUpdates();
                       probe.textOnly = ['#act','#queue','#rec','#bs','#srv','#mres','#availableUpdatesList'].every(inText);
@@ -230,11 +268,59 @@ sys.exit(3)
                         const start = performance.now();
                         const response = await fetch('/status');
                         probe.elapsed = performance.now() - start;
-                        probe.passed = response.ok && !probe.actionDone && probe.elapsed < 1000 &&
+                        const statusPassed = response.ok && !probe.actionDone && probe.elapsed < 1000 &&
                                        probe.textOnly && probe.noInlineHandlers && probe.confirmed && probe.speed &&
-                                       probe.sharedPoll && probe.unknownSize && probe.liveServerCount && probe.updateControls;
-                        probe.finished = true;
+                                       probe.sharedPoll && probe.unknownSize && probe.liveServerCount && probe.updateControls &&
+                                       probe.mediaOrigins;
+                        try {
+                          await checkDirectory();
+                          probe.passed = statusPassed;
+                        } catch (error) {
+                          probe.discoveryError = String(error);
+                        } finally {
+                          probe.finished = true;
+                        }
                       }, 150);
+                      async function waitFor(selector) {
+                        for (let attempt = 0; attempt < 80; attempt++) {
+                          const element = document.querySelector(selector);
+                          if (element) return element;
+                          await new Promise(resolve => setTimeout(resolve, 75));
+                        }
+                        throw new Error('Did not render ' + selector);
+                      }
+                      async function checkDirectory() {
+                        document.querySelector('nav a[href="#servers"]').click();
+                        const serverId = '11111111-1111-1111-1111-111111111111';
+                        const server = await waitFor('#bs [data-id="' + serverId + '"]');
+                        if (!server.textContent.includes('North Coast')) throw new Error('Server name changed.');
+                        server.click();
+                        await waitFor('#historyPlot canvas');
+                        const filter = await waitFor('#serverModFilter');
+                        filter.value = 'nothing matches';
+                        filter.dispatchEvent(new Event('input', {bubbles:true}));
+                        if (!document.querySelector('[data-mod-row]').hidden) throw new Error('Mod filter did not hide its row.');
+                        filter.value = '';
+                        filter.dispatchEvent(new Event('input', {bubbles:true}));
+                        document.querySelector('[data-action=export-config]').click();
+                        const config = JSON.parse(document.querySelector('.export-config').value);
+                        if (config.game.mods[0].version !== '1.4.0') throw new Error('Export changed the server version.');
+                        document.querySelector('[data-mod-row] [data-action=mod-details]').click();
+                        const description = await waitFor('#inspection .description');
+                        if (description.querySelector('[data-rfmm-fixture]') || !description.textContent.includes('<em ') ||
+                            !document.getElementById('inspectionBody').textContent.includes('Équipe')) {
+                          throw new Error('Workshop details broke text escaping or UTF-8.');
+                        }
+                        document.getElementById('modVersions').open = true;
+                        (await waitFor('[data-action=version-notes]')).click();
+                        await waitFor('.changelog[data-loaded]');
+                        if (!document.querySelector('.changelog').textContent.includes('Updated UI.')) throw new Error('Release notes did not load.');
+                        document.getElementById('inspection').close();
+                        document.querySelector('nav a[href="#discover"]').click();
+                        await waitFor('#mres .mod-card [data-id="BBBBBBBBBBBBBBBB"]');
+                        if (!document.getElementById('mres').textContent.includes('Équipe')) throw new Error('Workshop name is unreadable.');
+                        document.querySelector('nav a[href="#downloads"]').click();
+                      }
                     })()
                 """, -1, None, app.ORIGIN, None, None, None)
 
@@ -245,20 +331,36 @@ sys.exit(3)
                 return
             directory = Path(folder)
             directory.mkdir(parents=True, exist_ok=True)
-            self.save_layout(directory / "downloads-wide.png")
-            self.window.resize(420, 720)
-            app.GLib.timeout_add(900, self.save_narrow_layout, directory)
+            layouts = [
+                (view, label, width)
+                for label, width in (("wide", 1024), ("narrow", 420))
+                for view in ("downloads", "servers", "discover", "library")
+            ]
+            self.capture_next(directory, iter(layouts))
 
+        def capture_next(self, directory, layouts):
+            next_layout = next(layouts, None)
+            if not next_layout:
+                self.screenshots_done = True
+                return False
+            view, label, width = next_layout
+            self.window.resize(width, 740)
+            self.view.evaluate_javascript(
+                f'document.querySelector(\'nav a[href="#{view}"]\').click()',
+                -1, None, app.ORIGIN, None, None, None,
+            )
+
+            def take_screenshot():
+                self.save_layout(directory / f"{view}-{label}.png")
+                return self.capture_next(directory, layouts)
+
+            app.GLib.timeout_add(350, take_screenshot)
+            return False
         def save_layout(self, path):
             from gi.repository import Gdk
             width, height = self.window.get_size()
             pixbuf = Gdk.pixbuf_get_from_window(self.window.get_window(), 0, 0, width, height)
             pixbuf.savev(str(path), "png", [], [])
-
-        def save_narrow_layout(self, directory):
-            self.save_layout(directory / "downloads-narrow.png")
-            self.screenshots_done = True
-            return False
 
     test = SmokeTest()
     app.GLib.timeout_add_seconds(50, lambda: (test.quit(), False)[1])

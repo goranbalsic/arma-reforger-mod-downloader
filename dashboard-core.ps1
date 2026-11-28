@@ -990,26 +990,80 @@ function Clear-PresetChangedMarker([string]$Id) {
     }
   } finally { Unlock-WorkshopState $mutex }
 }
-function Search-Mods([string]$q, [int]$page) {
-  # Search by name or author, or look up a 16-character Workshop ID directly. Cache results for 15 seconds.
-  if ($q -match '^[0-9A-Fa-f]{16}$') {
-    $key = "id:$($q.ToUpper())"
-    if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 60) { return $script:bCache[$key] }
-    $m = (Invoke-WorkshopApi -Uri "$ApiBase/mods/$($q.ToUpper())" -Headers $ApiH -TimeoutSec 10).mod
-    $r = @{ total = 1; page = 1; pages = 1; mods = @($m) }
-    $script:bCache[$key] = $r; $script:bCacheAt[$key] = Get-Date
-    return $r
+function Get-DirectoryResponse([string]$Resource, [int]$Ttl = 30, [switch]$Refresh) {
+  $now = [DateTime]::UtcNow
+  $entry = $script:directoryCache[$Resource]
+  if (!$Refresh -and $entry -and $entry.expires -gt $now) { return $entry.response }
+  $response = Invoke-WorkshopApi -Uri "$ApiBase/$Resource" -Headers $ApiH -TimeoutSec 10
+  if ($response.status -and $response.status -ne 'success') { throw 'The directory could not complete this request.' }
+  if ($script:directoryCache.Count -ge 64) { $script:directoryCache.Clear() }
+  $script:directoryCache[$Resource] = @{ expires = $now.AddSeconds($Ttl); response = $response }
+  $response
+}
+function Get-DirectoryPage($Query) {
+  $page = 0
+  if ([int]::TryParse($Query['page'], [ref]$page)) { return [Math]::Max(1, [Math]::Min(100000, $page)) }
+  1
+}
+function Search-Mods($Query) {
+  $search = ([string]$Query['q']).Trim()
+  $id = Test-ModId $search
+  if ($id) {
+    $m = (Get-DirectoryResponse "mods/$id" 90).mod
+    if ($m.id -eq $id -and !$m.private) {
+      return @{ total = 1; page = 1; pages = 1; mods = @((Get-WorkshopPreview $m)) }
+    }
+    return @{ total = 0; page = 1; pages = 0; mods = @() }
   }
-  if (-not $q) { return @{ total = 0; page = 1; pages = 0; mods = @() } }
-  if ($page -lt 1) { $page = 1 }
-  $key = "s:$($q.ToLower()):$page"
-  if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 15) { return $script:bCache[$key] }
-  $r = Invoke-WorkshopApi -Uri "$ApiBase/mods?search=$([uri]::EscapeDataString($q))&limit=24&page=$page" -Headers $ApiH -TimeoutSec 10
-  $res = @{ total = [int]$r.meta.totalMods; page = $page
-            pages = $(if ($r.meta.totalPages) { [int]$r.meta.totalPages } else { 1 })
-            mods = @($r.data) }
-  $script:bCache[$key] = $res; $script:bCacheAt[$key] = Get-Date
-  $res
+  $page = Get-DirectoryPage $Query
+  $sort = [string]$Query['sort']
+  if ($sort -notin 'popularity','most-rated','newest','created','recently-updated','highest-rated','subscribers','version_size','largest','name') { $sort = 'popularity' }
+  $resource = "mods?page=$page&sort=$sort"
+  if ($search) { $resource += "&search=$([uri]::EscapeDataString($search.Substring(0, [Math]::Min($search.Length, 120))))" }
+  foreach ($tag in @(([string]$Query['tags'] -split ',') | Select-Object -First 5)) {
+    if ($tag -match '^[A-Z0-9_ -]{1,32}$') { $resource += "&tags=$([uri]::EscapeDataString($tag.ToUpperInvariant()))" }
+  }
+  $r = Get-DirectoryResponse $resource 90
+  @{ total = [int]$r.meta.totalMods; page = if ($r.meta.currentPage) { [int]$r.meta.currentPage } else { $page }
+     pages = [int]$r.meta.totalPages
+     mods = @($r.data | Where-Object { (Test-ModId $_.id) -and !$_.private } | ForEach-Object { Get-WorkshopPreview $_ }) }
+}
+function Get-WorkshopPreview($Mod) {
+  @{
+    id = Test-ModId $Mod.id; name = [string]$Mod.name; author = [string]$Mod.author
+    summary = [string]$Mod.summary; size = [double]$Mod.size; version = [string]$Mod.version
+    gameVersion = [string]$Mod.gameVersion; subscribers = $Mod.subscriberCount
+    rating = $Mod.rating; ratingCount = $Mod.ratingCount; updatedAt = $Mod.updatedAt; deployments = $Mod.analytics.totalDeployments
+    tags = @($Mod.tags | Where-Object { $_ -is [string] }); image = [string]$Mod.imageUrl
+  }
+}
+function Get-WorkshopDetails([string]$Id) {
+  $id = Test-ModId $Id
+  if (!$id) { throw 'Invalid Workshop ID.' }
+  $mod = (Get-DirectoryResponse "mods/$id" 90).mod
+  if ($mod.id -ne $id -or $mod.private) { throw 'This Workshop item is unavailable.' }
+  $preview = Get-WorkshopPreview $mod
+  $preview.description = [string]$mod.description
+  $preview.images = @((@($mod.previewImages) + @($mod.screenshots)) | Where-Object { $_ -is [string] } | Select-Object -Unique -First 8)
+  $preview.dependencies = @($mod.dependencies | Where-Object { Test-ModId $_.id } |
+    Select-Object id, name, version, size)
+  $preview.scenarios = @($mod.scenarios | Where-Object { $_ } | Select-Object name, id)
+  $preview.totalSize = [double]$mod.totalSize
+  $preview.obsolete = [bool]$mod.obsolete
+  $preview.license = [string]$mod.license
+  $preview
+}
+function Get-WorkshopVersions([string]$Id, [string]$Version) {
+  $id = Test-ModId $Id
+  if (!$id) { throw 'Invalid Workshop ID.' }
+  if ($Version) {
+    if ($Version -notmatch '^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$') { throw 'Invalid Workshop version.' }
+    $row = (Get-DirectoryResponse "mods/$id/versions/$([uri]::EscapeDataString($Version))" 300).data
+    if (!$row -or $row.version -cne $Version) { throw 'This Workshop version is unavailable.' }
+    return @{ changelog = [string]$row.changelog }
+  }
+  $rows = (Get-DirectoryResponse "mods/$id/versions" 90).data.versions
+  @{ versions = @($rows | Where-Object { $_ -and $_.published -ne $false } | Select-Object version, gameVersion, size, createdAt) }
 }
 function Get-ModDeps([string]$Id) {
   # Include dependencies in the queue and size estimate.
@@ -1097,32 +1151,105 @@ function Invoke-AddMod([string]$Id) {
   if ($cut) { $msg += '. Dependency search reached its limit' }
   $msg + $queueChange.note
 }
-function Get-Browse([string]$q) {
-  # live server list from the public reforgermods API, cached 15 s per query
-  $key = $q.ToLower()
-  if ($script:bCache[$key] -and ((Get-Date) - $script:bCacheAt[$key]).TotalSeconds -lt 15) { return $script:bCache[$key] }
-  $u = "$ApiBase/servers?includeOffline=true"
-  if ($q) { $u += "&search=$([uri]::EscapeDataString($q))" }
-  $r = Invoke-WorkshopApi -Uri $u -Headers $ApiH -TimeoutSec 10
-  $list = @($r.data | Sort-Object online, players -Descending |
-    Select-Object -First 60 | ForEach-Object {
-      [PSCustomObject]@{ id = $_.id; name = $_.name; players = $_.players; maxPlayers = $_.maxPlayers
-                         region = $_.region; online = [bool]$_.online; modCount = $_.modCount
-                         scenarioName = $_.scenarioName } })
-  $script:bCache[$key] = $list; $script:bCacheAt[$key] = Get-Date
-  $list
+function Test-DirectoryServerId([string]$Id) {
+  $Id -match '^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
 }
-function Get-Detail([string]$Id) {
-  # Validate the server ID before building the API path. Cache its mod list and sizes for 30 seconds.
-  if ($Id -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') { throw 'bad server id' }
-  if ($script:dCache[$Id] -and ((Get-Date) - $script:dCacheAt[$Id]).TotalSeconds -lt 30) { return $script:dCache[$Id] }
-  $d = Invoke-WorkshopApi -Uri "$ApiBase/servers/$Id" -Headers $ApiH -TimeoutSec 10
-  if (-not $d.server -or -not @($d.server.mods).Count) { throw 'server has no modlist (offline or password protected)' }
-  $script:dCache[$Id] = $d.server; $script:dCacheAt[$Id] = Get-Date
-  $d.server
+function Get-ServerPreview($Server) {
+  @{
+    id = $Server.id; name = $Server.name; players = $Server.players; maxPlayers = $Server.maxPlayers
+    region = $Server.region; online = [bool]$Server.online; modCount = $Server.modCount
+    scenarioName = $Server.scenarioName; platforms = @($Server.platforms | Where-Object { $_ })
+    platform = $Server.platform; official = $Server.official; locked = $Server.passwordProtected
+    battleye = $Server.battlEye; queue = $Server.queue; queueMax = $Server.queueMax
+    gameVersion = $Server.gameVersion; lastSeen = $Server.lastSeen; image = $Server.scenarioThumbnailUrl
+    joinable = [bool]($Server.online -and $Server.joinable -ne $false -and $Server.joinUrl)
+  }
 }
-function Get-LibraryJoinUrl([string]$Id) {
-  if ($Id -notmatch '^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$' -or $Id -notin $serverList.id) {
+function Get-Browse($Query) {
+  $page = Get-DirectoryPage $Query
+  $sort = [string]$Query['sort']
+  if ($sort -notin 'players','name','newest','lastSeen') { $sort = 'players' }
+  $resource = "servers?perPage=24&page=$page&sort=$sort"
+  $online = [string]$Query['online']
+  if ($online -eq 'false') { $resource += '&includeOffline=true&online=false' }
+  elseif ($online -eq 'all') { $resource += '&includeOffline=true' }
+  else { $resource += '&includeOffline=false&online=true' }
+  $search = ([string]$Query['q']).Trim()
+  if ($search) { $resource += "&search=$([uri]::EscapeDataString($search.Substring(0, [Math]::Min($search.Length, 120))))" }
+  $region = [string]$Query['region']
+  if ($region -match '^[a-z0-9_-]{1,32}$') { $resource += "&region=$region" }
+  $platform = [string]$Query['platform']
+  if ($platform -in 'pc','xbox','psn') { $resource += "&platform=$platform" }
+  foreach ($filter in 'official','hasMods','battleye','locked') {
+    if ($Query[$filter] -in 'true','false') { $resource += "&$filter=$($Query[$filter].ToLowerInvariant())" }
+  }
+  $r = Get-DirectoryResponse $resource -Refresh:($Query['refresh'] -eq '1')
+  $rows = @(foreach ($server in $r.data) {
+    if (!(Test-DirectoryServerId $server.id)) { continue }
+    $script:browserServers[$server.id] = [DateTime]::UtcNow.AddMinutes(30)
+    Get-ServerPreview $server
+  })
+  if ($script:browserServers.Count -gt 750) {
+    $recent = @($script:browserServers.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 500)
+    $script:browserServers = @{}
+    foreach ($server in $recent) { $script:browserServers[$server.Key] = $server.Value }
+  }
+  @{ servers = $rows; total = [int]$r.meta.totalServers; pages = [int]$r.meta.totalPages
+     page = if ($r.meta.currentPage) { [int]$r.meta.currentPage } else { $page }
+     dataset = $r.dataset | Select-Object warming, stale, lastCollectionAt, snapshotAgeSeconds }
+}
+function Get-Detail([string]$Id, [switch]$AllowEmpty) {
+  if (!(Test-DirectoryServerId $Id)) { throw 'Invalid server ID.' }
+  $server = (Get-DirectoryResponse "servers/$Id").server
+  if ($server.id -ne $Id) { throw 'This server is unavailable.' }
+  if (!$AllowEmpty -and !($server.mods | Select-Object -First 1)) { throw 'This server has no public mod list.' }
+  $server
+}
+function Get-ServerHistory([string]$Id, [string]$Range) {
+  if (!(Test-DirectoryServerId $Id)) { throw 'Invalid server ID.' }
+  if ($Range -notin '6h','24h','7d','30d') { $Range = '24h' }
+  $r = Get-DirectoryResponse "servers/$Id/history?range=$Range" 90
+  @{ points = @($r.points | Where-Object { $_.t -and $null -ne $_.avg } | Select-Object t, avg, min, max, cap) }
+}
+function Measure-ServerRegions {
+  $now = [DateTime]::UtcNow
+  if ($script:regionLatency -and $script:regionLatency.expires -gt $now) { return $script:regionLatency.response }
+  # These are the directory's regional ping sites. Server-list addresses never participate.
+  $sites = @{
+    frankfurt = 'de'; london = 'ukln'; los_angeles = 'usla'; miami = 'usmi'
+    new_york = 'usny'; singapore = 'sg'; sydney = 'ausy'; tokyo = 'jpto'
+  }
+  $pending = @{}
+  $results = @{}
+  $timer = [Diagnostics.Stopwatch]::StartNew()
+  try {
+    foreach ($site in $sites.GetEnumerator()) {
+      $probe = [Net.NetworkInformation.Ping]::new()
+      try {
+        $pending[$site.Key] = @{ probe = $probe; task = $probe.SendPingAsync("ping-location-$($site.Value).nitrado.net", 1400) }
+      } catch {
+        Write-Host "Ping could not start for $($site.Key): $($_.Exception.Message)"
+        $probe.Dispose()
+      }
+    }
+    foreach ($entry in $pending.GetEnumerator()) {
+      $remaining = [int][Math]::Max(0, 2300 - $timer.ElapsedMilliseconds)
+      try {
+        if ($entry.Value.task.Wait($remaining) -and $entry.Value.task.Result.Status -eq 'Success') {
+          $results[$entry.Key] = [long]$entry.Value.task.Result.RoundtripTime
+        }
+      } catch { Write-Host "Ping unavailable for $($entry.Key): $($_.Exception.Message)" }
+    }
+  } finally {
+    foreach ($entry in $pending.Values) { $entry.probe.Dispose() }
+  }
+  $response = @{ regions = $results }
+  $script:regionLatency = @{ expires = $now.AddSeconds(45); response = $response }
+  $response
+}
+function Get-LibraryJoinUrl([string]$Id, [switch]$Browser) {
+  if (!(Test-DirectoryServerId $Id) -or
+      ($Id -notin $serverList.id -and (!$Browser -or $script:browserServers[$Id] -lt [DateTime]::UtcNow))) {
     throw 'This server is not in your Library.'
   }
   $server = (Invoke-WorkshopApi "$ApiBase/servers/$Id" -Headers $ApiH -TimeoutSec 10).server
@@ -1140,8 +1267,11 @@ function Get-LibraryJoinUrl([string]$Id) {
 }
 function Invoke-AddServer([string]$Id) {
   # Append missing server mods with their Workshop sizes.
-  $s = Get-Detail $Id
+  $s = Get-Detail $Id -AllowEmpty
   if ($s.passwordProtected) { return 'server is password protected - its modlist is not public' }
+  if (!($s.mods | Select-Object -First 1) -and (!$s.online -or $null -eq $s.modCount -or $s.modCount -ne 0)) {
+    throw 'This server has no public mod list.'
+  }
   $name = ([string]$s.name -split '\|')[0].Trim()
   if ($name.Length -gt 60) { $name = $name.Substring(0, 60).Trim() }
   $have = (Get-HaveIds).Clone()
@@ -1302,8 +1432,7 @@ function Complete-RefreshJob([string]$Id) {
     if ($err) {
       $result = @{ state = 'failed'; error = $err }
     } else {
-      $script:bCache = @{}; $script:bCacheAt = @{}
-      $script:dCache = @{}; $script:dCacheAt = @{}
+      $script:directoryCache.Clear()
       $script:dirCacheAt = (Get-Date).AddMinutes(-10)
       $script:clCacheAt = (Get-Date).AddMinutes(-10)
       $saved = Save-RefreshState $payload
