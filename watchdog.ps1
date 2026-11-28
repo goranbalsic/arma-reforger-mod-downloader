@@ -7,7 +7,7 @@ $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'd
 $Cfg = Join-Path $Data 'batch1-serverconfig.json'
 $Exe = Get-EngineExecutable $Root
 $DsProfile = Join-Path $Root 'serverprofile'
-$Addons = Join-Path $DsProfile 'addons'
+$Addons = Get-ClientAddons $DsProfile
 $LogFile = Join-Path $Data 'watchdog.log'
 $PauseFlag = Join-Path $Data 'paused.flag'
 $SkipFile = Join-Path $Data 'skipped.json'
@@ -81,14 +81,26 @@ $saidEmpty = $false
 $saidBlind = $false
 $saidPause = $false
 $saidUnreadable = $false
+$watchedEngine = $null
 while ($true) {
-  if ($env:RFMM_DESKTOP_OWNER_PID) {
-    if (!$owner -or $owner.WaitForExit(15000)) {
-      if (Stop-OwnerlessDownloads) { break }
-      Start-Sleep 2
-      continue
+  if ($watchedEngine) {
+    # Wake on engine exit without polling the process list more often.
+    for ($second = 0; $second -lt 15; $second++) {
+      if ($owner) {
+        if ($owner.WaitForExit(1000)) { break }
+      } else { Start-Sleep -Seconds 1 }
+      try { if ($watchedEngine.HasExited) { break } }
+      catch { } # Recheck ownership on the regular tick if the handle is unavailable.
     }
-  } else { Start-Sleep 15 }
+  } elseif ($owner) {
+    $null = $owner.WaitForExit(15000)
+  } elseif (!$env:RFMM_DESKTOP_OWNER_PID) { Start-Sleep 15 }
+  $watchedEngine = $null
+  if ($env:RFMM_DESKTOP_OWNER_PID -and (!$owner -or $owner.HasExited)) {
+    if (Stop-OwnerlessDownloads) { break }
+    Start-Sleep 2
+    continue
+  }
   if (-not (Test-Path $Cfg)) { continue }
   if (Test-Path $PauseFlag) {
     if (-not $saidPause) { Write-Wd 'paused - not restarting anything until the queue is started again'; $saidPause = $true }
@@ -208,6 +220,9 @@ while ($true) {
       }
       catch { Write-Wd "trim failed: $($_.Exception.Message)"; continue }
       $null = Start-EngineLocked
+    } elseif ($started -and ((Get-Date) - $started).TotalSeconds -ge 15) {
+      # Keep the normal retry delay for engines that fail during startup.
+      $watchedEngine = $runningEngine
     }
     continue
   }

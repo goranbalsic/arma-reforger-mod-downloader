@@ -52,11 +52,11 @@ function Repair-Cfg($j) {
 function Get-GameProfile {
   if ($env:RFMM_GAME_PROFILE) { return $env:RFMM_GAME_PROFILE }
   if ($IsLinux) { return $null }
-  Join-Path $env:USERPROFILE 'Documents\\My Games\\ArmaReforger'
+  Join-Path ([Environment]::GetFolderPath('MyDocuments', 'DoNotVerify')) 'My Games/ArmaReforger'
 }
 function Get-ClientAddons([string]$EngineProfile) {
   $game = Get-GameProfile
-  if ($game -and [IO.Directory]::Exists($game)) { return (Join-Path $game 'addons') }
+  if ($game) { return (Join-Path (Get-NormalizedFilePath $game) 'addons') }
   Join-Path $EngineProfile 'addons'
 }
 function Initialize-EngineAddonsDirectory([string]$Path) {
@@ -80,10 +80,12 @@ function Get-EngineExecutable([string]$InstallRoot) {
   Join-Path (Join-Path $InstallRoot 'armar-server') $name
 }
 function Start-DownloadEngine {
+  $downloadRoot = Split-Path -Parent (Get-ClientAddons $DsProfile)
+  $arguments = '-config "{0}" -profile "{1}" -addonDownloadDir "{2}"' -f $Cfg,$DsProfile,$downloadRoot
   if ($IsLinux) {
-    Start-Process -FilePath $Exe -ArgumentList ('-config "{0}" -profile "{1}"' -f $Cfg,$DsProfile) -WorkingDirectory (Split-Path $Exe -Parent) -RedirectStandardInput '/dev/null' -RedirectStandardOutput (Join-Path $Data 'engine-output.log') -RedirectStandardError (Join-Path $Data 'engine-error.log')
+    Start-Process -FilePath $Exe -ArgumentList $arguments -WorkingDirectory (Split-Path $Exe -Parent) -RedirectStandardInput '/dev/null' -RedirectStandardOutput (Join-Path $Data 'engine-output.log') -RedirectStandardError (Join-Path $Data 'engine-error.log')
   } else {
-    Start-Process -FilePath $Exe -ArgumentList ('-config "{0}" -profile "{1}"' -f $Cfg,$DsProfile) -WorkingDirectory (Split-Path $Exe -Parent) -WindowStyle Hidden
+    Start-Process -FilePath $Exe -ArgumentList $arguments -WorkingDirectory (Split-Path $Exe -Parent) -WindowStyle Hidden
   }
 }
 function Get-EngineProcesses {

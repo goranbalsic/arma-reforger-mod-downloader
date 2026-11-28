@@ -24,8 +24,10 @@ gi.require_version("WebKit2", "4.1")
 from gi.repository import Gio, GLib, Gtk, WebKit2
 
 
-SOURCE = Path(__file__).resolve().parent
+LAUNCHER = Path(__file__).resolve()
+SOURCE = LAUNCHER.parent
 SOURCE = SOURCE / "lib" if (SOURCE / "lib").is_dir() else SOURCE.parent
+PACKAGE_FILES = SOURCE / ".package-files"
 PROJECT_PAGE = "https://github.com/" + (SOURCE / "repository.txt").read_text(encoding="utf-8").splitlines()[0]
 DEFAULT_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "reforger-mod-downloader"
 HOME = Path(os.environ.get("RFMM_HOME", DEFAULT_HOME)).expanduser().resolve()
@@ -54,11 +56,56 @@ BRIDGE = r"""
 """
 
 
-def find_engine():
-    for engine in (ENGINE, HOME / "ArmaReforgerServer"):
-        if engine.is_file() and os.access(engine, os.X_OK):
-            return engine
-    candidates = [Path.home() / ".steam/steam", Path.home() / ".local/share/Steam",
+def uninstall_package(launcher, manifest, home, data, game_profile, remove_engine):
+    lib = launcher.parent / "lib"
+    if manifest != lib / ".package-files" or lib.is_symlink() or launcher.is_symlink():
+        raise OSError("Uninstall is available from the packaged app.")
+    names = manifest.read_text(encoding="utf-8").splitlines()
+    if not names or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", name) or name in (".", "..") for name in names):
+        raise OSError("The package file list is invalid.")
+    targets = [lib / name for name in names] + [manifest, launcher]
+    if (data / "batch1-serverconfig.json").is_file():
+        targets.append(home / "serverprofile")
+        owned = {
+            "actions.log", "batch1-serverconfig.json", "batch1-servers.json", "batch1-sizes.json",
+            "desktop-owner.json", "desktop-token.json", "desktop.log", "engine-error.log", "engine-output.log",
+            "mod-update-available.json", "mod-update-batch.json", "paused.flag", "preset-scenarios.log",
+            "queue-revision.txt", "redownload.json", "setup.log", "skipped.json", "update-progress.json",
+            "verify.json", "watchdog-error.log", "watchdog-output.log", "watchdog.log",
+        }
+        for path in data.iterdir():
+            stem = re.sub(r"\.(?:1|corrupt-[0-9-]+|[0-9a-f]{32}\.tmp)$", "", path.name)
+            if (path.is_file() or path.is_symlink()) and (stem in owned or re.fullmatch(r"job-[0-9a-f]+\.json", stem)):
+                targets.append(path)
+    engine = home / "armar-server"
+    if remove_engine and not engine.is_symlink() and (engine / "ArmaReforgerServer").is_file():
+        targets.append(engine)
+    protected = Path(game_profile).expanduser().resolve() if game_profile else None
+    for target in targets:
+        if protected and (target == protected or protected in target.parents or target in protected.parents):
+            raise OSError(f"Uninstall would overlap the game folder {protected}.")
+    if any((lib / name).is_dir() for name in names):
+        raise OSError("A package file has been replaced by a folder.")
+
+    def remove(path):
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            if path.is_mount():
+                raise OSError(f"Uninstall stopped at the mounted folder {path}.")
+            for child in path.iterdir():
+                remove(child)
+            path.rmdir()
+
+    for target in reversed(targets):
+        remove(target)
+    for folder in (lib, launcher.parent, data, home):
+        if folder.is_dir() and not folder.is_mount() and not any(folder.iterdir()):
+            folder.rmdir()
+
+
+def steam_libraries():
+    candidates = [Path.home() / ".local/share/Steam", Path.home() / ".steam/steam",
                   Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
                   Path.home() / "snap/steam/common/.local/share/Steam"]
     candidates = list(dict.fromkeys(path.resolve() for path in candidates))
@@ -69,7 +116,29 @@ def find_engine():
         except (OSError, UnicodeError):
             continue
         libraries.extend(Path(p) for p in re.findall(r'"path"\s*"([^"]+)"', config) if Path(p).is_absolute())
-    for library in dict.fromkeys(path.resolve() for path in libraries):
+    return list(dict.fromkeys(path.resolve() for path in libraries))
+
+
+def find_game_profile():
+    override = os.environ.get("RFMM_GAME_PROFILE")
+    if override:
+        return Path(override).expanduser().resolve()
+    libraries = steam_libraries()
+    proton = Path("steamapps/compatdata/1874880/pfx/drive_c/users/steamuser/Documents/My Games/ArmaReforger")
+    for library in libraries:
+        if (library / "steamapps/appmanifest_1874880.acf").is_file():
+            return library / proton
+    for library in libraries:
+        if (library / proton).is_dir():
+            return library / proton
+    return next((library for library in libraries if (library / "steamapps").is_dir()), libraries[0]) / proton
+
+
+def find_engine():
+    for engine in (ENGINE, HOME / "ArmaReforgerServer"):
+        if engine.is_file() and os.access(engine, os.X_OK):
+            return engine
+    for library in steam_libraries():
         apps = library / "steamapps"
         folders = ["Arma Reforger Server", "Arma Reforger Dedicated Server"]
         try:
@@ -96,9 +165,9 @@ def create_log(path):
 
 
 class Worker:
-    def __init__(self, log, token, read_only=False):
+    def __init__(self, log, token, game_profile, read_only=False):
         DATA.mkdir(parents=True, exist_ok=True)
-        self.environment = dict(os.environ, RFMM_HOME=str(HOME), RFMM_DATA=str(DATA),
+        self.environment = dict(os.environ, RFMM_HOME=str(HOME), RFMM_DATA=str(DATA), RFMM_GAME_PROFILE=str(game_profile),
                                 RFMM_DESKTOP_OWNER_PID=str(os.getpid()), RFMM_DESKTOP_SESSION_TOKEN=token)
         engine = find_engine()
         if engine:
@@ -195,6 +264,8 @@ class Downloader(Gtk.Application):
         self.setup_lock = Lock()
         self.setup_process = None
         self.stopping_downloads = False
+        self.uninstall_engine = None
+        self.game_profile = find_game_profile()
         self.view = None
 
     def do_activate(self):
@@ -204,6 +275,18 @@ class Downloader(Gtk.Application):
         self.window = Gtk.ApplicationWindow(application=self, title="Arma Reforger Mod Downloader")
         self.window.set_default_size(1024, 740)
         self.window.connect("delete-event", self.close_window)
+        if PACKAGE_FILES.is_file():
+            header = Gtk.HeaderBar(title="Arma Reforger Mod Downloader", show_close_button=True)
+            menu = Gtk.Menu()
+            for label, engine in (("Uninstall downloader", False), ("Uninstall downloader and engine", True)):
+                item = Gtk.MenuItem(label=label)
+                item.connect("activate", self.confirm_uninstall, engine)
+                menu.append(item)
+            button = Gtk.MenuButton(label="Uninstall", popup=menu)
+            header.pack_end(button)
+            menu.show_all()
+            header.show_all()
+            self.window.set_titlebar(header)
         if not shutil.which("pwsh"):
             self.show_error("PowerShell 7 is required. Install pwsh and reopen the downloader.")
         elif find_engine():
@@ -211,6 +294,25 @@ class Downloader(Gtk.Application):
         else:
             self.show_setup()
         self.window.show_all()
+
+    def confirm_uninstall(self, _item, remove_engine):
+        if self.stopping_downloads or self.installing:
+            return
+        detail = (
+            "This also removes the dedicated server installed by the downloader. Steam-managed servers are kept."
+            if remove_engine else "The dedicated server is kept."
+        )
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window, modal=True, message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.YES_NO, text="Uninstall the downloader?",
+        )
+        dialog.format_secondary_text(f"{HOME}\n\n{detail}\nGame mods and presets are kept.")
+        dialog.set_default_response(Gtk.ResponseType.NO)
+        response = dialog.run()
+        dialog.destroy()
+        if response == Gtk.ResponseType.YES:
+            self.uninstall_engine = remove_engine
+            self.window.close()
 
     def close_window(self, _window, _event):
         if self.installing:
@@ -239,6 +341,7 @@ class Downloader(Gtk.Application):
 
     def finish_close(self, error):
         if error:
+            self.uninstall_engine = None
             dialog = Gtk.MessageDialog(
                 transient_for=self.window, modal=True, message_type=Gtk.MessageType.WARNING,
                 buttons=Gtk.ButtonsType.OK, text="The download engine may still be running. See desktop.log for details.",
@@ -385,12 +488,12 @@ class Downloader(Gtk.Application):
         try:
             self.desktop_log = create_log(DATA / "desktop.log")
             token = secrets.token_hex(16)
-            self.worker = Worker(self.desktop_log, token)
+            self.worker = Worker(self.desktop_log, token, self.game_profile)
         except OSError as error:
             self.show_error(str(error))
             return
         try:
-            self.status_worker = Worker(self.desktop_log, token, read_only=True)
+            self.status_worker = Worker(self.desktop_log, token, self.game_profile, read_only=True)
         except OSError as error:
             self.desktop_log.warning("Could not start the read-only status worker: %s", error)
         context = WebKit2.WebContext.new_ephemeral()
@@ -461,14 +564,28 @@ class Downloader(Gtk.Application):
         use_status = self.status_worker and method == "GET" and route.path in ("/status", "/completed")
         pool, worker = (self.status_pool, self.status_worker) if use_status else (self.pool, self.worker)
         pool.submit(worker.request, path, method).add_done_callback(
-            lambda future: GLib.idle_add(self.deliver_reply, identity, future)
+            lambda future: GLib.idle_add(self.deliver_reply, identity, route.path, method, future)
         )
 
-    def deliver_reply(self, identity, future):
+    def deliver_reply(self, identity, route, method, future):
         if self.stopping_downloads:
             return False
         try:
             reply = future.result()
+            if reply["status"] == 200 and method == "POST" and route in ("/join-server", "/open-addons-folder"):
+                action = json.loads(reply["body"])
+                if route == "/join-server":
+                    destination = action["url"]
+                    if not re.fullmatch(r"steam://run/1874880//[A-Za-z0-9_-]{16,2048}={0,2}/", destination):
+                        raise ValueError("The Steam invite was invalid.")
+                else:
+                    folder = Path(action["folder"])
+                    if not folder.is_absolute() or not folder.is_dir():
+                        raise ValueError("The addons folder is unavailable.")
+                    destination = folder.as_uri()
+                if not Gio.AppInfo.launch_default_for_uri(destination, None):
+                    raise OSError("Could not open the destination.")
+                reply["body"] = json.dumps({"msg": action["msg"]})
         except Exception as error:
             reply = {"status": 503, "type": "application/json", "body": json.dumps({"error": str(error)})}
         self.view.evaluate_javascript(f"window.receiveReply({identity}, {json.dumps(reply)})",
@@ -489,4 +606,16 @@ class Downloader(Gtk.Application):
 
 
 if __name__ == "__main__":
-    sys.exit(Downloader().run(sys.argv))
+    app = Downloader()
+    result = app.run(sys.argv)
+    if app.uninstall_engine is not None:
+        try:
+            uninstall_package(LAUNCHER, PACKAGE_FILES, HOME, DATA, app.game_profile, app.uninstall_engine)
+        except OSError as error:
+            dialog = Gtk.MessageDialog(modal=True, message_type=Gtk.MessageType.ERROR,
+                                       buttons=Gtk.ButtonsType.OK, text="Uninstall could not finish.")
+            dialog.format_secondary_text(str(error))
+            dialog.run()
+            dialog.destroy()
+            result = 1
+    sys.exit(result)

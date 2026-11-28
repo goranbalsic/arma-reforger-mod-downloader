@@ -33,11 +33,11 @@ $files = @(
 foreach ($name in $files) {
   Copy-Item -LiteralPath (Join-Path $source $name) -Destination $payload -Force
 }
-Copy-Item -LiteralPath $core,$forms,$loader,(Join-Path $PSScriptRoot 'Apply-AppUpdate.ps1') -Destination $payload -Force
+Copy-Item -LiteralPath $core,$forms,$loader,(Join-Path $PSScriptRoot 'Apply-AppUpdate.ps1'),(Join-Path $PSScriptRoot 'Uninstall.ps1') -Destination $payload -Force
 Copy-Item -LiteralPath (Join-Path $sdk 'LICENSE.txt') -Destination (Join-Path $payload 'WebView2-LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $sdk 'NOTICE.txt') -Destination (Join-Path $payload 'WebView2-NOTICE.txt') -Force
 $bundle = Join-Path $work 'payload.zip'
-$payloadFiles = @($files + 'Apply-AppUpdate.ps1' + 'WebView2-LICENSE.txt' + 'WebView2-NOTICE.txt' +
+$payloadFiles = @($files + 'Apply-AppUpdate.ps1' + 'Uninstall.ps1' + 'WebView2-LICENSE.txt' + 'WebView2-NOTICE.txt' +
   'Microsoft.Web.WebView2.Core.dll' + 'Microsoft.Web.WebView2.WinForms.dll' + 'WebView2Loader.dll' |
   ForEach-Object { Join-Path $payload $_ })
 Compress-Archive -LiteralPath $payloadFiles -DestinationPath $bundle -Force

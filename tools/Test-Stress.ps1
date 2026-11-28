@@ -19,7 +19,7 @@ $gameAddons = Join-Path $game 'addons'
 $profile = Join-Path $installRoot 'serverprofile'
 $engineDir = Join-Path $installRoot 'armar-server'
 $configFile = Join-Path $data 'batch1-serverconfig.json'
-$addonsDir = Join-Path $profile 'addons'
+$addonsDir = $gameAddons
 $port = 18765
 $api = "http://localhost:$port/v2"
 $script:checks = 0
@@ -108,7 +108,10 @@ while ($listener.IsListening) {
       $mods = @($fx.mods | ForEach-Object {
         $v = if ($fx.serverVersion.PSObject.Properties[$_.id]) { [string]$fx.serverVersion.($_.id) } else { $_.version }
         @{ id = $_.id; name = $_.name; version = $v; size = $_.size; sizeKnown = $true } })
-      $body = @{ server = @{ id = $fx.serverId; name = $fx.serverName; mods = $mods } } | ConvertTo-Json -Depth 6
+      $invite = @{ id = $fx.serverId; inviteToken = '' } | ConvertTo-Json -Compress
+      $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($invite)).TrimEnd('=').Replace('+','-').Replace('/','_')
+      $body = @{ server = @{ id = $fx.serverId; name = $fx.serverName; mods = $mods; online = $true; joinable = $true
+        joinUrl = "steam://run/1874880//$encoded/" } } | ConvertTo-Json -Depth 6
     } elseif ($path -eq '/v2/servers') {
       $body = @{ data = @(@{ id = $fx.serverId; name = $fx.serverName; players = 3; maxPlayers = 60; region = 'EU'; online = $true; modCount = $fx.mods.Count; scenarioName = 'Test' }) } | ConvertTo-Json -Depth 5
     } elseif ($path -eq '/v2/tools/storage-plan') {
@@ -203,6 +206,10 @@ Check 'adding a server queues its missing mods' (@(QueueIds).Count -eq 3 -and @(
 Check 'adding a server starts the download' ((ReplyText $add) -match 'Downloads started') (ReplyText $add)
 $null = Ask $main "/add-server?id=$($fixture.serverId)&t=$tok" 'POST'
 Check 'adding the same server again keeps one entry' (@((Get-Content (Join-Path $data 'batch1-servers.json') -Raw | ConvertFrom-Json).servers).Count -eq 1) "raw=$((Get-Content (Join-Path $data 'batch1-servers.json') -Raw))"
+Check 'join requires the desktop action token' ((Ask $main "/join-server?id=$($fixture.serverId)" 'POST').status -eq 403)
+Check 'join resolves a Steam invite for a tracked server' ((Ask $main "/join-server?id=$($fixture.serverId)&t=$tok" 'POST').json.url -match '^steam://run/1874880//')
+Check 'join rejects servers outside the Library' ((Ask $main "/join-server?id=99999999-9999-9999-9999-999999999999&t=$tok" 'POST').status -ne 200)
+Check 'open addons returns the same game folder used for downloads' ((Ask $main "/open-addons-folder?t=$tok" 'POST').json.folder -eq $gameAddons)
 Check 'the queue has no duplicates' (@(QueueIds).Count -eq @(QueueIds | Select-Object -Unique).Count)
 
 "== add mod"

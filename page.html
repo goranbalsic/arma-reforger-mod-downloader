@@ -59,6 +59,7 @@ ul{margin:6px 0;padding:0;list-style:none}ol{padding-left:26px}li,#srv details,#
  </div>
  <div class="controls queue-tools">
   <button id="bverify" class="amber" data-action="queue-control" data-command="verify">Verify mods</button>
+  <button id="openAddons" data-action="open-addons" hidden>Open addons folder</button>
   <button id="bclear" class="grey" data-action="queue-control" data-command="clear-queue">Clear queue</button>
   <button id="bcancel" class="grey" data-action="queue-control" data-command="cancel-downloads">Cancel downloads</button>
  </div>
@@ -110,6 +111,7 @@ addEventListener('hashchange',showView);
 showView();
 let T='__T__';   // refreshed from /status so an open page survives dashboard restarts
 const desktopTransport = __DESKTOP__;
+document.getElementById('openAddons').hidden=!desktopTransport;
 function esc(x){return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function escAttr(x){return esc(x).replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function sz(b){return b>=1073741824?(b/1073741824).toFixed(b>=107374182400?2:3)+' GB':b>=1048576?(b/1048576).toFixed(1)+' MB':b>=1024?(b/1024).toFixed(1)+' KB':Math.round(b)+' B'}
@@ -269,6 +271,7 @@ function renderSrv(D,A,B){
    '<button class="mini" data-action="update" data-scope="server" data-id="'+escAttr(v.id)+'">Update mods</button>'+
    '<button class="mini" data-action="queue-server" data-id="'+escAttr(v.id)+'">Queue first</button>'+
    '<button class="mini amber" data-action="preset" data-id="'+escAttr(v.id)+'">Make preset</button>'+
+   (desktopTransport?'<button class="mini" data-action="join-server" data-id="'+escAttr(v.id)+'">Join server</button>':'')+
   '<button class="mini grey" data-action="refresh-one" data-id="'+escAttr(v.id)+'" title="Check this server for new mods and add them to the queue">Refresh</button>'+
   '<button class="mini grey" data-action="remove-server" data-id="'+escAttr(v.id)+'" title="Stop tracking this server. Keep its mods on disk.">Remove</button></summary><ul>'+
    v.mods.map(m=>{
@@ -664,6 +667,10 @@ document.addEventListener('click',event=>{
   case 'queue-control': return act(command);
   case 'search-servers': return browse();
   case 'search-mods': return searchMods(Number(resultPage)||1);
+  case 'open-addons': return post('open-addons-folder');
+  case 'join-server':
+   button.disabled=true;
+   return post('join-server?id='+encodeURIComponent(id)).finally(()=>{button.disabled=false;});
   case 'check-updates': return post('update-mods?scope=all&check=1');
   case 'apply-updates': return applyModUpdates(id);
   case 'update': return updateMods(scope,id||'',event);

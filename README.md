@@ -4,6 +4,8 @@ Queue a server's Arma Reforger Workshop mods before you join. You can also searc
 
 You can download mods without installing the game. The downloader uses the free Arma Reforger dedicated server.
 
+On Windows, mods download straight into the game's **Documents → My Games → ArmaReforger → addons** folder. The downloader creates it on first use. Use **Open addons folder** in the Downloads tab to find it.
+
 [Download for Windows x64](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader.exe) · [Download for Linux x64](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest/download/ReforgerModDownloader-linux-x64.tar.gz) · [Project website](https://goxy701.github.io/arma-reforger-mod-downloader/) · [Releases](https://github.com/goxy701/arma-reforger-mod-downloader/releases/latest)
 
 ## Install on Windows or Linux
@@ -16,9 +18,13 @@ You can download mods without installing the game. The downloader uses the free 
 
 Open **Find mods**, search for your server, and select **Add server**. Follow the queue under **Downloads**. To save a preset after the queue finishes, close the game and select **Make preset** under **Tracked servers**.
 
+Use **Join server** on a tracked server to open its Steam invite. Arma Reforger must be installed to play.
+
+The packaged app's **Uninstall** menu can remove the downloader with or without the dedicated server it installed. Both options keep your game mods and presets.
+
 The app checks for mod updates when it opens. In **Library**, choose **Update all** or update individual mods as they appear. Recent Workshop releases show up first. A full check can take longer for large libraries.
 
-On Linux, set `RFMM_GAME_PROFILE` to the game's profile folder to share mods and save presets. For Steam Proton, this is usually `steamapps/compatdata/1874880/pfx/drive_c/users/steamuser/Documents/My Games/ArmaReforger` inside the game's Steam library. Set `RFMM_HOME` to change the engine folder or `RFMM_DATA` to change the queue and log folder.
+On Linux, the desktop app finds the game's Steam Proton profile. Its default is `steamapps/compatdata/1874880/pfx/drive_c/users/steamuser/Documents/My Games/ArmaReforger` inside the Steam library. Set `RFMM_GAME_PROFILE` for a custom profile, `RFMM_HOME` for the engine folder, or `RFMM_DATA` for the queue and log folder.
 
 [Build and tests](docs/TESTING.md) · [License](LICENSE)
 

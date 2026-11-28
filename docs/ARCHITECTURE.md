@@ -13,7 +13,7 @@ The downloader uses the Arma Reforger dedicated server to fetch Workshop addons 
 - `dashboard-core.ps1` implements the queue, status, and Workshop handlers. `workshop-api.ps1` sets limits on redirects, request time, and decoded response size.
 - `state.ps1` handles atomic writes, addon validation, and process ownership by normalized configuration path. Queue edits and engine start or stop calls share one lock. Each data directory has a second lock for Workshop sizes and tracked server lists.
 - `trim-config.ps1` removes completed addons from the queue before each engine start. `watchdog.ps1` restarts an owned engine when its queue still has work, and records repeated Workshop failures.
-- The engine writes under `serverprofile/addons`. Windows can link that folder to the game's addons with a junction. Linux can link to an explicitly configured `RFMM_GAME_PROFILE` with a symlink.
+- The engine uses `-addonDownloadDir` to write straight into the game's addons folder. The Windows host uses the Documents location and the Linux host finds the Steam Proton profile. A direct Linux script run without `RFMM_GAME_PROFILE` uses the engine's own addons folder.
 - `make-preset.ps1` reads installed metadata, builds a preset, checks its structure, and atomically replaces the game settings with a backup.
 
 ## Packaging

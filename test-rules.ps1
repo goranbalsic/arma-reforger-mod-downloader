@@ -21,7 +21,7 @@ $s = try {
   $completed
 }
      catch { "FAIL dashboard not reachable at http://localhost:8123/ ($($_.Exception.Message))"; exit 1 }
-$ds = Join-Path (Join-Path $Root 'serverprofile') 'addons'
+$ds = Get-ClientAddons (Join-Path $Root 'serverprofile')
 if (-not (Test-Path $ds)) {
   "FAIL no addons folder at $ds"
   "set RFMM_HOME/RFMM_DATA to the live install (this run would otherwise test the wrong tree)"

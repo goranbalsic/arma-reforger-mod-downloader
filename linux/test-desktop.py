@@ -95,6 +95,37 @@ sys.exit(3)
         native.chmod(0o644)
         if app.find_engine() is not None:
             raise SystemExit("An engine without execute permissions was accepted.")
+        proton = "steamapps/compatdata/1874880/pfx/drive_c/users/steamuser/Documents/My Games/ArmaReforger"
+        assert app.find_game_profile() == profile / ".local/share/Steam" / proton
+        (other / "steamapps/appmanifest_1874880.acf").touch()
+        assert app.find_game_profile() == other / proton and not app.find_game_profile().exists()
+
+    for remove_engine in (False, True):
+        uninstall = Path(fixture) / f"uninstall-{remove_engine}"
+        launcher = uninstall / "package/ReforgerModDownloader"
+        manifest = launcher.parent / "lib/.package-files"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("page.html\n")
+        (manifest.parent / "page.html").touch()
+        launcher.touch()
+        home = uninstall / "home"
+        data = home / "data"
+        data.mkdir(parents=True)
+        (data / "batch1-serverconfig.json").touch()
+        unrelated = data / "keep.txt"
+        unrelated.touch()
+        engine = home / "armar-server/ArmaReforgerServer"
+        engine.parent.mkdir()
+        engine.touch()
+        game = uninstall / "game"
+        game.mkdir()
+        (game / "keep.pak").touch()
+        private = home / "serverprofile"
+        private.mkdir()
+        (private / "addons").symlink_to(game, target_is_directory=True)
+        app.uninstall_package(launcher, manifest, home, data, game, remove_engine)
+        assert not launcher.exists() and not private.exists() and not (data / "batch1-serverconfig.json").exists()
+        assert engine.exists() != remove_engine and (game / "keep.pak").is_file() and unrelated.is_file()
 
     app.DATA.mkdir(exist_ok=True)
     (app.DATA / "batch1-serverconfig.json").write_text(json.dumps({

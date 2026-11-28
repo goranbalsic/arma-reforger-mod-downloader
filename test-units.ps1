@@ -10,6 +10,8 @@ function Check([string]$Name, [bool]$Ok) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "rfmm-units-$PID"
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $tmp | Out-Null
+$originalGameProfile = $env:RFMM_GAME_PROFILE
+$env:RFMM_GAME_PROFILE = Join-Path $tmp 'game'
 
 Write-Host 'PowerShell state paths'
 $interpolatedPaths = @(Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -Filter '*.ps1' |
@@ -151,6 +153,8 @@ New-Item -ItemType Directory -Force (Join-Path $td 'data'), (Join-Path $td 'serv
 '{"game":{"name":"n","scenarioId":"s","mods":[{"modId":"AAAABBBBCCCCDDDD","name":"Half"},{"modId":"EEEEFFFF00001111","name":"NoMark"}]}}' |
   Set-Content (Join-Path $td 'data\batch1-serverconfig.json')
 $oldHome = $env:RFMM_HOME
+$trimGameProfile = $env:RFMM_GAME_PROFILE
+$env:RFMM_GAME_PROFILE = Join-Path $td 'serverprofile'
 $env:RFMM_HOME = $td; $env:RFMM_DATA = Join-Path $td 'data'
 try { & (Join-Path $PSScriptRoot 'trim-config.ps1') | Out-Null } catch { "ERROR: $_" }
 $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
@@ -164,6 +168,7 @@ $env:RFMM_HOME = $td; $env:RFMM_DATA = Join-Path $td 'data'
 $tout2 = try { (& (Join-Path $PSScriptRoot 'trim-config.ps1') 2>&1) -join ' ' } catch { "ERROR: $_" }
 $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData
 Check 'no second delete within 30 minutes' ((Test-Path (Join-Path $td 'serverprofile\addons\Half_AAAABBBBCCCCDDDD')) -and $tout2 -match 'kept a partial')
+$env:RFMM_GAME_PROFILE = $trimGameProfile
 
 Write-Host 'completion rule (meta file list, and its cache)'
 $cd = Join-Path $tmp 'complete\Add_AAAABBBBCCCCDDDD'
@@ -275,22 +280,21 @@ $standaloneCfg = Join-Path $standaloneData 'batch1-serverconfig.json'
 $oldHome = $env:RFMM_HOME; $oldData = $env:RFMM_DATA; $oldProfile = $env:RFMM_GAME_PROFILE
 try {
   $env:RFMM_HOME = $standalone; $env:RFMM_DATA = $standaloneData; $env:RFMM_GAME_PROFILE = $removedGame
-  Check 'a missing game profile uses downloader storage' ((Get-ClientAddons $standaloneProfile) -eq $standaloneAddons)
+  Check 'a missing game profile still selects the game addons directory' ((Get-ClientAddons $standaloneProfile) -eq $formerAddons)
   & (Join-Path $PSScriptRoot 'trim-config.ps1') | Out-Null
-  $localAddons = Get-Item -LiteralPath $standaloneAddons -Force
-  Check 'start preparation replaces a dangling addons link with a local folder' ($LASTEXITCODE -eq 0 -and $localAddons.PSIsContainer -and !$localAddons.LinkType)
-  Check 'recovering the addons folder keeps the queued mod and leaves the game profile absent' (
-    (Get-Queued $standaloneCfg)[0].modId -eq 'ABCDEF0123456789' -and !(Test-Path -LiteralPath $removedGame))
+  Check 'start prepares the real game addons folder before the game exists' ($LASTEXITCODE -eq 0 -and [IO.Directory]::Exists($formerAddons))
+  Check 'preparing game addons keeps the queued mod and the old link' (
+    (Get-Queued $standaloneCfg)[0].modId -eq 'ABCDEF0123456789' -and (Get-Item -LiteralPath $standaloneAddons -Force).LinkType -eq $linkType)
   if (!$IsLinux) {
+    [IO.Directory]::Delete($standaloneAddons)
+    [IO.Directory]::Delete($formerAddons)
+    [IO.Directory]::Delete($removedGame)
     $modName = 'Restored_ABCDEF0123456789'
     $privateMod = Join-Path $standaloneAddons $modName
     $privateSaves = Join-Path $standaloneAddons 'saves'
     New-Item -ItemType Directory -Path $privateMod,$privateSaves -Force | Out-Null
     'mod files' | Set-Content -LiteralPath (Join-Path $privateMod 'data.pak')
     'preserve local saves' | Set-Content -LiteralPath (Join-Path $privateSaves 'pending.txt')
-    & (Join-Path $PSScriptRoot 'sync-addons.ps1')
-    Check 'sync retains the mod locally while the game profile is absent' (
-      $LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $privateMod) -and !(Test-Path -LiteralPath $removedGame))
     New-Item -ItemType Directory -Path (Join-Path $formerAddons 'saves') -Force | Out-Null
     & (Join-Path $PSScriptRoot 'sync-addons.ps1')
     $syncCode = $LASTEXITCODE
@@ -313,6 +317,53 @@ try {
   }
 } finally {
   $env:RFMM_HOME = $oldHome; $env:RFMM_DATA = $oldData; $env:RFMM_GAME_PROFILE = $oldProfile
+}
+
+& {
+  . (Join-Path $PSScriptRoot 'dashboard-core.ps1')
+  $id = '12345678-1234-1234-1234-123456789abc'
+  $other = '12345678-1234-1234-1234-123456789def'
+  $serverList = @(@{ id = $id })
+  $ApiBase = 'https://example.invalid/v2'
+  function Invoke-WorkshopApi { @{ server = @{ id = $id; online = $true; joinable = $true; joinUrl = $inviteUrl } } }
+  $json = @{ id = $other; inviteToken = '' } | ConvertTo-Json -Compress
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)).TrimEnd('=').Replace('+','-').Replace('/','_')
+  $inviteUrl = "steam://run/1874880//$encoded/"
+  $rejected = try { $null = Get-LibraryJoinUrl $id; $false } catch { $_.Exception.Message -match 'match this server' }
+  Check 'Steam invites for a different server are rejected' $rejected
+  $inviteUrl = "steam://run/1874880//$encoded/%20-console"
+  $rejected = try { $null = Get-LibraryJoinUrl $id; $false } catch { $_.Exception.Message -match 'valid Steam invite' }
+  Check 'Steam invite launch arguments are rejected' $rejected
+}
+
+if (!$IsLinux) {
+  & {
+    . (Join-Path (Join-Path $PSScriptRoot 'desktop') 'Uninstall.ps1')
+    $fixture = Join-Path $tmp 'uninstall'
+    $local = Join-Path $fixture 'Local'
+    $install = Join-Path $fixture 'portable'
+    $engine = Join-Path $install 'armar-server'
+    $steamcmd = Join-Path $install 'steamcmd'
+    $dataFolder = Join-Path $install 'data'
+    $profile = Join-Path $install 'serverprofile'
+    $game = Join-Path $fixture 'real-game'
+    New-Item -ItemType Directory -Path $local,$install,$engine,$steamcmd,$dataFolder,$profile,$game -Force | Out-Null
+    $exe = Join-Path $install 'Downloader.exe'
+    foreach ($file in $exe,(Join-Path $engine 'ArmaReforgerServer.exe'),(Join-Path $steamcmd 'steamcmd.exe'),
+        (Join-Path $dataFolder 'batch1-serverconfig.json'),(Join-Path $game 'keep.pak'),(Join-Path $install 'unrelated.txt')) {
+      'fixture' | Set-Content -LiteralPath $file
+    }
+    New-Item -ItemType Junction -Path (Join-Path $profile 'addons') -Target $game | Out-Null
+    Remove-DownloaderInstallation $install $local $exe @($game)
+    Check 'app uninstall removes private state and leaves the engine installed' (
+      !(Test-Path -LiteralPath $exe) -and !(Test-Path -LiteralPath $dataFolder) -and !(Test-Path -LiteralPath $profile) -and
+      (Test-Path -LiteralPath $engine) -and (Test-Path -LiteralPath $steamcmd))
+    Check 'app uninstall does not follow the addons junction' ((Test-Path -LiteralPath (Join-Path $game 'keep.pak')))
+    Remove-DownloaderInstallation $install $local $exe @($game) -Engine
+    Check 'full uninstall removes managed engine and SteamCMD only' (
+      !(Test-Path -LiteralPath $engine) -and !(Test-Path -LiteralPath $steamcmd) -and
+      (Test-Path -LiteralPath (Join-Path $game 'keep.pak')) -and (Test-Path -LiteralPath (Join-Path $install 'unrelated.txt')))
+  }
 }
 
 Write-Host 'dashboard handlers (stubbed API and engine)'
@@ -952,6 +1003,7 @@ $script:dirCacheAt = [datetime]::MinValue
 $second = Get-DirMap
 Check 'an appended chunk shows up after a rescan' ($second['AAAABBBBCCCCDDDD'].bytes -eq 16)
 $Addons = $savedAddons
+$env:RFMM_GAME_PROFILE = $originalGameProfile
 if ($fail) { "units: $fail failed"; exit 1 } else { 'units: OK' }
 
 

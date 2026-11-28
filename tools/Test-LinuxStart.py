@@ -85,7 +85,7 @@ def test_preset(lib, root, env):
 
 
 def test_queue_completion(command, env, root, mod_id, worker_log):
-    addon = root / "serverprofile" / "addons" / f"Fixture_{mod_id}"
+    addon = Path(env["RFMM_GAME_PROFILE"]) / "addons" / f"Fixture_{mod_id}"
     scratch = addon / "temp"
     scratch.mkdir(parents=True)
     (addon / "data.pak").write_bytes(b"x")
@@ -138,12 +138,10 @@ def run(lib, root):
     source.write_text("#include <unistd.h>\nint main(void) { for (;;) pause(); }\n", encoding="utf-8")
     binary = root / "ArmaReforgerServer"
     subprocess.run(["cc", "-o", binary, source], check=True)
-    env = dict(os.environ, RFMM_HOME=str(root), RFMM_DATA=str(data), RFMM_ENGINE_EXE=str(binary))
-    env.pop("RFMM_GAME_PROFILE", None)
-    # The game profile was removed after it had been linked to the downloader.
-    addons = root / "serverprofile" / "addons"
-    addons.parent.mkdir()
-    addons.symlink_to(root / "removed-game" / "addons", target_is_directory=True)
+    game_profile = root / "not yet installed"
+    env = dict(os.environ, RFMM_HOME=str(root), RFMM_DATA=str(data),
+               RFMM_ENGINE_EXE=str(binary), RFMM_GAME_PROFILE=str(game_profile))
+    addons = game_profile / "addons"
     command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(lib / "download-web.ps1")]
     watchdog = None
     replies = Queue()
@@ -159,7 +157,9 @@ def run(lib, root):
             start = request(worker, replies, f"/start?t={token}", "POST")
             assert start["status"] == 200, start["body"]
             first = wait_for("Start did not launch the fixture ELF engine", lambda: next(fixture_engines(binary), None))
-            assert addons.is_dir() and not addons.is_symlink() and not (root / "removed-game").exists()
+            assert addons.is_dir() and not addons.is_symlink() and not (root / "serverprofile" / "addons").exists()
+            arguments = (Path("/proc") / str(first) / "cmdline").read_bytes().split(b"\0")
+            assert arguments[arguments.index(b"-addonDownloadDir") + 1] == os.fsencode(game_profile)
             trimmed = json.loads(config.read_text(encoding="utf-8-sig"))
             assert trimmed["game"]["mods"] == [valid], trimmed
             assert trimmed["bindAddress"] == "127.0.0.1"
@@ -185,11 +185,14 @@ def run(lib, root):
             watchdog = subprocess.Popen(["pwsh", "-NoProfile", "-File", str(lib / "watchdog.ps1")],
                                         env=env, stdout=logs, stderr=logs)
             time.sleep(18)
-            assert watchdog.poll() is None and list(fixture_engines(binary)) == [resumed], +                "Watchdog restarted a newly launched engine that has not written its first log."
+            assert watchdog.poll() is None and list(fixture_engines(binary)) == [resumed], (
+                "Watchdog restarted a newly launched engine that has not written its first log."
+            )
             print("PASS Watchdog gives a newly launched engine time to produce its first log.")
             os.kill(resumed, signal.SIGTERM)
-            restarted = wait_for("Watchdog did not restart the engine",
-                                 lambda: next((pid for pid in fixture_engines(binary) if pid != resumed), None))
+            restarted = wait_for("Watchdog did not promptly restart the engine",
+                                 lambda: next((pid for pid in fixture_engines(binary) if pid != resumed), None),
+                                 timeout=6)
             assert restarted != first
             assert json.loads(config.read_text(encoding="utf-8-sig"))["game"]["mods"] == [valid]
             print("PASS Resume and watchdog restart each launched a new engine.")

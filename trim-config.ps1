@@ -4,7 +4,7 @@ $Root = if ($env:RFMM_HOME) { $env:RFMM_HOME } else { $PSScriptRoot }
 $Data = if ($env:RFMM_DATA) { $env:RFMM_DATA } else { Join-Path $PSScriptRoot 'data' }
 . (Join-Path $PSScriptRoot 'state.ps1')
 $cfgPath = Join-Path $Data 'batch1-serverconfig.json'
-$addons  = Join-Path (Join-Path $Root 'serverprofile') 'addons'
+$addons = Get-ClientAddons (Join-Path $Root 'serverprofile')
 
 
 $ctl = Lock-Engine

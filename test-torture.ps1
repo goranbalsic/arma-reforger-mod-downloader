@@ -179,8 +179,8 @@ $dupes = @(Get-ChildItem -LiteralPath (Get-ClientAddons (Join-Path $Root 'server
   Where-Object { $_.Name -match '_[0-9A-F]{16}$' } |
   Group-Object { [regex]::Match($_.Name, '_([0-9A-F]{16})$').Groups[1].Value } | Where-Object { $_.Count -gt 1 })
 Check 'no addon folder exists twice' ($dupes.Count -eq 0) "$($dupes.Count) duplicated id(s)"
-$link = Get-Item -LiteralPath (Join-Path (Join-Path $Root 'serverprofile') 'addons') -Force -ErrorAction SilentlyContinue
-Check 'engine addons folder is still a link' ([bool]($link -and $link.LinkType))
+$addons = Get-ClientAddons (Join-Path $Root 'serverprofile')
+Check 'engine addons folder is available' ([IO.Directory]::Exists($addons))
 $after = Status
 Check 'dashboard still answers after the beating' ($null -ne $after)
 

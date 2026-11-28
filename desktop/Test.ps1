@@ -33,6 +33,7 @@ $info.StandardOutputEncoding = [Text.Encoding]::UTF8
 $info.EnvironmentVariables['RFMM_HOME'] = $fixture
 $info.EnvironmentVariables['RFMM_DATA'] = $data
 $info.EnvironmentVariables['USERPROFILE'] = $fixture
+$info.EnvironmentVariables['RFMM_GAME_PROFILE'] = Split-Path -Parent $client
 
 function Send-Request([string]$Path, [string]$Method = 'GET') {
   $backend.StandardInput.WriteLine((@{ path = $Path; method = $Method } | ConvertTo-Json -Compress))
@@ -121,7 +122,7 @@ if ($repair.status -ne 200 -or $repairStatus.queue.Count -ne 1) {
   $shutdownInfo.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}\download-web.ps1" -DesktopStop' -f $source
   $shutdownInfo.UseShellExecute = $false
   $shutdownInfo.CreateNoWindow = $true
-  foreach ($key in 'RFMM_HOME','RFMM_DATA','USERPROFILE') {
+  foreach ($key in 'RFMM_HOME','RFMM_DATA','USERPROFILE','RFMM_GAME_PROFILE') {
     $shutdownInfo.EnvironmentVariables[$key] = $info.EnvironmentVariables[$key]
   }
   $shutdown = [Diagnostics.Process]::Start($shutdownInfo)

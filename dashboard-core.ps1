@@ -32,15 +32,11 @@ function Get-InstalledModsForUpdate([string[]]$Ids, [switch]$All) {
   $installed = @{}
   $wanted = @{}
   foreach ($id in $Ids) { $wanted[$id] = $true }
-  $folders = @((Join-Path $DsProfile 'addons'), (Get-ClientAddons $DsProfile)) | Select-Object -Unique
-  foreach ($folder in $folders) {
-    if (!$All -and $installed.Count -eq $wanted.Count) { break }
-    foreach ($dir in (Get-AddonDirectories $folder)) {
-      if ($dir.Name -notmatch '_([a-f0-9]{16})$') { continue }
-      $id = $Matches[1].ToUpperInvariant()
-      if (($All -or $wanted.ContainsKey($id)) -and !$installed.ContainsKey($id) -and
-          (Test-AddonComplete $dir.FullName $dir.LastWriteTime)) { $installed[$id] = $dir.FullName }
-    }
+  foreach ($dir in (Get-AddonDirectories (Get-ClientAddons $DsProfile))) {
+    if ($dir.Name -notmatch '_([a-f0-9]{16})$') { continue }
+    $id = $Matches[1].ToUpperInvariant()
+    if (($All -or $wanted.ContainsKey($id)) -and !$installed.ContainsKey($id) -and
+        (Test-AddonComplete $dir.FullName $dir.LastWriteTime)) { $installed[$id] = $dir.FullName }
   }
   $installed
 }
@@ -1124,6 +1120,23 @@ function Get-Detail([string]$Id) {
   if (-not $d.server -or -not @($d.server.mods).Count) { throw 'server has no modlist (offline or password protected)' }
   $script:dCache[$Id] = $d.server; $script:dCacheAt[$Id] = Get-Date
   $d.server
+}
+function Get-LibraryJoinUrl([string]$Id) {
+  if ($Id -notmatch '^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$' -or $Id -notin $serverList.id) {
+    throw 'This server is not in your Library.'
+  }
+  $server = (Invoke-WorkshopApi "$ApiBase/servers/$Id" -Headers $ApiH -TimeoutSec 10).server
+  if ($server.id -ne $Id -or !$server.online -or !$server.joinable) { throw 'This server is unavailable. Try again later.' }
+  $url = [string]$server.joinUrl
+  if ($url -cnotmatch '^steam://run/1874880//([A-Za-z0-9_-]{16,2048})={0,2}/$') {
+    throw 'The server directory did not provide a valid Steam invite.'
+  }
+  $tokenText = $Matches[1].Replace('-', '+').Replace('_', '/')
+  $padded = $tokenText.PadRight([int](4 * [Math]::Ceiling($tokenText.Length / 4.0)), '=')
+  try { $invite = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($padded)) | ConvertFrom-Json }
+  catch { throw 'The Steam invite could not be read.' }
+  if ($invite.id -ne $Id -or $invite.inviteToken -isnot [string]) { throw 'The Steam invite does not match this server.' }
+  $url
 }
 function Invoke-AddServer([string]$Id) {
   # Append missing server mods with their Workshop sizes.

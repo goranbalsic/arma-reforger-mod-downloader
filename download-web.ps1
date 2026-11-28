@@ -8,7 +8,6 @@ $Cfg     = Join-Path $Data 'batch1-serverconfig.json'
 $Sizes   = Join-Path $Data 'batch1-sizes.json'
 $ServersPath = Join-Path $Data 'batch1-servers.json'
 $DsProfile = Join-Path $Root 'serverprofile'
-$Addons  = Join-Path $DsProfile 'addons'
 $Url     = 'http://localhost:8123/'
 
 . (Join-Path $PSScriptRoot 'state.ps1')
@@ -46,7 +45,7 @@ if ($Desktop) {
   }
 }
 $Exe = Get-EngineExecutable $Root
-$ClientAddons = Get-ClientAddons $DsProfile
+$Addons = Get-ClientAddons $DsProfile
 
 if ($DesktopStop) {
   if (Test-Path -LiteralPath $Data) { Invoke-PauseQueue | Out-Null }
@@ -66,22 +65,6 @@ if ($ReadOnly) {
     if (-not (Test-Path -LiteralPath $Sizes)) { Save-Json ('{"totalBytes":0,"mods":{}}' | ConvertFrom-Json) $Sizes 4 }
     if (-not (Test-Path -LiteralPath $ServersPath)) { Save-Json @{ servers = @() } $ServersPath 5 }
   } finally { Unlock-WorkshopState $workshopMutex }
-}
-# Link the engine addons folder to the game folder so they share the downloaded files.
-if (!$ReadOnly -and $IsLinux) {
-  if ($Addons -cne $ClientAddons) {
-    $current = Get-Item -LiteralPath $Addons -Force -ErrorAction SilentlyContinue
-    if ($current -and (!$current.LinkType -or $current.ResolveLinkTarget($true).FullName -cne $ClientAddons)) {
-      throw "The engine already stores addons at $Addons. Use that folder or choose a fresh engine directory before linking a game profile."
-    }
-    if (!$current) {
-      New-Item -ItemType Directory -Path $DsProfile,$ClientAddons -Force | Out-Null
-      New-Item -ItemType SymbolicLink -Path $Addons -Target $ClientAddons | Out-Null
-    }
-  }
-} elseif (!$ReadOnly -and !$IsLinux -and $Addons -ne $ClientAddons -and
-    -not (Initialize-AddonsLink $Addons $ClientAddons $Cfg)) {
-  Write-Host 'Could not link the addons folders yet. The downloader will retry when the engine is idle.'
 }
 
 
@@ -139,7 +122,7 @@ if ($Check) {
   exit 0
 }
 
-$mutating = '/update-mods','/apply-mod-updates','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/cancel-downloads','/remove-queued-mod','/requeue-partial-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod'
+$mutating = '/update-mods','/apply-mod-updates','/cancel-mod-updates','/start','/pause','/verify','/queue-server','/resume-all','/clear-queue','/cancel-downloads','/remove-queued-mod','/requeue-partial-mod','/make-preset','/add-server','/refresh-servers','/refresh-server','/job','/remove-server','/add-mod','/open-addons-folder','/join-server'
 $script:modUpdateJob = $null
 
 function Start-DownloadHelpers {
@@ -159,7 +142,6 @@ function Start-DownloadHelpers {
   }
   $shell = Join-Path $PSHOME 'powershell.exe'
   if (!(Test-Path $shell)) { $shell = Join-Path $PSHOME 'pwsh.exe' }
-  Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -Loop' -f (Join-Path $PSScriptRoot 'sync-addons.ps1'))
   Start-Process $shell -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $PSScriptRoot 'watchdog.ps1'))
 }
 function Stop-ModUpdateCheck {
@@ -223,6 +205,18 @@ function Invoke-DashboardRequest($ctx) {
       }
     }
     switch ($path) {
+      { $_ -in '/open-addons-folder','/join-server' } {
+        if (!$Desktop) { Write-DashboardError $ctx.Response 403 'Open the desktop app to use this action.'; return }
+        $payload = if ($path -eq '/join-server') {
+          @{ url = Get-LibraryJoinUrl $ctx.Request.QueryString['id']; msg = 'Opening Arma Reforger through Steam…' }
+        } else {
+          [void][IO.Directory]::CreateDirectory($Addons)
+          @{ folder = $Addons; msg = 'Opened the addons folder.' }
+        }
+        $b = [Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress))
+        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.OutputStream.Write($b, 0, $b.Length)
+      }
       '/' {
         $html = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'page.html'))
         $transport = if ($Desktop) { 'true' } else { 'false' }

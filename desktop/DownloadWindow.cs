@@ -37,6 +37,8 @@ internal sealed class DownloadWindow : Form
     private readonly ToolStripMenuItem checkUpdates = new ToolStripMenuItem("Check for updates");
     private AppUpdates.Pending pendingAppUpdate;
     private bool restartForUpdate;
+    private bool uninstallRequested;
+    private bool uninstallEngine;
 
     internal DownloadWindow(string runtimePath)
     {
@@ -54,6 +56,10 @@ internal sealed class DownloadWindow : Form
         if (engineInstalled) setup.Hide();
         menu.Items.Add(checkUpdates);
         checkUpdates.Click += (sender, args) => CheckForAppUpdates(true);
+        var maintenance = new ToolStripMenuItem("Uninstall");
+        maintenance.DropDownItems.Add("Uninstall downloader", null, (sender, args) => ConfirmUninstall(false));
+        maintenance.DropDownItems.Add("Uninstall downloader and engine", null, (sender, args) => ConfirmUninstall(true));
+        menu.Items.Add(maintenance);
         MainMenuStrip = menu;
         Controls.Add(menu);
         menu.BringToFront();
@@ -67,7 +73,7 @@ internal sealed class DownloadWindow : Form
 
     private async void CheckForAppUpdates(bool manual)
     {
-        if (!checkUpdates.Enabled) return;
+        if (!checkUpdates.Enabled || uninstallRequested) return;
         if (pendingAppUpdate != null)
         {
             if (manual)
@@ -108,6 +114,28 @@ internal sealed class DownloadWindow : Form
     private void ShowUpdateMessage(string message)
     {
         MessageBox.Show(this, message, "App updates", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void ConfirmUninstall(bool removeEngine)
+    {
+        if (stoppingDownloads) return;
+        if (installing)
+        {
+            MessageBox.Show(this, "Wait for the engine setup to finish before uninstalling.", "Uninstall");
+            return;
+        }
+        string detail = removeEngine
+            ? "\n\nAlso removes the downloader’s dedicated server and SteamCMD under " + root +
+              ". Steam-managed and standalone servers are kept."
+            : "\n\nThe dedicated server and SteamCMD are kept.";
+        string message = "Remove this downloader, its queue, settings, logs and private files?" +
+            "\n\nDownloader folder: " + root +
+            detail + "\n\nThe game’s addons and presets are kept.";
+        if (MessageBox.Show(this, message, removeEngine ? "Uninstall downloader and engine" : "Uninstall downloader",
+            MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+        uninstallEngine = removeEngine;
+        uninstallRequested = true;
+        Close();
     }
 
     private string FindDownloadFolder()
@@ -381,6 +409,26 @@ internal sealed class DownloadWindow : Form
                     bool isStatus = args.Request.Method == "GET" && (uri.AbsolutePath == "/status" || uri.AbsolutePath == "/completed");
                     PowerShellHost host = isStatus && backendRead != null ? backendRead : backend;
                     reply = await host.SendAsync(uri.PathAndQuery, args.Request.Method);
+                    if (reply.status == 200 && args.Request.Method == "POST" &&
+                        (uri.AbsolutePath == "/join-server" || uri.AbsolutePath == "/open-addons-folder"))
+                    {
+                        var action = new JavaScriptSerializer().Deserialize<DesktopAction>(reply.body);
+                        string destination;
+                        if (uri.AbsolutePath == "/join-server")
+                        {
+                            destination = action.url ?? "";
+                            if (!Regex.IsMatch(destination, @"\Asteam://run/1874880//[A-Za-z0-9_-]{16,2048}={0,2}/\z"))
+                                throw new InvalidDataException("The Steam invite was invalid.");
+                        }
+                        else
+                        {
+                            destination = action.folder;
+                            if (String.IsNullOrEmpty(destination) || !Path.IsPathRooted(destination) || !Directory.Exists(destination))
+                                throw new DirectoryNotFoundException("The addons folder is unavailable.");
+                        }
+                        Process.Start(new ProcessStartInfo(destination) { UseShellExecute = true });
+                        reply.body = new JavaScriptSerializer().Serialize(new { msg = action.msg });
+                    }
                 }
             }
             catch (Exception error)
@@ -405,6 +453,13 @@ internal sealed class DownloadWindow : Form
         }
     }
 
+    private sealed class DesktopAction
+    {
+        public string url { get; set; }
+        public string folder { get; set; }
+        public string msg { get; set; }
+    }
+
     protected override void OnFormClosing(FormClosingEventArgs args)
     {
         if (installing && args.CloseReason == CloseReason.UserClosing)
@@ -420,7 +475,20 @@ internal sealed class DownloadWindow : Form
         }
         if (args.Cancel && installing) restartForUpdate = false;
         base.OnFormClosing(args);
-        if (!args.Cancel && args.CloseReason == CloseReason.UserClosing && pendingAppUpdate != null)
+        if (!args.Cancel && args.CloseReason == CloseReason.UserClosing && uninstallRequested)
+        {
+            try { AppUninstall.WhenClosed(runtime, root, uninstallEngine); }
+            catch (Exception error)
+            {
+                args.Cancel = true;
+                uninstallRequested = false;
+                downloadsStopped = false;
+                Enabled = true;
+                PowerShellHost.Log("Uninstall preparation failed: " + error);
+                MessageBox.Show(this, error.Message, "Uninstall", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        else if (!args.Cancel && args.CloseReason == CloseReason.UserClosing && pendingAppUpdate != null)
         {
             try { AppUpdates.ApplyWhenClosed(runtime, pendingAppUpdate, restartForUpdate); }
             catch (Exception error)
@@ -452,6 +520,7 @@ internal sealed class DownloadWindow : Form
         catch (Exception error)
         {
             restartForUpdate = false;
+            uninstallRequested = false;
             PowerShellHost.Log("Closing downloader: " + error);
             Enabled = true;
             MessageBox.Show(this, "Couldn’t stop the download engine. Try closing the app again.",
